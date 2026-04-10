@@ -49,3 +49,36 @@ Here is your question: {question}
 @@ Response
 {partial_solution}"""
 
+
+QWEN_REVIEW_PROMPT = """You are an exceptionally intelligent code reviewer.
+@@ Instruction
+You are reviewing candidate code for exactly one review dimension.
+
+Dimension: {dimension}
+
+Review rubric:
+{rubric}
+
+Task description:
+{question}
+
+Candidate code:
+```python
+{candidate_code}
+```
+
+Available tests:
+{tests}
+
+Rules:
+1. Keep all reasoning focused on the assigned dimension only.
+2. Produce exactly one next visible review step, or finish with a structured final review.
+3. If you need another step, output a single concise review step only.
+4. If you are ready to finish, output:
+<review>
+{{"dimension": "{dimension}", "score": <1-10 integer>, "verdict": "accept|minor_issue|major_issue", "summary": "...", "evidence": ["...", "..."]}}
+</review>
+5. Do not output code fixes.
+
+@@ Response
+{partial_solution}"""

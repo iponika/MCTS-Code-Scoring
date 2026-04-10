@@ -23,15 +23,18 @@ BAR_TIME = 30 # 30
 
 def llm_init(config):
     GPUS = os.environ.get('CUDA_VISIBLE_DEVICES', "0").split(',')
-    llm = LLM(
-        model=config.model_dir, 
-        tensor_parallel_size=len(GPUS), 
+    llm_kwargs = dict(
+        model=config.model_dir,
+        tensor_parallel_size=len(GPUS),
         trust_remote_code=True,
         seed=config.seed,
         swap_space=config.swap_space,
-        max_model_len=10000, 
-        gpu_memory_utilization=0.9
+        max_model_len=config.max_model_len,
+        gpu_memory_utilization=config.gpu_memory_utilization,
     )
+    if getattr(config, "enable_prefix_caching", False):
+        llm_kwargs["enable_prefix_caching"] = True
+    llm = LLM(**llm_kwargs)
     sampling_params = SamplingParams(
         temperature=config.temperature,
         top_k=int(config.top_k),

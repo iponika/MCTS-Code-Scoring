@@ -27,6 +27,20 @@ python solver_demo.py \
 --qaf ../data/dsc_collection/data_seed_test.json
 ```
 
+## Code Review Data Generation
+
+For the code-evaluation adaptation, use the dedicated review MCTS entrypoint. It currently consumes `CodeCriticBench` code-generation samples, expands one subtree per checklist dimension, and labels leaf rewards by comparing the model's structured review against dataset checklist scores plus test-derived correctness signals.
+
+```bash
+python data_collection/solver_review.py \
+  --custom_cfg data_collection/configs/mcts_code_review.yaml \
+  --dataset datasets/CodeCriticBench/data/CodeCriticBench.jsonl \
+  --start 0 \
+  --limit 32
+```
+
+The output is a `.jsonl` file containing the original review seed, objective scoring metadata, and a `react` tree whose nodes already carry `value/q_value/visit_count` fields for downstream preprocessing.
+
 After completing the data preprocessing steps outlined in `../model_training/README.md`, you will obtain `all_pass.jsonl` and `all_fail.jsonl` files that document samples lacking incorrect and correct paths respectively. You can then run the following commands for path refinement and perturbation:
 
 ```bash

@@ -13,7 +13,12 @@ from typing import List, Dict, Any, Optional, Type, Tuple, Union
 
 
 from mcts_math.prompts.prompt_react import PROMPT_REACT
-from mcts_math.prompts.prompt_sft import DEEPSEEK_PROMPT, DEEPSEEK_LCB_PROMPT, QWEN_STEP_PROMPT
+from mcts_math.prompts.prompt_sft import (
+    DEEPSEEK_PROMPT,
+    DEEPSEEK_LCB_PROMPT,
+    QWEN_REVIEW_PROMPT,
+    QWEN_STEP_PROMPT,
+)
 from mcts_math.tools.python_tool import PythonInterpreter
 
 from mcts_math.constants import *
@@ -144,6 +149,51 @@ def react_sft_step_result_unwrap(
         parser_result["action"] = text
         parser_result["action_input"] = ''
         return text, parser_result
+
+
+def review_prompt_wrap(
+    question: str,
+    partial_solution: str,
+    config,
+    review_context: Dict[str, Any],
+    is_value_only: bool = False,
+) -> str:
+    del is_value_only
+    tests = review_context.get("tests_for_prompt", "No tests are available.")
+    return QWEN_REVIEW_PROMPT.format(
+        dimension=review_context["target_dimension"],
+        rubric=review_context["dimension_rubric"],
+        question=question,
+        candidate_code=review_context["candidate_code"],
+        tests=tests,
+        partial_solution=partial_solution or "",
+    )
+
+
+def _strip_outer_step_block(text: str) -> str:
+    cleaned = text.strip()
+    if cleaned.startswith("<step>"):
+        cleaned = cleaned[len("<step>"):].lstrip()
+    if cleaned.endswith("</step>"):
+        cleaned = cleaned[:-len("</step>")].rstrip()
+    return cleaned.strip()
+
+
+def review_step_result_unwrap(
+    text: str,
+) -> Tuple[str, Dict[str, str]]:
+    cleaned = _strip_outer_step_block(text)
+    parser_result = {
+        "action": "",
+        "action_input": "",
+        "final_answer": "",
+    }
+    if "<review>" in cleaned:
+        parser_result["final_answer"] = cleaned.split("<review>", 1)[1].strip()
+        return cleaned, parser_result
+
+    parser_result["action"] = cleaned
+    return cleaned, parser_result
 
 
 def extract_code_blocks(text):
