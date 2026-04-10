@@ -82,7 +82,9 @@ class BaseTree(BaseModel):
     @field_validator("config")
     def validate_config(cls, cfg: Any):
         if issubclass(type(cfg), DictConfig):
-            if not os.path.exists(cfg.model_dir):
+            model_dir = getattr(cfg, "model_dir", None)
+            is_remote_model = isinstance(model_dir, str) and "/" in model_dir and not os.path.exists(model_dir)
+            if not is_remote_model and not os.path.exists(cfg.model_dir):
                 raise ValueError(f"Model directory \"{cfg.model_dir}\" cannot be found.")
             return cfg
 

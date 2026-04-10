@@ -49,6 +49,7 @@ SEARCH_CHOICES = ChoiceEnum(_SEARCH_CHOICES)
 _PROMPT_CHOICES = [
     "react",          # thought/action/observation with examples for round 1
     "react_sft",      # xml format in SFT
+    "review_sft",     # code review reasoning + structured review output
 ]
 
 PROMPT_CHOICES = ChoiceEnum(_PROMPT_CHOICES)
@@ -119,6 +120,15 @@ class BaseConfig:
     swap_space: Optional[int] = field(
         default=8, metadata={"help": "swap space for vllm"}
     )
+    gpu_memory_utilization: float = field(
+        default=0.9, metadata={"help": "fraction of GPU memory vllm may use"}
+    )
+    max_model_len: int = field(
+        default=10000, metadata={"help": "maximum model context length for vllm"}
+    )
+    enable_prefix_caching: bool = field(
+        default=False, metadata={"help": "enable vllm prefix caching"}
+    )
     n_generate_sample: int = field(
         default=1, metadata={"help": "how many samples generated for each step. B2 in paper."}
     )
@@ -178,6 +188,12 @@ class BaseConfig:
     )
     verbose: bool = field(
         default=False, metadata={"help": "print intermediate steps on screen"}
+    )
+    max_review_dimensions: int = field(
+        default=10, metadata={"help": "maximum number of review dimensions expanded under the root"}
+    )
+    neutral_visit_reward: float = field(
+        default=0.0, metadata={"help": "reward used to mark a non-terminal node as visited in review MCTS"}
     )
 
 
