@@ -1,3 +1,4 @@
+import inspect
 import os, sys
 import os.path as osp
 import time
@@ -23,6 +24,28 @@ BAR_TIME = 30 # 30
 
 def llm_init(config):
     GPUS = os.environ.get('CUDA_VISIBLE_DEVICES', "0").split(',')
+    sampling_kwargs = dict(
+        temperature=config.temperature,
+        top_k=int(config.top_k),
+        top_p=config.top_p,
+        use_beam_search=config.use_beam_search,
+        max_tokens=config.max_tokens,
+        n=config.n_generate_sample,
+        best_of=config.n_generate_sample,
+        stop=config.stop,
+    )
+    supported_params = set(inspect.signature(SamplingParams).parameters)
+    sampling_kwargs = {
+        key: value
+        for key, value in sampling_kwargs.items()
+        if key in supported_params and value is not None
+    }
+    if sampling_kwargs.get("top_k", 0) < 0:
+        sampling_kwargs["top_k"] = 0
+    if "stop" in sampling_kwargs and not isinstance(sampling_kwargs["stop"], (str, list)):
+        sampling_kwargs["stop"] = list(sampling_kwargs["stop"])
+    sampling_params = SamplingParams(**sampling_kwargs)
+
     llm_kwargs = dict(
         model=config.model_dir,
         tensor_parallel_size=len(GPUS),
@@ -34,18 +57,9 @@ def llm_init(config):
     )
     if getattr(config, "enable_prefix_caching", False):
         llm_kwargs["enable_prefix_caching"] = True
+    if getattr(config, "enforce_eager", False):
+        llm_kwargs["enforce_eager"] = True
     llm = LLM(**llm_kwargs)
-    sampling_params = SamplingParams(
-        temperature=config.temperature,
-        top_k=int(config.top_k),
-        top_p=config.top_p,
-        use_beam_search=config.use_beam_search,
-        max_tokens=config.max_tokens, 
-        n=config.n_generate_sample,
-        best_of=config.n_generate_sample,
-        stop=config.stop,
-        #seed=config.seed,
-    )
     
     return llm, sampling_params
 

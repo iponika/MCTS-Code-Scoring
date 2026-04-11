@@ -25,3 +25,4 @@ max_review_dimensions: 10
 neutral_visit_reward: 0.0
 positive_reward: 1.0
 negative_reward: -1.0
+disable_process_pool: True

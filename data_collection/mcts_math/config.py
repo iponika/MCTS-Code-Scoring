@@ -129,6 +129,9 @@ class BaseConfig:
     enable_prefix_caching: bool = field(
         default=False, metadata={"help": "enable vllm prefix caching"}
     )
+    enforce_eager: bool = field(
+        default=False, metadata={"help": "disable CUDA graph capture in vllm"}
+    )
     n_generate_sample: int = field(
         default=1, metadata={"help": "how many samples generated for each step. B2 in paper."}
     )
@@ -194,6 +197,9 @@ class BaseConfig:
     )
     neutral_visit_reward: float = field(
         default=0.0, metadata={"help": "reward used to mark a non-terminal node as visited in review MCTS"}
+    )
+    disable_process_pool: bool = field(
+        default=False, metadata={"help": "run generation postprocessing in the main process"}
     )
 
 

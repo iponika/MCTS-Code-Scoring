@@ -96,6 +96,8 @@ def _verdict_distance(expected: str, predicted: str) -> float:
 
 def parse_review_payload(text: str) -> Dict[str, Any] | None:
     payload = text.strip()
+    if payload.startswith("<review>"):
+        payload = payload[len("<review>"):].lstrip()
     if payload.endswith("</review>"):
         payload = payload[: -len("</review>")].rstrip()
     try:
