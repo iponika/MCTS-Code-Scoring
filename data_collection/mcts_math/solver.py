@@ -210,6 +210,34 @@ class Solver(BaseModel):
         # update solvers
         invalid_solvers.extend(valid_solvers)
         return invalid_solvers
+
+    def finalize_review_solvers(self, solvers: List[BaseTree]) -> List[BaseTree]:
+        prompts = []
+        prompts_span = [0]
+        valid_solvers = []
+
+        for solver in solvers:
+            prepare_final_review_nodes = getattr(solver, "prepare_final_review_nodes", None)
+            if prepare_final_review_nodes is None or not prepare_final_review_nodes():
+                continue
+            solver_prompts = solver.create_prompt()
+            prompts.extend(solver_prompts)
+            prompts_span.append(prompts_span[-1] + len(solver_prompts))
+            valid_solvers.append(solver)
+
+        if not prompts:
+            return solvers
+
+        self.generate_sampling_params.n = self.config.n_generate_sample
+        self.generate_sampling_params.best_of = self.config.n_generate_sample
+        outputs = self.llm(prompts, self.generate_sampling_params)
+        reconstructed_outputs = [
+            outputs[bos_idx:eos_idx]
+            for bos_idx, eos_idx in zip(prompts_span, prompts_span[1:])
+        ]
+        updated_solvers = self.generate_postprocess(reconstructed_outputs, valid_solvers)
+        updated_by_question = {solver.question: solver for solver in updated_solvers}
+        return [updated_by_question.get(solver.question, solver) for solver in solvers]
     
     def solve(self, solvers: List[BaseTree], mcts: bool):
         #初始时自动选择一个节点，然后每一轮现根据选择的节点生成，然后expand，得到新的candidates更新value，再选择
@@ -284,6 +312,7 @@ class Solver(BaseModel):
 
             
 
+        solvers = self.finalize_review_solvers(solvers)
         return self.output(solvers)
     
     def output(self, solvers: List[BaseTree]):

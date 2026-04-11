@@ -160,13 +160,22 @@ def review_prompt_wrap(
 ) -> str:
     del is_value_only
     tests = review_context.get("tests_for_prompt", "No tests are available.")
+    if review_context.get("force_final_review", False):
+        mode_instruction = (
+            "You must finish now. Output only one structured final review in the exact <review> JSON format below."
+        )
+    else:
+        mode_instruction = (
+            "Output exactly one concise next review reasoning step wrapped in <step>...</step>. Never output <review> yet."
+        )
     return QWEN_REVIEW_PROMPT.format(
         dimension=review_context["target_dimension"],
         rubric=review_context["dimension_rubric"],
         question=question,
         candidate_code=review_context["candidate_code"],
         tests=tests,
-        partial_solution=partial_solution or "",
+        partial_solution=partial_solution.strip() if partial_solution else "None",
+        mode_instruction=mode_instruction,
     )
 
 

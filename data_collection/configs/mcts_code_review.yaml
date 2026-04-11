@@ -9,7 +9,7 @@ swap_space: 16
 gpu_memory_utilization: 0.9
 max_model_len: 12000
 enable_prefix_caching: True
-stop: ["</step>", "</step>\n", "</step>\n\n"]
+stop: ["</step>", "</step>\n", "</step>\n\n", "</review>"]
 max_depth: 4
 n_generate_sample: 4
 iterations: 40
