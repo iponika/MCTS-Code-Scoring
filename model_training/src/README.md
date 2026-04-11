@@ -52,6 +52,55 @@ python magicoder/preprocess_mcts_data.py \
 
 First, set `CUDA_VISIBLE_DEVICES` to specify which 1-2 GPUs to use.
 
+### Code Review MCTS Data
+
+The code-evaluation adaptation uses a dedicated converter because review rewards are continuous and terminal leaves are `<review>` JSON blocks rather than generated code.
+
+```bash
+python model_training/src/magicoder/preprocess_review_mcts_data.py \
+  --input data_collection/review_mcts_runs/codecriticbench_2_1/samples/2_mbpp_mbpp.json \
+  --output_file model_training/review_mcts_train_data/codecriticbench_2_1_train_multi.jsonl \
+  --policy_min_q 0.5
+```
+
+Each output item contains `instruction`, segmented `response`, continuous `q_value`, and `train_lm`.
+Items with `train_lm=true` train both the policy tokens and value head; items with `train_lm=false` mask LM labels and train only the value head.
+
+Run review policy/value training from `model_training/src` to avoid the repository-level `datasets/` directory shadowing Hugging Face `datasets`:
+
+Qwen3.5 requires a Transformers build that recognizes `model_type=qwen3_5`. If your installed release does not, install Transformers from the official main branch:
+
+```bash
+UV_CACHE_DIR=/tmp/uv-cache uv pip install --upgrade --no-deps "git+https://github.com/huggingface/transformers.git"
+UV_CACHE_DIR=/tmp/uv-cache uv pip install --upgrade "huggingface-hub>=1.5.0,<2.0"
+```
+
+When running offline, prefer the local Hugging Face snapshot path for `--model_name_or_path`; this avoids adapter-config probes against the Hub.
+
+```bash
+cd model_training/src
+CUDA_VISIBLE_DEVICES=0 HF_DATASETS_CACHE=/tmp/hf-datasets-cache uv run accelerate launch --num_processes=1 -m magicoder.train_multi \
+  --task review \
+  --model_key Qwen/Qwen3.5-9B \
+  --model_name_or_path /path/to/models--Qwen--Qwen3.5-9B/snapshots/<snapshot-id> \
+  --datafile_paths ../review_mcts_train_data/codecriticbench_2_1_train_multi.jsonl \
+  --output_dir ./output/qwen3_5_9b-review-s1 \
+  --num_train_epochs 1 \
+  --per_device_train_batch_size 1 \
+  --gradient_accumulation_steps 16 \
+  --bf16 True \
+  --logging_steps 1 \
+  --optim adafactor \
+  --learning_rate 5e-5 \
+  --lr_scheduler_type linear \
+  --peft lora \
+  --value_weight 0.025 \
+  --num_proc 1
+```
+
+For a one-step smoke test, add `--max_steps 1 --save_strategy no --skip_save True --report_to none`.
+If the installed Transformers version does not recognize `model_type=qwen3_5`, upgrade Transformers to a build that supports Qwen3.5 before running the real target model.
+
 ### First Stage: Dual Model Training
 
 ```bash

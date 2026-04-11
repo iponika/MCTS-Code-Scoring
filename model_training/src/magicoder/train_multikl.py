@@ -2,6 +2,7 @@ from dataclasses import dataclass, field
 from typing import cast
 import inspect
 import gc
+import importlib.util
 import os
 import copy
 import json
@@ -17,7 +18,6 @@ from transformers.trainer_utils import PREFIX_CHECKPOINT_DIR, has_length
 from transformers.utils import (
     SAFE_WEIGHTS_NAME,
     WEIGHTS_NAME,
-    is_safetensors_available,
 )
 from datasets import concatenate_datasets
 from typing import TYPE_CHECKING, Any, Dict, Optional
@@ -37,7 +37,7 @@ import torch.nn.functional as F
 
 
 
-if is_safetensors_available():
+if importlib.util.find_spec("safetensors") is not None:
     from safetensors import safe_open
     from safetensors.torch import save_file
 

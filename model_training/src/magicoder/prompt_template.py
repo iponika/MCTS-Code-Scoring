@@ -570,6 +570,23 @@ You will be given a question (problem specification) and will generate a correct
 {response}"""
 
 
+QWEN_REVIEW_STEP_PROMPT = """You are an exceptionally intelligent code reviewer.
+@@ Instruction
+You will be given one code review task and exactly one target review dimension.
+Think through the assigned dimension in concise <step>...</step> blocks, then finish with exactly one <review> JSON block.
+Keep the reasoning grounded in the task, candidate code, and available tests. Do not output code fixes.
+
+{instruction}
+
+Final review format:
+<review>
+{{"dimension": "<target dimension>", "score": <1-10 integer>, "verdict": "accept|minor_issue|major_issue", "summary": "...", "evidence": ["...", "..."]}}
+</review>
+
+@@ Response
+{response}"""
+
+
 
 
 DSC_PROMPT = """You are an exceptionally intelligent coding assistant that consistently delivers accurate and reliable responses to user instructions. 
