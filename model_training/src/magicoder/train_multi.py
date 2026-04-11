@@ -2,6 +2,7 @@ from dataclasses import dataclass, field
 from typing import cast
 import inspect
 import gc
+import importlib.util
 import os
 import json
 import torch
@@ -16,7 +17,6 @@ from transformers.trainer_utils import PREFIX_CHECKPOINT_DIR, has_length
 from transformers.utils import (
     SAFE_WEIGHTS_NAME,
     WEIGHTS_NAME,
-    is_safetensors_available,
 )
 
 from typing import TYPE_CHECKING, Any, Dict, Optional
@@ -29,13 +29,13 @@ from magicoder.llm_wrapper import (
     get_model_wvalue_context,
     pad_sequences,
 )
-from magicoder.prompt_template import QWEN_STEP_PROMPT, DSC_PROMPT
+from magicoder.prompt_template import DSC_PROMPT, QWEN_REVIEW_STEP_PROMPT, QWEN_STEP_PROMPT
 from magicoder.utils import N_CORES
 from torch.nn import MSELoss, CrossEntropyLoss
 import torch.nn.functional as F
 
 
-if is_safetensors_available():
+if importlib.util.find_spec("safetensors") is not None:
     from safetensors import safe_open
     from safetensors.torch import save_file
 
@@ -66,6 +66,9 @@ class Args:
     )
     use_flash_attention: bool = field(default=False)
     value_weight: float = field(default=0.2)
+    task: str = field(default="code", metadata={"help": "code or review"})
+    skip_save: bool = field(default=False, metadata={"help": "Skip final model saving for smoke tests."})
+    num_proc: int = field(default=20, metadata={"help": "Number of dataset preprocessing workers."})
 
 
 # Ignored index in CrossEntropyLoss
@@ -83,9 +86,13 @@ def map_dataset(
         instruction = examples["instruction"][i]
         responses = examples["response"][i]
         q_value = examples["q_value"][i]
+        train_lm_flags = examples.get("train_lm")
+        train_lm = train_lm_flags[i] if train_lm_flags is not None else None
 
  
-        if 'deepseek' in model_name or 'dsc' in model_name:
+        if args.task == "review":
+            prompt = QWEN_REVIEW_STEP_PROMPT.format(instruction=instruction, response="")
+        elif 'deepseek' in model_name or 'dsc' in model_name:
             prompt = DSC_PROMPT.format(instruction=instruction, response="<step>\n")
         else:
             prompt = QWEN_STEP_PROMPT.format(instruction=instruction, response="<step>\n")
@@ -105,7 +112,7 @@ def map_dataset(
             sub_response_ids = completion_id_batches[0]
 
             input_ids += sub_response_ids
-            if sub_Q==-100 or (all(x == 1 for x in q_value) and len(q_value)>1): 
+            if sub_Q == IGNORED_INDEX or (args.task != "review" and all(x == 1 for x in q_value) and len(q_value) > 1):
                 Q += [IGNORED_INDEX] * (len(sub_response_ids))
             else:
                 Q += [IGNORED_INDEX] * (len(sub_response_ids) - 1) + [sub_Q]
@@ -132,12 +139,12 @@ def map_dataset(
         model_inputs["Q"].append(np.array(Q, dtype=np.float32))
 
 
-        if response_state == -1:
-            model_inputs["labels"].append([IGNORED_INDEX] * len(labels))
-        elif response_state == 1 or all(x == -100 for x in q_value):
+        if train_lm is None:
+            train_lm = response_state == 1 or all(x == IGNORED_INDEX for x in q_value)
+        if train_lm:
             model_inputs["labels"].append(labels)
         else:
-            assert False, response_state
+            model_inputs["labels"].append([IGNORED_INDEX] * len(labels))
 
     return model_inputs
 
@@ -268,12 +275,13 @@ def train():
     tokenization_context = TokenizationContext.from_model_key(
         model_key, model_name_or_path
     )
+    dataset_num_proc = args.num_proc if args.num_proc > 1 else None
     
     train_dataset = dataset.map(
         function=map_dataset,
         fn_kwargs=dict(args=args, context=tokenization_context),
         batched=True,
-        num_proc=20,
+        num_proc=dataset_num_proc,
         remove_columns=dataset.column_names,
         load_from_cache_file=False,  # not args.overwrite_cache
         desc="Running tokenizer on train dataset",
@@ -283,15 +291,20 @@ def train():
     train_dataset = train_dataset.filter(
         lambda x: not x['exceeding_length'],
         desc="Removing examples exceeding max length",
-        num_proc=20,
+        num_proc=dataset_num_proc,
     )
     print(f"Dataset size after filtering: {len(train_dataset)}")
     print(msg)
 
 
     # Shuffling
-    training_args.evaluation_strategy  = 'no'
-    if training_args.eval_steps is None and training_args.evaluation_strategy == "no":
+    if hasattr(training_args, "eval_strategy"):
+        training_args.eval_strategy = "no"
+        evaluation_strategy = training_args.eval_strategy
+    else:
+        training_args.evaluation_strategy = "no"
+        evaluation_strategy = training_args.evaluation_strategy
+    if training_args.eval_steps is None and evaluation_strategy == "no":
         train_dataset = train_dataset.shuffle(seed=training_args.seed)
         eval_dataset = None
     else:
@@ -326,6 +339,8 @@ def train():
         data_collator=data_collator,
     )
     trainer.train(resume_from_checkpoint=training_args.resume_from_checkpoint)
+    if args.skip_save:
+        return
     trainer.save_model(training_args.output_dir)
     state.tokenization_context.tokenizer.save_pretrained(training_args.output_dir)
 

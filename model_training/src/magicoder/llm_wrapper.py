@@ -5,10 +5,14 @@ import os
 import torch
 import torch.nn as nn
 from transformers import AutoModelForCausalLM, AutoTokenizer
+from transformers import AutoConfig
 from transformers import GenerationConfig as TransformersGenerationConfig
 from transformers import PreTrainedModel, PreTrainedTokenizer
 from transformers.modeling_outputs import ModelOutput
-from trl import AutoModelForCausalLMWithValueHead
+try:
+    from trl import AutoModelForCausalLMWithValueHead
+except ImportError:
+    from trl.experimental.ppo.modeling_value_head import AutoModelForCausalLMWithValueHead
 from transformers.utils import cached_file
 from peft import get_peft_model, LoraConfig, TaskType
 
@@ -356,6 +360,7 @@ class SupportedModelKeys(Enum):
 
 
     QWEN_CODER_7B = "Qwen/Qwen2.5-Coder-7B-Instruct"
+    QWEN3_5_9B = "Qwen/Qwen3.5-9B"
 
     @staticmethod
     def all() -> list[str]:
@@ -398,7 +403,8 @@ class SupportedModelKeys(Enum):
     @staticmethod
     def qwencoder_based_models() -> list[str]:
         return [
-            SupportedModelKeys.QWEN_CODER_7B.value
+            SupportedModelKeys.QWEN_CODER_7B.value,
+            SupportedModelKeys.QWEN3_5_9B.value,
         ]
     
 
@@ -470,12 +476,30 @@ def get_model_wvalue_context(
     if use_flash_attention:
         other_kwargs["use_flash_attention_2"] = True
     if model_args.peft=='lora':
+        model_config = AutoConfig.from_pretrained(model_name_or_path)
+        lora_kwargs = {}
+        if getattr(model_config, "model_type", "") == "qwen3_5":
+            lora_kwargs["target_modules"] = [
+                "q_proj",
+                "k_proj",
+                "v_proj",
+                "o_proj",
+                "in_proj_qkv",
+                "in_proj_a",
+                "in_proj_b",
+                "in_proj_z",
+                "out_proj",
+                "gate_proj",
+                "up_proj",
+                "down_proj",
+            ]
         peft_config = LoraConfig(
             task_type=TaskType.CAUSAL_LM,
             inference_mode=False,
             r=64,  # LoRA rank
             lora_alpha=128,
             lora_dropout=0.1,
+            **lora_kwargs,
         )
         model = AutoModelForCausalLMWithValueHead.from_pretrained(
             model_name_or_path,
@@ -581,4 +605,3 @@ def create_infilling_prompt(
 
     # TODO: other models
     assert False, f"Unsupported model key: {model_key}"
-
