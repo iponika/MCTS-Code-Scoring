@@ -100,6 +100,12 @@ def parse_review_payload(text: str) -> Dict[str, Any] | None:
         payload = payload[len("<review>"):].lstrip()
     if payload.endswith("</review>"):
         payload = payload[: -len("</review>")].rstrip()
+    if payload.startswith("```"):
+        payload = payload.split("\n", 1)[1] if "\n" in payload else payload.strip("`")
+        if payload.endswith("```"):
+            payload = payload.rsplit("```", 1)[0].rstrip()
+    if "{" in payload and "}" in payload:
+        payload = payload[payload.find("{") : payload.rfind("}") + 1]
     try:
         return json.loads(payload)
     except json.JSONDecodeError:
@@ -198,7 +204,7 @@ def build_review_question(sample: Dict[str, Any]) -> str:
     )
 
 
-def prepare_codecriticbench_sample(raw_sample: Dict[str, Any]) -> Dict[str, Any]:
+def prepare_codecriticbench_sample(raw_sample: Dict[str, Any], dataset_index: int | None = None) -> Dict[str, Any]:
     public_assertions = list(raw_sample.get("public_test", {}).get("input", []) or [])
     private_assertions = list(raw_sample.get("private_test", {}).get("input", []) or [])
     all_assertions = public_assertions + private_assertions
@@ -214,6 +220,7 @@ def prepare_codecriticbench_sample(raw_sample: Dict[str, Any]) -> Dict[str, Any]
         dimension_rubrics[dimension] = f"{default_rubric}\nReference checklist item: {checklist}".strip()
 
     sample = {
+        "dataset_index": dataset_index,
         "problem": raw_sample["question"],
         "candidate_code": candidate_code,
         "tests": all_assertions,
@@ -246,7 +253,7 @@ def load_codecriticbench_dataset(path: str, start: int = 0, limit: int | None = 
             has_tests = bool(raw_sample.get("public_test", {}).get("input") or raw_sample.get("private_test", {}).get("input"))
             if not raw_sample.get("checklist_dimensions") or "answer" not in raw_sample or not has_tests:
                 continue
-            loaded.append(prepare_codecriticbench_sample(raw_sample))
+            loaded.append(prepare_codecriticbench_sample(raw_sample, dataset_index=index))
             if limit is not None and len(loaded) >= limit:
                 break
     return loaded

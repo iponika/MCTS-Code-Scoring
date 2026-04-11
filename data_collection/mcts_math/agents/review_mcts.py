@@ -22,6 +22,7 @@ class ReviewMCTS(MCTS):
         "final_answer",
         "target_dimension",
         "reward_details",
+        "force_final_review",
     ]
 
     def __init__(self, **kwargs) -> None:
@@ -82,6 +83,38 @@ class ReviewMCTS(MCTS):
             cursor = cursor.parent
         return depth
 
+    def is_ignored_node(self, node: Type[MCTSNode]) -> bool:
+        return node.is_terminal or self._visible_step_depth(node) > self.config.max_depth
+
+    def selection(self) -> Optional[Type[MCTSNode]]:
+        while True:
+            node = self.root
+            while node.has_children() or node.is_terminal:
+                next_node = self.select_child(node)
+                if next_node is None:
+                    node.is_terminal = True
+                    break
+                node = next_node
+
+            if not node.is_terminal:
+                return node
+            if self.root.is_terminal:
+                return None
+
+    @staticmethod
+    def _premature_review_to_step(step_result: str) -> str:
+        draft = step_result.strip()
+        if "<review>" in draft:
+            draft = draft.split("<review>", 1)[1].strip()
+        if "</review>" in draft:
+            draft = draft.split("</review>", 1)[0].strip()
+        return (
+            "<step>\n"
+            "Premature final review draft retained as a reasoning note, not as the final scored review:\n"
+            f"{draft}\n"
+            "</step>"
+        )
+
     def create_prompt(self, is_value_only: bool = False) -> List[str]:
         if is_value_only and not self.config.need_value_func:
             return []
@@ -97,6 +130,7 @@ class ReviewMCTS(MCTS):
                 "dimension_rubric": self.review_sample["dimension_rubrics"][target_dimension],
                 "candidate_code": self.review_sample["candidate_code"],
                 "tests_for_prompt": self.review_sample["tests_for_prompt"],
+                "force_final_review": self._should_force_final_review(current_node),
             }
             prompt = self.prompt_wrap(
                 self.question,
@@ -107,6 +141,9 @@ class ReviewMCTS(MCTS):
             )
             prompts.append(prompt.rstrip() + "\n")
         return prompts
+
+    def _should_force_final_review(self, node: Type[MCTSNode]) -> bool:
+        return bool(node.state.get("force_final_review")) or self._visible_step_depth(node) >= self.config.max_depth
 
     def create_child(
         self,
@@ -127,10 +164,20 @@ class ReviewMCTS(MCTS):
             new_node.state["text"] = step_result
             new_node.state["final_answer"] = NO_VALID_CHILD
             self.eval_final_answer(new_node)
-        elif parser_result["final_answer"]:
+        elif parser_result["final_answer"] and self._should_force_final_review(node):
             new_node.is_terminal = True
             new_node.state["text"] = step_result
             new_node.state["final_answer"] = parser_result["final_answer"]
+            self.eval_final_answer(new_node)
+        elif parser_result["final_answer"]:
+            coerced_step = self._premature_review_to_step(step_result)
+            new_node.state["text"] = coerced_step
+            new_node.state["action"] = coerced_step
+            new_node.state["action_input"] = ""
+        elif self._should_force_final_review(node):
+            new_node.is_terminal = True
+            new_node.state["text"] = step_result
+            new_node.state["final_answer"] = NO_VALID_CHILD
             self.eval_final_answer(new_node)
         elif parser_result["action"]:
             new_node.state["text"] = step_result.strip()
@@ -169,6 +216,50 @@ class ReviewMCTS(MCTS):
         selection_node = self.selection()
         if selection_node is not None:
             self.current_nodes.append(selection_node)
+
+    def _collect_nodes(self) -> List[Type[MCTSNode]]:
+        candidates = [self.root]
+        nodes = []
+        while candidates:
+            node = candidates.pop(0)
+            nodes.append(node)
+            candidates.extend(node.children)
+        return nodes
+
+    def prepare_final_review_nodes(self) -> bool:
+        all_nodes = self._collect_nodes()
+        terminal_dimensions = {
+            node.state.get("target_dimension")
+            for node in all_nodes
+            if self.__class__.is_valid_final_answer_node(node)
+        }
+        selected_nodes = []
+        for dimension in list(self.review_sample["reference_scores"].keys())[: self.config.max_review_dimensions]:
+            if dimension in terminal_dimensions:
+                continue
+            leaf_candidates = [
+                node
+                for node in all_nodes
+                if node.state.get("target_dimension") == dimension
+                and not node.is_terminal
+                and not node.children
+            ]
+            if not leaf_candidates:
+                continue
+            best_leaf = max(
+                leaf_candidates,
+                key=lambda node: (
+                    self._visible_step_depth(node),
+                    node.q_value(),
+                    node.visit_count(),
+                    node.value if node.value is not None else -100,
+                ),
+            )
+            best_leaf.state["force_final_review"] = True
+            selected_nodes.append(best_leaf)
+
+        self.current_nodes = selected_nodes
+        return bool(self.current_nodes)
 
     def generate_next_step(self, outputs) -> None:
         self.candidate_nodes = []

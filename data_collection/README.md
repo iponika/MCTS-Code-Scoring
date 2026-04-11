@@ -32,14 +32,29 @@ python solver_demo.py \
 For the code-evaluation adaptation, use the dedicated review MCTS entrypoint. It currently consumes `CodeCriticBench` code-generation samples, expands one subtree per checklist dimension, and labels leaf rewards by comparing the model's structured review against dataset checklist scores plus test-derived correctness signals.
 
 ```bash
+CUDA_VISIBLE_DEVICES=0,1 \
 python data_collection/solver_review.py \
   --custom_cfg data_collection/configs/mcts_code_review.yaml \
   --dataset datasets/CodeCriticBench/data/CodeCriticBench.jsonl \
   --start 0 \
-  --limit 32
+  --limit 32 \
+  --output data_collection/review_mcts_runs/codecriticbench_0_32/aggregate.jsonl \
+  --output_dir data_collection/review_mcts_runs/codecriticbench_0_32/samples
 ```
 
-The output is a `.jsonl` file containing the original review seed, objective scoring metadata, and a `react` tree whose nodes already carry `value/q_value/visit_count` fields for downstream preprocessing.
+The aggregate output is a `.jsonl` file containing the original review seed, objective scoring metadata, one `best_reviews_by_dimension` summary, and a pure-node `react` tree whose nodes carry `value/q_value/visit_count` fields for downstream preprocessing. If `--output_dir` is set, the same records are also written as one pretty JSON file per sample for inspection. Under each dimension subtree, MCTS explores native thinking nodes first; after the configured search iterations, a review-specific finalization pass selects one open leaf per dimension that still lacks a scored terminal and forces `n_generate_sample` terminal `<review>` JSON leaves. Terminal review rewards are stored in the leaf's `q_value` and `reward_details`.
+
+For a quick smoke test, reduce the config at runtime by copying `data_collection/configs/mcts_code_review.yaml` and setting:
+
+```yaml
+iterations: 2
+n_generate_sample: 1
+max_review_dimensions: 2
+max_depth: 1
+batch_size: 1
+max_tokens: 256
+enforce_eager: True
+```
 
 After completing the data preprocessing steps outlined in `../model_training/README.md`, you will obtain `all_pass.jsonl` and `all_fail.jsonl` files that document samples lacking incorrect and correct paths respectively. You can then run the following commands for path refinement and perturbation:
 

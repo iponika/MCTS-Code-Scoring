@@ -70,15 +70,18 @@ Candidate code:
 Available tests:
 {tests}
 
+Previous review steps:
+{partial_solution}
+
 Rules:
 1. Keep all reasoning focused on the assigned dimension only.
-2. Produce exactly one next visible review step, or finish with a structured final review.
-3. If you need another step, output a single concise review step only.
-4. If you are ready to finish, output:
+2. {mode_instruction}
+3. Do not output code fixes.
+
+Structured final review format:
 <review>
 {{"dimension": "{dimension}", "score": <1-10 integer>, "verdict": "accept|minor_issue|major_issue", "summary": "...", "evidence": ["...", "..."]}}
 </review>
-5. Do not output code fixes.
 
 @@ Response
-{partial_solution}"""
+"""
