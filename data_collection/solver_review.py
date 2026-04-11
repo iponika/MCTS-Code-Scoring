@@ -65,7 +65,7 @@ if __name__ == "__main__":
                 )
                 for sample in cur_batch
             ]
-            solver.solve(agents, True)
+            results = solver.solve(agents, True)
             for sample, agent in zip(cur_batch, agents):
                 record = {
                     "question": sample["question"],
@@ -80,7 +80,7 @@ if __name__ == "__main__":
                     "overall_score": sample["overall_score"],
                     "correctness_label": sample["correctness_label"],
                     "tests": sample["tests"],
-                    "react": agent.return_states(),
+                    "react": results[sample["question"]],
                 }
                 writer.write(json.dumps(record, ensure_ascii=False) + "\n")
                 writer.flush()

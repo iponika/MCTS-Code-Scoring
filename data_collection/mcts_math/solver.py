@@ -128,6 +128,12 @@ class Solver(BaseModel):
         outputs: List[List[RequestOutput]], 
         valid_solvers: List[BaseTree],
     ) -> List[BaseTree]:
+        if getattr(self.config, "disable_process_pool", False):
+            return [
+                self.__class__.processor(valid_solver, output)
+                for valid_solver, output in zip(valid_solvers, outputs)
+            ]
+
         post_solvers = []
         with ProcessPool(max_workers=min(len(valid_solvers), os.cpu_count())) as pool:
             future = pool.map(self.__class__.processor, valid_solvers, outputs, timeout=TIMEOUT_SECONDS)

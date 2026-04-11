@@ -123,7 +123,10 @@ class MCTS(SBSREACT):
                     dedup_outputs.append(output)
             outputs = dedup_outputs
         for idx, output in enumerate(outputs):
-            prior_prob = np.exp(output.cumulative_logprob / len(output.token_ids))
+            if output.cumulative_logprob is None or not output.token_ids:
+                prior_prob = 1.0
+            else:
+                prior_prob = np.exp(output.cumulative_logprob / len(output.token_ids))
             step_result, parser_result = self.step_unwrap(output.text.strip())
             self.create_child(step_result, parser_result, node, prior_prob, idx)
 

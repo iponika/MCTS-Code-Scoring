@@ -83,6 +83,8 @@ class ReviewMCTS(MCTS):
         return depth
 
     def create_prompt(self, is_value_only: bool = False) -> List[str]:
+        if is_value_only and not self.config.need_value_func:
+            return []
         prompts = []
         current_nodes = self.candidate_nodes if is_value_only else self.current_nodes
         for current_node in current_nodes:
