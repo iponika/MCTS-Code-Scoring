@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import ast
 import json
 import os
+import re
 import tempfile
 from subprocess import PIPE, Popen, TimeoutExpired
 from typing import Any, Dict, List, Tuple
@@ -94,6 +96,227 @@ def _verdict_distance(expected: str, predicted: str) -> float:
     return 0.0
 
 
+def _candidate_function_name(code: str) -> str | None:
+    try:
+        tree = ast.parse(_normalize_candidate_code(code))
+    except SyntaxError:
+        return None
+    for node in tree.body:
+        if isinstance(node, ast.FunctionDef):
+            return node.name
+    return None
+
+
+def _safe_literal_node(node: ast.AST) -> bool:
+    if isinstance(node, ast.Constant):
+        return True
+    if isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.UAdd, ast.USub)):
+        return _safe_literal_node(node.operand)
+    if isinstance(node, (ast.Tuple, ast.List)):
+        return all(_safe_literal_node(element) for element in node.elts)
+    return False
+
+
+def _safe_candidate_call(call_text: str, function_name: str) -> str | None:
+    try:
+        parsed = ast.parse(call_text, mode="eval")
+    except SyntaxError:
+        return None
+    call = parsed.body
+    if not isinstance(call, ast.Call) or not isinstance(call.func, ast.Name):
+        return None
+    if call.func.id != function_name or call.keywords:
+        return None
+    if not all(_safe_literal_node(argument) for argument in call.args):
+        return None
+    return ast.unparse(call)
+
+
+def _run_candidate_call(code: str, call_text: str) -> Dict[str, Any]:
+    candidate_code = _normalize_candidate_code(code)
+    probe = (
+        f"{candidate_code}\n\n"
+        "try:\n"
+        f"    __mcts_review_result = {call_text}\n"
+        "    print('RESULT:' + repr(__mcts_review_result))\n"
+        "except Exception as exc:\n"
+        "    print('EXCEPTION:' + type(exc).__name__ + ':' + str(exc))\n"
+    )
+    stdout, stderr, returncode = _run_python(probe)
+    stdout = stdout or ""
+    if returncode != 0 and not stdout.startswith(("RESULT:", "EXCEPTION:")):
+        return {"status": "error", "stderr": stderr}
+    if stdout.startswith("RESULT:"):
+        return {"status": "result", "value": stdout[len("RESULT:"):].strip()}
+    if stdout.startswith("EXCEPTION:"):
+        payload = stdout[len("EXCEPTION:"):].strip()
+        exc_type, _, message = payload.partition(":")
+        return {"status": "exception", "exception": exc_type, "message": message}
+    return {"status": "unknown", "stdout": stdout, "stderr": stderr}
+
+
+def _literal_equal(actual_repr: str, expected_text: str) -> bool:
+    try:
+        actual = ast.literal_eval(actual_repr)
+    except (SyntaxError, ValueError):
+        actual = actual_repr
+    try:
+        expected = ast.literal_eval(expected_text)
+    except (SyntaxError, ValueError):
+        expected = expected_text.strip().strip("`")
+    return actual == expected
+
+
+def _test_oracle_outputs(sample: Dict[str, Any], function_name: str) -> Dict[str, str]:
+    outputs: Dict[str, str] = {}
+    for assertion in sample.get("tests", []):
+        try:
+            tree = ast.parse(assertion)
+        except SyntaxError:
+            continue
+        if len(tree.body) != 1 or not isinstance(tree.body[0], ast.Assert):
+            continue
+        test = tree.body[0].test
+        if not isinstance(test, ast.Compare) or len(test.ops) != 1 or not isinstance(test.ops[0], ast.Eq):
+            continue
+        if len(test.comparators) != 1:
+            continue
+        call = test.left
+        expected = test.comparators[0]
+        if not isinstance(call, ast.Call):
+            continue
+        call_text = _safe_candidate_call(ast.unparse(call), function_name)
+        if call_text is None or not _safe_literal_node(expected):
+            continue
+        outputs[call_text] = ast.unparse(expected)
+    return outputs
+
+
+def _validate_modulo_claims(text: str) -> List[Dict[str, Any]]:
+    checks = []
+    pattern = re.compile(r"(?P<expr>-?\d+\s*%\s*-?\d+)\s*(?:=|==|returns?)\s*(?P<expected>-?\d+(?:\.\d+)?)")
+    for match in pattern.finditer(text):
+        expr = match.group("expr")
+        expected = match.group("expected")
+        try:
+            actual = eval(expr, {"__builtins__": {}}, {})
+        except Exception as exc:
+            checks.append({"claim": match.group(0), "supported": False, "actual": type(exc).__name__})
+            continue
+        supported = _literal_equal(repr(actual), expected)
+        checks.append({"claim": match.group(0), "supported": supported, "actual": repr(actual)})
+    return checks
+
+
+def _validate_call_instead_of_claims(text: str, sample: Dict[str, Any]) -> List[Dict[str, Any]]:
+    function_name = _candidate_function_name(sample["candidate_code"])
+    if not function_name:
+        return []
+    checks = []
+    oracle_outputs = _test_oracle_outputs(sample, function_name)
+    value_pattern = r"-?\d+(?:\.\d+)?|True|False|None|'[^']*'|\"[^\"]*\""
+    pattern = re.compile(
+        rf"(?P<call>\b{re.escape(function_name)}\([^)]*\))\s+"
+        rf"(?:returns|return|yields|yield|=|==)\s*(?P<actual>{value_pattern})\s+"
+        rf"(?:instead of|rather than)\s*(?P<expected>{value_pattern})"
+    )
+    for match in pattern.finditer(text):
+        call_text = _safe_candidate_call(match.group("call"), function_name)
+        if call_text is None:
+            continue
+        actual = _run_candidate_call(sample["candidate_code"], call_text)
+        actual_supported = actual.get("status") == "result" and _literal_equal(actual.get("value", ""), match.group("actual"))
+        oracle_expected = oracle_outputs.get(call_text)
+        if oracle_expected is None:
+            if actual_supported:
+                continue
+            supported = False
+        else:
+            supported = actual_supported and _literal_equal(oracle_expected, match.group("expected"))
+        checks.append(
+            {
+                "claim": match.group(0),
+                "supported": supported,
+                "actual": actual,
+                "oracle_expected": oracle_expected,
+            }
+        )
+    return checks
+
+
+def _validate_call_exception_claims(text: str, sample: Dict[str, Any]) -> List[Dict[str, Any]]:
+    function_name = _candidate_function_name(sample["candidate_code"])
+    if not function_name:
+        return []
+    checks = []
+    pattern = re.compile(
+        rf"(?P<call>\b{re.escape(function_name)}\([^)]*\))\s+"
+        r"(?:raises|raise|will raise|throws|throw|will throw)\s+"
+        r"(?:an?\s+)?(?P<expected>\w*Error)"
+    )
+    for match in pattern.finditer(text):
+        call_text = _safe_candidate_call(match.group("call"), function_name)
+        if call_text is None:
+            continue
+        expected = match.group("expected")
+        actual = _run_candidate_call(sample["candidate_code"], call_text)
+        supported = actual.get("status") == "exception" and actual.get("exception") == expected
+        checks.append({"claim": match.group(0), "supported": supported, "actual": actual})
+    return checks
+
+
+def _validate_call_return_claims(text: str, sample: Dict[str, Any]) -> List[Dict[str, Any]]:
+    function_name = _candidate_function_name(sample["candidate_code"])
+    if not function_name:
+        return []
+    checks = []
+    value_pattern = r"-?\d+(?:\.\d+)?|True|False|None|'[^']*'|\"[^\"]*\""
+    pattern = re.compile(
+        rf"(?P<call>\b{re.escape(function_name)}\([^)]*\))\s+"
+        rf"(?:returns|return|=|==)\s*(?P<expected>{value_pattern})"
+    )
+    for match in pattern.finditer(text):
+        call_text = _safe_candidate_call(match.group("call"), function_name)
+        if call_text is None:
+            continue
+        expected = match.group("expected")
+        actual = _run_candidate_call(sample["candidate_code"], call_text)
+        supported = actual.get("status") == "result" and _literal_equal(actual.get("value", ""), expected)
+        checks.append({"claim": match.group(0), "supported": supported, "actual": actual})
+    return checks
+
+
+def validate_review_evidence(parsed: Dict[str, Any], sample: Dict[str, Any]) -> Tuple[float, Dict[str, Any]]:
+    evidence = parsed.get("evidence")
+    evidence_items = evidence if isinstance(evidence, list) else []
+    evidence_text = "\n".join(str(item) for item in evidence_items)
+    summary_text = str(parsed.get("summary", ""))
+    claim_text = f"{summary_text}\n{evidence_text}"
+
+    if not evidence_items:
+        return 0.0, {"evidence_count": 0, "fact_checks": [], "false_claim_count": 0, "true_claim_count": 0}
+
+    fact_checks = []
+    fact_checks.extend(_validate_modulo_claims(claim_text))
+    fact_checks.extend(_validate_call_instead_of_claims(claim_text, sample))
+    fact_checks.extend(_validate_call_exception_claims(claim_text, sample))
+    fact_checks.extend(_validate_call_return_claims(claim_text, sample))
+
+    true_claim_count = sum(1 for check in fact_checks if check["supported"])
+    false_claim_count = sum(1 for check in fact_checks if not check["supported"])
+    if false_claim_count:
+        evidence_alignment = true_claim_count / (true_claim_count + false_claim_count)
+    else:
+        evidence_alignment = 1.0
+
+    return evidence_alignment, {
+        "evidence_count": len(evidence_items),
+        "fact_checks": fact_checks,
+        "false_claim_count": false_claim_count,
+        "true_claim_count": true_claim_count,
+    }
+
+
 def parse_review_payload(text: str) -> Dict[str, Any] | None:
     payload = text.strip()
     if payload.startswith("<review>"):
@@ -137,15 +360,13 @@ def compute_review_reward(target_dimension: str, final_answer: str, sample: Dict
         return -1.0, {"error": "missing_or_invalid_score", "parsed": parsed}
 
     predicted_verdict = str(parsed.get("verdict", "")).strip()
-    evidence = parsed.get("evidence")
-    evidence_ok = isinstance(evidence, list) and len(evidence) > 0
+    evidence_alignment, evidence_details = validate_review_evidence(parsed, sample)
 
     target_score = sample["dimension_target_scores"][target_dimension]
     expected_verdict = score_to_verdict(target_score)
     score_alignment = max(0.0, 1.0 - abs(predicted_score - target_score) / 9.0)
     dimension_alignment = 1.0 if predicted_dimension == target_dimension else 0.0
     verdict_alignment = _verdict_distance(expected_verdict, predicted_verdict)
-    evidence_alignment = 1.0 if evidence_ok else 0.0
 
     hard_alignment = None
     if target_dimension == "Correctness Verification":
@@ -167,6 +388,23 @@ def compute_review_reward(target_dimension: str, final_answer: str, sample: Dict
             + 0.05 * evidence_alignment
         )
 
+    reward_caps: List[Tuple[str, float]] = []
+    if evidence_details["false_claim_count"] > 0:
+        false_claim_cap = 0.70 if evidence_details["true_claim_count"] > 0 else 0.55
+        reward_caps.append(("false_executable_evidence_claim", false_claim_cap))
+
+    correctness_label = str(sample.get("correctness_label") or "").lower()
+    if (
+        target_dimension == "Correctness Verification"
+        and correctness_label == "correct"
+        and sample["objective"]["full_test_pass_rate"] >= 0.999
+        and predicted_verdict == "major_issue"
+    ):
+        reward_caps.append(("major_correctness_issue_conflicts_with_dataset_and_tests", 0.55))
+
+    if reward_caps:
+        reward_01 = min(reward_01, *(cap for _, cap in reward_caps))
+
     reward = round(reward_01 * 2.0 - 1.0, 4)
     details = {
         "parsed": parsed,
@@ -177,8 +415,11 @@ def compute_review_reward(target_dimension: str, final_answer: str, sample: Dict
         "dimension_alignment": round(dimension_alignment, 4),
         "verdict_alignment": round(verdict_alignment, 4),
         "evidence_alignment": round(evidence_alignment, 4),
+        "evidence_details": evidence_details,
         "reward_01": round(reward_01, 4),
     }
+    if reward_caps:
+        details["reward_caps"] = [{"reason": reason, "cap": cap} for reason, cap in reward_caps]
     if hard_alignment is not None:
         details["hard_alignment"] = round(hard_alignment, 4)
         details["full_test_pass_rate"] = sample["objective"]["full_test_pass_rate"]
