@@ -28,6 +28,12 @@ def parse_args():
     parser.add_argument("--limit", type=int, default=10)
     parser.add_argument("--output", type=str, default=None)
     parser.add_argument(
+        "--resume",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Resume an interrupted run by appending to --output and skipping dataset_index values already written.",
+    )
+    parser.add_argument(
         "--output_dir",
         type=str,
         default=None,
@@ -108,9 +114,78 @@ def write_per_sample_record(output_dir: Path, record: dict) -> None:
         subset=safe_filename_part(record["subset"]),
     )
     output_path = output_dir / filename
-    with output_path.open("w", encoding="utf-8") as writer:
+    tmp_path = output_path.with_suffix(output_path.suffix + ".tmp")
+    with tmp_path.open("w", encoding="utf-8") as writer:
         json.dump(record, writer, ensure_ascii=False, indent=2)
         writer.write("\n")
+    tmp_path.replace(output_path)
+
+
+def completed_dataset_indices_from_jsonl(path: Path) -> set[str]:
+    completed = set()
+    if not path.exists():
+        return completed
+    with path.open("r", encoding="utf-8") as reader:
+        for line_no, line in enumerate(reader, start=1):
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                record = json.loads(line)
+            except json.JSONDecodeError:
+                print(f"Skipping incomplete/corrupt resume line in {path}:{line_no}")
+                continue
+            if isinstance(record, dict) and record.get("dataset_index") is not None:
+                completed.add(str(record["dataset_index"]))
+    return completed
+
+
+def sample_records_from_dir(path: Path | None, allowed_indices: set[str] | None = None) -> dict[str, dict]:
+    records = {}
+    if path is None or not path.exists():
+        return records
+    for item in sorted(path.glob("*.json")):
+        try:
+            record = json.loads(item.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            print(f"Skipping incomplete/corrupt resume sample file {item}")
+            continue
+        if isinstance(record, dict) and record.get("dataset_index") is not None:
+            index = str(record["dataset_index"])
+            if allowed_indices is None or index in allowed_indices:
+                records[index] = record
+    return records
+
+
+def sort_dataset_indices(indices: Iterable[str]) -> list[str]:
+    def key(index: str) -> tuple[int, int | str]:
+        try:
+            return (0, int(index))
+        except ValueError:
+            return (1, index)
+
+    return sorted(indices, key=key)
+
+
+def ensure_trailing_newline(path: Path) -> None:
+    if not path.exists() or path.stat().st_size == 0:
+        return
+    with path.open("rb") as reader:
+        reader.seek(-1, os.SEEK_END)
+        last_byte = reader.read(1)
+    if last_byte != b"\n":
+        with path.open("ab") as writer:
+            writer.write(b"\n")
+
+
+def append_records_to_jsonl(path: Path, records_by_index: dict[str, dict]) -> None:
+    if not records_by_index:
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    ensure_trailing_newline(path)
+    with path.open("a", encoding="utf-8") as writer:
+        for index in sort_dataset_indices(records_by_index.keys()):
+            writer.write(json.dumps(records_by_index[index], ensure_ascii=False) + "\n")
 
 
 if __name__ == "__main__":
@@ -122,12 +197,39 @@ if __name__ == "__main__":
     config = OmegaConf.create(OmegaConf.to_yaml(config, resolve=True))
 
     data = load_codecriticbench_dataset(args.dataset, start=args.start, limit=args.limit)
-    solver = Solver(config=config)
-    output_path = build_output_path(args, config)
+    output_path = Path(build_output_path(args, config))
     output_dir = Path(args.output_dir) if args.output_dir else None
-    total_batches = max(1, (len(data) + config.batch_size - 1) // config.batch_size)
+    output_parent = output_path.parent
+    if output_parent != Path("."):
+        output_parent.mkdir(parents=True, exist_ok=True)
 
-    with open(output_path, "w", encoding="utf-8") as writer:
+    if args.resume:
+        requested_indices = {str(sample["dataset_index"]) for sample in data}
+        completed_indices = completed_dataset_indices_from_jsonl(output_path)
+        missing_indices = requested_indices - completed_indices
+        repair_records = sample_records_from_dir(output_dir, allowed_indices=missing_indices)
+        if repair_records:
+            append_records_to_jsonl(output_path, repair_records)
+            completed_indices |= set(repair_records.keys())
+            print(f"Resume repaired aggregate output with {len(repair_records)} per-sample records.")
+        completed_requested_indices = completed_indices & requested_indices
+        if completed_requested_indices:
+            data = [sample for sample in data if str(sample["dataset_index"]) not in completed_indices]
+            print(
+                "Resume enabled: found "
+                f"{len(completed_requested_indices)} completed samples in the requested range; {len(data)} samples remain."
+            )
+        ensure_trailing_newline(output_path)
+
+    if not data:
+        print("No pending samples. Nothing to run.")
+        raise SystemExit(0)
+
+    solver = Solver(config=config)
+    total_batches = max(1, (len(data) + config.batch_size - 1) // config.batch_size)
+    output_mode = "a" if args.resume else "w"
+
+    with output_path.open(output_mode, encoding="utf-8") as writer:
         for cur_batch in tqdm(batch(data, config.batch_size), total=total_batches, desc="Review Batch"):
             agents = [
                 ReviewMCTS(

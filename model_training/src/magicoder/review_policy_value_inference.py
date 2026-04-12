@@ -42,6 +42,13 @@ def model_kwargs(device: str, dtype_name: str) -> dict[str, Any]:
     return kwargs
 
 
+def resolve_model_path(model_path: str) -> str:
+    path = Path(model_path).expanduser()
+    if path.exists():
+        return str(path.resolve())
+    return model_path
+
+
 def first_model_device(model: torch.nn.Module) -> torch.device:
     return next(model.parameters()).device
 
@@ -55,6 +62,7 @@ def move_to_device(model: torch.nn.Module, device: str) -> torch.nn.Module:
 
 
 def load_policy(model_path: str, device: str, dtype_name: str):
+    model_path = resolve_model_path(model_path)
     model = AutoModelForCausalLM.from_pretrained(model_path, **model_kwargs(device, dtype_name))
     model = move_to_device(model, device)
     model.eval()
@@ -62,6 +70,7 @@ def load_policy(model_path: str, device: str, dtype_name: str):
 
 
 def load_value_model(model_path: str, device: str, dtype_name: str):
+    model_path = resolve_model_path(model_path)
     model = AutoModelForCausalLMWithValueHead.from_pretrained(model_path, **model_kwargs(device, dtype_name))
     vhead_path = Path(model_path) / V_HEAD_WEIGHTS_NAME
     if vhead_path.exists():
@@ -82,10 +91,15 @@ def encode_text(tokenizer, text: str, device: torch.device) -> dict[str, torch.T
     }
 
 
-def truncate_on_stop(text: str, stop: str) -> str:
-    if not stop or stop not in text:
+def truncate_on_stop(text: str, stop: str | list[str]) -> str:
+    if not stop:
         return text
-    return text.split(stop, 1)[0] + stop
+    stop_sequences = [stop] if isinstance(stop, str) else stop
+    matches = [(text.find(sequence), sequence) for sequence in stop_sequences if sequence and sequence in text]
+    if not matches:
+        return text
+    index, sequence = min(matches, key=lambda match: match[0])
+    return text[: index + len(sequence)]
 
 
 @torch.no_grad()
@@ -96,17 +110,21 @@ def generate_response(
     max_new_tokens: int,
     temperature: float,
     top_p: float,
-    stop: str,
+    stop: str | list[str],
 ) -> str:
     encoded = encode_text(tokenizer, prompt, first_model_device(policy_model))
+    generation_kwargs = {
+        "max_new_tokens": max_new_tokens,
+        "do_sample": temperature > 0,
+        "pad_token_id": tokenizer.pad_token_id or tokenizer.eos_token_id,
+        "eos_token_id": tokenizer.eos_token_id,
+    }
+    if temperature > 0:
+        generation_kwargs["temperature"] = temperature
+        generation_kwargs["top_p"] = top_p
     generated = policy_model.generate(
         **encoded,
-        max_new_tokens=max_new_tokens,
-        do_sample=temperature > 0,
-        temperature=temperature if temperature > 0 else None,
-        top_p=top_p,
-        pad_token_id=tokenizer.pad_token_id or tokenizer.eos_token_id,
-        eos_token_id=tokenizer.eos_token_id,
+        **generation_kwargs,
     )
     continuation_ids = generated[0, encoded["input_ids"].shape[1] :]
     continuation = tokenizer.decode(continuation_ids, skip_special_tokens=True)
@@ -155,7 +173,7 @@ def main() -> None:
     args = parser.parse_args()
 
     item = load_jsonl_item(args.datafile_path, args.item_index)
-    tokenizer = AutoTokenizer.from_pretrained(args.policy_model_path, use_fast=True)
+    tokenizer = AutoTokenizer.from_pretrained(resolve_model_path(args.policy_model_path), use_fast=True)
     if tokenizer.pad_token_id is None:
         tokenizer.pad_token_id = tokenizer.eos_token_id
 

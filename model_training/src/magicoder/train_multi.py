@@ -37,7 +37,7 @@ import torch.nn.functional as F
 
 if importlib.util.find_spec("safetensors") is not None:
     from safetensors import safe_open
-    from safetensors.torch import save_file
+    from safetensors.torch import load_file, save_file
 
 V_HEAD_WEIGHTS_NAME = "value_head.pth"
 
@@ -68,6 +68,10 @@ class Args:
     value_weight: float = field(default=0.2)
     task: str = field(default="code", metadata={"help": "code or review"})
     skip_save: bool = field(default=False, metadata={"help": "Skip final model saving for smoke tests."})
+    save_merged_model: bool = field(
+        default=False,
+        metadata={"help": "For LoRA runs, also save a merged full-backbone checkpoint. Disabled by default to keep smoke checkpoints small."},
+    )
     num_proc: int = field(default=20, metadata={"help": "Number of dataset preprocessing workers."})
 
 
@@ -344,7 +348,7 @@ def train():
     trainer.save_model(training_args.output_dir)
     state.tokenization_context.tokenizer.save_pretrained(training_args.output_dir)
 
-    if model_args.peft=='lora':
+    if model_args.peft=='lora' and args.save_merged_model:
         peft_model = state.model.pretrained_model
         merged_model  = peft_model.merge_and_unload()
         merged_model.save_pretrained(training_args.output_dir, safe_serialization=True, max_shard_size="1000GB")
@@ -360,6 +364,7 @@ def fix_valuehead_checkpoint(
     if not isinstance(model.pretrained_model, (PreTrainedModel, PeftModel)):
         return
 
+    state_dict = None
     index_file = os.path.join(output_dir, "pytorch_model.bin.index.json")
     if os.path.exists(os.path.join(output_dir, WEIGHTS_NAME)):
         path_to_checkpoint = os.path.join(output_dir, WEIGHTS_NAME)
@@ -375,14 +380,23 @@ def fix_valuehead_checkpoint(
             path = os.path.join(output_dir, weight_file)
             state_dict.update(torch.load(path, map_location="cpu"))
             os.remove(path)
-
+    elif importlib.util.find_spec("safetensors") is not None and os.path.exists(os.path.join(output_dir, SAFE_WEIGHTS_NAME)):
+        path_to_checkpoint = os.path.join(output_dir, SAFE_WEIGHTS_NAME)
+        state_dict = load_file(path_to_checkpoint, device="cpu")
+        os.remove(path_to_checkpoint)
 
     decoder_state_dict, v_head_state_dict = {}, {}
-    for name, param in state_dict.items():
-        if name.startswith("v_head."):
-            v_head_state_dict[name] = param
-        else:
-            decoder_state_dict[name.replace("pretrained_model.", "", 1)] = param
+    if state_dict is None:
+        v_head_state_dict = {
+            f"v_head.{name}": param.detach().cpu()
+            for name, param in model.v_head.state_dict().items()
+        }
+    else:
+        for name, param in state_dict.items():
+            if name.startswith("v_head."):
+                v_head_state_dict[name] = param
+            else:
+                decoder_state_dict[name.replace("pretrained_model.", "", 1)] = param
     model.pretrained_model.save_pretrained(
         output_dir, state_dict=decoder_state_dict or None, safe_serialization=True, max_shard_size="1000GB"
     )
