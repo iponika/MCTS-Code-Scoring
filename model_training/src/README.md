@@ -101,6 +101,34 @@ CUDA_VISIBLE_DEVICES=0 HF_DATASETS_CACHE=/tmp/hf-datasets-cache uv run accelerat
 For a one-step smoke test, add `--max_steps 1 --save_strategy no --skip_save True --report_to none`.
 If the installed Transformers version does not recognize `model_type=qwen3_5`, upgrade Transformers to a build that supports Qwen3.5 before running the real target model.
 
+After training a policy/value checkpoint, inspect value scoring on an existing path:
+
+```bash
+cd model_training/src
+HF_HUB_OFFLINE=1 uv run python -m magicoder.review_policy_value_inference \
+  --policy_model_path ./output/qwen3_5_9b-review-s1 \
+  --value_model_path ./output/qwen3_5_9b-review-s1 \
+  --datafile_path ../review_mcts_train_data/codecriticbench_2_1_train_multi.jsonl \
+  --item_index 7 \
+  --use_gold_response
+```
+
+Run a minimal value-guided review loop, where the value model scores policy candidates at each step and the highest-value continuation is selected:
+
+```bash
+cd model_training/src
+HF_HUB_OFFLINE=1 uv run python -m magicoder.review_value_guided_evaluator \
+  --policy_model_path ./output/qwen3_5_9b-review-s1 \
+  --value_model_path ./output/qwen3_5_9b-review-s1 \
+  --datafile_path ../review_mcts_train_data/codecriticbench_2_1_train_multi.jsonl \
+  --item_index 7 \
+  --max_steps 3 \
+  --num_candidates 4 \
+  --max_new_tokens 256 \
+  --temperature 0.7 \
+  --top_p 0.95
+```
+
 ### First Stage: Dual Model Training
 
 ```bash
