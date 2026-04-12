@@ -99,6 +99,7 @@ CUDA_VISIBLE_DEVICES=0 HF_DATASETS_CACHE=/tmp/hf-datasets-cache uv run accelerat
 ```
 
 For a one-step smoke test, add `--max_steps 1 --save_strategy no --skip_save True --report_to none`.
+For a small real checkpoint, remove `--skip_save`, keep `--save_strategy no`, and use a small `--max_steps` such as `20`. LoRA runs now save the adapter plus `value_head.pth` by default; add `--save_merged_model True` only when you explicitly need a merged full-backbone checkpoint.
 If the installed Transformers version does not recognize `model_type=qwen3_5`, upgrade Transformers to a build that supports Qwen3.5 before running the real target model.
 
 After training a policy/value checkpoint, inspect value scoring on an existing path:
@@ -125,9 +126,32 @@ HF_HUB_OFFLINE=1 uv run python -m magicoder.review_value_guided_evaluator \
   --max_steps 3 \
   --num_candidates 4 \
   --max_new_tokens 256 \
+  --final_max_new_tokens 512 \
   --temperature 0.7 \
   --top_p 0.95
 ```
+
+For the structured code-review evaluation flow, use `review_evaluator`. It loops over review dimensions, samples policy candidates, selects continuations with the value model, triggers rethink when the selected value is below `--rethink_threshold`, and writes a full trace:
+
+```bash
+cd model_training/src
+HF_HUB_OFFLINE=1 uv run python -m magicoder.review_evaluator \
+  --policy_model_path ./output/qwen3_5_9b-review-s1 \
+  --value_model_path ./output/qwen3_5_9b-review-s1 \
+  --input_record ../../data_collection/review_mcts_runs/codecriticbench_2_1/samples/2_mbpp_mbpp.json \
+  --output_file ./output/review-eval/2_mbpp.json \
+  --max_dimensions 10 \
+  --max_steps 3 \
+  --num_candidates 4 \
+  --max_new_tokens 256 \
+  --temperature 0.7 \
+  --top_p 0.95 \
+  --rethink_threshold -0.2 \
+  --max_rethinks 1 \
+  --max_final_retries 1
+```
+
+If `--policy_model_path` and `--value_model_path` are the same path, `review_evaluator` loads one value-head model and uses its `pretrained_model` for policy generation to avoid loading two 9B backbones. Local relative checkpoint paths are resolved before model loading so TRL/PEFT does not misinterpret them as Hub repo ids. Each dimension output includes `reference_score`, `parsed_score`, and `score_delta` when dataset scores are available; the top-level `evaluation_summary` reports valid review rate and mean absolute score delta. A run that ends without a valid `<review>...</review>` is marked in `final_review_parse`; increase `--final_max_new_tokens`, `--max_new_tokens`, or `--max_final_retries` if this happens with a trained checkpoint.
 
 ### First Stage: Dual Model Training
 

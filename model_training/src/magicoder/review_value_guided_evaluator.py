@@ -13,6 +13,7 @@ from magicoder.review_policy_value_inference import (
     load_jsonl_item,
     load_policy,
     load_value_model,
+    resolve_model_path,
     score_response,
 )
 
@@ -43,7 +44,7 @@ def main() -> None:
     args = parser.parse_args()
 
     item = load_jsonl_item(args.datafile_path, args.item_index)
-    tokenizer = AutoTokenizer.from_pretrained(args.policy_model_path, use_fast=True)
+    tokenizer = AutoTokenizer.from_pretrained(resolve_model_path(args.policy_model_path), use_fast=True)
     if tokenizer.pad_token_id is None:
         tokenizer.pad_token_id = tokenizer.eos_token_id
 
