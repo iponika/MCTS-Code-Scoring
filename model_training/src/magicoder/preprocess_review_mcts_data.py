@@ -102,6 +102,17 @@ def terminal_error(node: dict[str, Any]) -> str | None:
     return details.get("error")
 
 
+def terminal_reward_details(node: dict[str, Any]) -> dict[str, Any]:
+    details_text = node.get("reward_details")
+    if not details_text:
+        return {}
+    try:
+        details = json.loads(details_text)
+    except json.JSONDecodeError:
+        return {"error": "invalid_reward_details"}
+    return details if isinstance(details, dict) else {}
+
+
 def path_to_training_item(
     record: dict[str, Any],
     tag: str,
@@ -130,6 +141,9 @@ def path_to_training_item(
     if not responses:
         return None
 
+    details = terminal_reward_details(terminal)
+    parsed = details.get("parsed") if isinstance(details.get("parsed"), dict) else {}
+
     return {
         "instruction": build_instruction(record, dimension),
         "response": responses,
@@ -141,7 +155,9 @@ def path_to_training_item(
         "target_dimension": dimension,
         "terminal_tag": tag,
         "terminal_q_value": float(terminal.get("q_value", IGNORED_INDEX)),
-        "terminal_error": terminal_error(terminal),
+        "terminal_error": details.get("error"),
+        "parsed_score": parsed.get("score"),
+        "target_score": details.get("target_score"),
     }
 
 
@@ -322,6 +338,129 @@ def apply_q_calibration(items: list[dict[str, Any]], calibrator: dict[str, Any],
     return dict(stats)
 
 
+def median_absolute_deviation(values: list[float], median_value: float) -> float:
+    return statistics.median(abs(value - median_value) for value in values)
+
+
+def build_score_consensus(records: Iterable[dict[str, Any]], min_valid: int) -> dict[tuple[str, str], dict[str, float]]:
+    grouped: dict[tuple[str, str], dict[str, Any]] = {}
+    for record in records:
+        dataset_index = str(record.get("dataset_index"))
+        for node in record.get("react", {}).values():
+            if not isinstance(node, dict) or not node.get("final_answer"):
+                continue
+            dimension = node.get("target_dimension") or ""
+            if not dimension:
+                continue
+            key = (dataset_index, dimension)
+            group = grouped.setdefault(key, {"scores": [], "total": 0, "target_score": None})
+            group["total"] += 1
+            details = terminal_reward_details(node)
+            if group["target_score"] is None and isinstance(details.get("target_score"), (int, float)):
+                group["target_score"] = float(details["target_score"])
+            if details.get("error"):
+                continue
+            parsed = details.get("parsed") if isinstance(details.get("parsed"), dict) else {}
+            parsed_score = numeric_q_value(parsed.get("score"), default=IGNORED_INDEX)
+            if parsed_score == IGNORED_INDEX:
+                continue
+            group["scores"].append(parsed_score)
+
+    consensus = {}
+    for key, group in grouped.items():
+        scores = group["scores"]
+        target_score = group.get("target_score")
+        if len(scores) < min_valid or not isinstance(target_score, (int, float)):
+            continue
+        median_score = statistics.median(scores)
+        mad = median_absolute_deviation(scores, median_score)
+        valid_rate = len(scores) / max(1, int(group["total"]))
+        dispersion_confidence = max(0.0, 1.0 - mad / 4.5)
+        target_alignment = max(0.0, 1.0 - abs(median_score - target_score) / 9.0)
+        consensus[key] = {
+            "median_score": median_score,
+            "mad": mad,
+            "valid_count": float(len(scores)),
+            "total_count": float(group["total"]),
+            "valid_rate": valid_rate,
+            "target_score": float(target_score),
+            "target_alignment": target_alignment,
+            "dispersion_confidence": dispersion_confidence,
+            "confidence": valid_rate * dispersion_confidence,
+            "reward": target_alignment * 2.0 - 1.0,
+        }
+    return consensus
+
+
+def apply_score_consensus(
+    items: list[dict[str, Any]],
+    consensus: dict[tuple[str, str], dict[str, float]],
+    strength: float,
+) -> dict[str, int]:
+    stats = defaultdict(int)
+    strength = max(0.0, min(1.0, strength))
+    if not consensus:
+        stats["score_consensus_enabled"] = 0
+        stats["score_consensus_skipped_empty"] = 1
+        return dict(stats)
+
+    for item in items:
+        key = (str(item.get("dataset_index")), item.get("target_dimension") or "")
+        summary = consensus.get(key)
+        if not summary:
+            stats["score_consensus_skipped_missing"] += 1
+            continue
+
+        item["score_consensus"] = {
+            "median_score": round(summary["median_score"], 4),
+            "mad": round(summary["mad"], 4),
+            "valid_count": int(summary["valid_count"]),
+            "total_count": int(summary["total_count"]),
+            "valid_rate": round(summary["valid_rate"], 4),
+            "target_score": round(summary["target_score"], 4),
+            "target_alignment": round(summary["target_alignment"], 4),
+            "dispersion_confidence": round(summary["dispersion_confidence"], 4),
+            "confidence": round(summary["confidence"], 4),
+            "reward": round(summary["reward"], 4),
+            "strength": strength,
+        }
+
+        if item.get("terminal_error"):
+            stats["score_consensus_skipped_terminal_error"] += 1
+            continue
+
+        if "raw_q_value" not in item:
+            item["raw_q_value"] = [numeric_q_value(value) for value in item.get("q_value", [])]
+            item["raw_terminal_q_value"] = numeric_q_value(item.get("terminal_q_value"))
+
+        score = numeric_q_value(item.get("parsed_score"), default=IGNORED_INDEX)
+        if score == IGNORED_INDEX:
+            item_alignment = 1.0
+        else:
+            item_alignment = max(0.0, 1.0 - abs(score - summary["median_score"]) / 9.0)
+        effective_strength = strength * summary["confidence"] * item_alignment
+        consensus_reward = summary["reward"]
+        q_values = [numeric_q_value(value) for value in item.get("q_value", [])]
+        adjusted = [
+            value if value == IGNORED_INDEX else round(clamp_reward((1.0 - effective_strength) * value + effective_strength * consensus_reward), 4)
+            for value in q_values
+        ]
+        if adjusted != q_values:
+            item["pre_consensus_q_value"] = q_values
+            item["q_value"] = adjusted
+            if adjusted:
+                item["terminal_q_value"] = adjusted[-1]
+            item["score_consensus"]["item_alignment"] = round(item_alignment, 4)
+            item["score_consensus"]["effective_strength"] = round(effective_strength, 4)
+            stats["score_consensus_adjusted_items"] += 1
+        else:
+            stats["score_consensus_unchanged_items"] += 1
+
+    stats["score_consensus_enabled"] = 1
+    stats["score_consensus_groups"] = len(consensus)
+    return dict(stats)
+
+
 def refresh_policy_flags(items: list[dict[str, Any]], policy_min_q: float) -> dict[str, int]:
     stats = defaultdict(int)
     for item in items:
@@ -406,6 +545,23 @@ def main() -> None:
         default=8,
         help="Minimum valid terminal leaves required per dimension before applying dimension calibration.",
     )
+    parser.add_argument(
+        "--apply_score_consensus",
+        action="store_true",
+        help="Adjust non-error q_values using per-sample/per-dimension median review score consensus.",
+    )
+    parser.add_argument(
+        "--score_consensus_strength",
+        type=float,
+        default=0.25,
+        help="Maximum blend strength for score-consensus label adjustment.",
+    )
+    parser.add_argument(
+        "--score_consensus_min_valid",
+        type=int,
+        default=3,
+        help="Minimum valid review scores needed for a sample-dimension consensus group.",
+    )
     parser.add_argument("--shuffle_seed", type=int, default=42, help="Seed for replay sampling and output shuffling.")
     parser.add_argument(
         "--shuffle",
@@ -453,6 +609,11 @@ def main() -> None:
         stats.update(apply_q_calibration(items, calibrator, strength=args.calibration_strength))
     else:
         stats["calibration_enabled"] = 0
+    if args.apply_score_consensus:
+        consensus = build_score_consensus([*new_records, *replay_records], min_valid=args.score_consensus_min_valid)
+        stats.update(apply_score_consensus(items, consensus, strength=args.score_consensus_strength))
+    else:
+        stats["score_consensus_enabled"] = 0
     stats.update({f"final_{key}": value for key, value in refresh_policy_flags(items, args.policy_min_q).items()})
 
     if args.shuffle:
