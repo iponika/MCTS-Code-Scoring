@@ -65,6 +65,29 @@ python model_training/src/magicoder/preprocess_review_mcts_data.py \
 
 Each output item contains `instruction`, segmented `response`, continuous `q_value`, and `train_lm`.
 Items with `train_lm=true` train both the policy tokens and value head; items with `train_lm=false` mask LM labels and train only the value head.
+For more stable review-value labels across runs, convert new data together with older replay samples and fixed anchor samples:
+
+```bash
+python model_training/src/magicoder/preprocess_review_mcts_data.py \
+  --input data_collection/review_mcts_runs/codecriticbench_5_16_full/samples \
+  --replay_input \
+    data_collection/review_mcts_runs/codecriticbench_1_1/samples \
+    data_collection/review_mcts_runs/codecriticbench_2_1/samples \
+    data_collection/review_mcts_runs/codecriticbench_3_2/samples \
+  --anchor_input \
+    data_collection/review_mcts_runs/codecriticbench_1_1/samples \
+    data_collection/review_mcts_runs/codecriticbench_2_1/samples \
+    data_collection/review_mcts_runs/codecriticbench_3_2/samples \
+  --output_file model_training/review_mcts_train_data/codecriticbench_1_20_mixed_calibrated_train_multi.jsonl \
+  --policy_min_q 0.5 \
+  --replay_ratio 0.5 \
+  --calibrate_q_values \
+  --calibration_strength 0.35 \
+  --min_calibration_count 8 \
+  --shuffle_seed 42
+```
+
+This keeps raw labels in `raw_q_value`/`raw_terminal_q_value`, applies per-dimension anchor standardization only to non-error paths, refreshes `train_lm` after calibration, and shuffles the mixed new/replay output. Prefer a fixed `--anchor_input` set for comparable label scales across independent generation batches.
 
 Run review policy/value training from `model_training/src` to avoid the repository-level `datasets/` directory shadowing Hugging Face `datasets`:
 
