@@ -84,10 +84,13 @@ python model_training/src/magicoder/preprocess_review_mcts_data.py \
   --calibrate_q_values \
   --calibration_strength 0.35 \
   --min_calibration_count 8 \
+  --apply_score_consensus \
+  --score_consensus_strength 0.25 \
+  --score_consensus_min_valid 3 \
   --shuffle_seed 42
 ```
 
-This keeps raw labels in `raw_q_value`/`raw_terminal_q_value`, applies per-dimension anchor standardization only to non-error paths, refreshes `train_lm` after calibration, and shuffles the mixed new/replay output. Prefer a fixed `--anchor_input` set for comparable label scales across independent generation batches.
+This keeps raw labels in `raw_q_value`/`raw_terminal_q_value`, applies per-dimension anchor standardization only to non-error paths, optionally adjusts labels with per-sample/per-dimension median score consensus, refreshes `train_lm` after calibration, and shuffles the mixed new/replay output. Prefer a fixed `--anchor_input` set for comparable label scales across independent generation batches. `--apply_score_consensus` uses the median parsed review score, MAD, and valid-review rate from repeated terminal reviews under the same `(dataset_index, target_dimension)`; it does not replace the dataset target score, but softly moves q-values toward the median-vs-target alignment reward when the repeated reviews are stable.
 
 Run review policy/value training from `model_training/src` to avoid the repository-level `datasets/` directory shadowing Hugging Face `datasets`:
 
