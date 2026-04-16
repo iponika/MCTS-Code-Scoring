@@ -47,6 +47,27 @@ model_name = ''
 value_weight = ''
 
 
+def optional_float(value: Any, default: float) -> float:
+    if value is None:
+        return default
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def normalize_q_sequence(value: Any, fallback: list[Any]) -> list[float]:
+    if value is None:
+        value = fallback
+    if not isinstance(value, list):
+        value = [value] * len(fallback)
+    normalized: list[float] = []
+    for idx, fallback_value in enumerate(fallback):
+        item = value[idx] if idx < len(value) else fallback_value
+        normalized.append(optional_float(item, optional_float(fallback_value, float(IGNORED_INDEX))))
+    return normalized
+
+
 
 @dataclass(frozen=True)
 class ModelArguments:
@@ -84,14 +105,30 @@ def map_dataset(
     args: "Args",
     context: TokenizationContext,
 ) -> dict:
-    model_inputs = {"input_ids": [], "attention_mask": [], "Q": [], "labels": [], "exceeding_length":[]}
+    model_inputs = {
+        "input_ids": [],
+        "attention_mask": [],
+        "Q": [],
+        "Q_MIN": [],
+        "Q_MAX": [],
+        "labels": [],
+        "value_loss_weight": [],
+        "lm_loss_weight": [],
+        "exceeding_length": [],
+    }
 
     for i in range(len(examples["instruction"])):
         instruction = examples["instruction"][i]
         responses = examples["response"][i]
         q_value = examples["q_value"][i]
+        q_min = normalize_q_sequence(examples.get("q_min", [None] * len(examples["instruction"]))[i] if examples.get("q_min") is not None else None, q_value)
+        q_max = normalize_q_sequence(examples.get("q_max", [None] * len(examples["instruction"]))[i] if examples.get("q_max") is not None else None, q_value)
         train_lm_flags = examples.get("train_lm")
         train_lm = train_lm_flags[i] if train_lm_flags is not None else None
+        value_loss_weights = examples.get("value_loss_weight")
+        lm_loss_weights = examples.get("lm_loss_weight")
+        value_loss_weight = optional_float(value_loss_weights[i], 1.0) if value_loss_weights is not None else 1.0
+        lm_loss_weight = optional_float(lm_loss_weights[i], 1.0) if lm_loss_weights is not None else 1.0
 
  
         if args.task == "review":
@@ -106,11 +143,15 @@ def map_dataset(
 
         
         Q = [IGNORED_INDEX] * len(input_ids)
+        Q_MIN = [IGNORED_INDEX] * len(input_ids)
+        Q_MAX = [IGNORED_INDEX] * len(input_ids)
         labels = [IGNORED_INDEX] * len(input_ids)
         
         response_state = q_value[-1]
-        for response,q in zip(responses, q_value):
+        for response, q, q_lower, q_upper in zip(responses, q_value, q_min, q_max):
             sub_Q = float(q)
+            sub_Q_MIN = float(q_lower)
+            sub_Q_MAX = float(q_upper)
             completion_config = EncodingConfig(add_bos=False, add_eos=False)
             completion_id_batches = context.encode(completion_config, [response.strip()+'\n'])
             sub_response_ids = completion_id_batches[0]
@@ -118,8 +159,12 @@ def map_dataset(
             input_ids += sub_response_ids
             if sub_Q == IGNORED_INDEX or (args.task != "review" and all(x == 1 for x in q_value) and len(q_value) > 1):
                 Q += [IGNORED_INDEX] * (len(sub_response_ids))
+                Q_MIN += [IGNORED_INDEX] * (len(sub_response_ids))
+                Q_MAX += [IGNORED_INDEX] * (len(sub_response_ids))
             else:
                 Q += [IGNORED_INDEX] * (len(sub_response_ids) - 1) + [sub_Q]
+                Q_MIN += [IGNORED_INDEX] * (len(sub_response_ids) - 1) + [sub_Q_MIN]
+                Q_MAX += [IGNORED_INDEX] * (len(sub_response_ids) - 1) + [sub_Q_MAX]
             labels += sub_response_ids
 
             if len(input_ids) > args.max_training_seq_length:
@@ -127,12 +172,16 @@ def map_dataset(
 
         input_ids += [context.tokenizer.eos_token_id]
         Q += [IGNORED_INDEX]
+        Q_MIN += [IGNORED_INDEX]
+        Q_MAX += [IGNORED_INDEX]
         labels += [context.tokenizer.eos_token_id]
 
         if len(input_ids) > args.max_training_seq_length:
             #continue
             input_ids = input_ids[:args.max_training_seq_length]
             Q = Q[:args.max_training_seq_length]
+            Q_MIN = Q_MIN[:args.max_training_seq_length]
+            Q_MAX = Q_MAX[:args.max_training_seq_length]
             labels = labels[:args.max_training_seq_length]
             model_inputs["exceeding_length"].append(True)
         else:
@@ -141,6 +190,8 @@ def map_dataset(
         model_inputs["input_ids"].append(input_ids)
         model_inputs["attention_mask"].append([1] * len(input_ids))
         model_inputs["Q"].append(np.array(Q, dtype=np.float32))
+        model_inputs["Q_MIN"].append(np.array(Q_MIN, dtype=np.float32))
+        model_inputs["Q_MAX"].append(np.array(Q_MAX, dtype=np.float32))
 
 
         if train_lm is None:
@@ -149,6 +200,8 @@ def map_dataset(
             model_inputs["labels"].append(labels)
         else:
             model_inputs["labels"].append([IGNORED_INDEX] * len(labels))
+        model_inputs["value_loss_weight"].append(value_loss_weight)
+        model_inputs["lm_loss_weight"].append(lm_loss_weight)
 
     return model_inputs
 
@@ -161,6 +214,10 @@ def get_data_collator(args: "Args", pad_token_id: int):
         input_ids_unpadded = [example["input_ids"] for example in examples]
         labels_unpadded = [example["labels"] for example in examples]
         q_unpadded = [example["Q"] for example in examples]
+        q_min_unpadded = [example.get("Q_MIN", example["Q"]) for example in examples]
+        q_max_unpadded = [example.get("Q_MAX", example["Q"]) for example in examples]
+        value_loss_weight = torch.tensor([example.get("value_loss_weight", 1.0) for example in examples], dtype=torch.float32)
+        lm_loss_weight = torch.tensor([example.get("lm_loss_weight", 1.0) for example in examples], dtype=torch.float32)
         padding_length = (
             args.max_training_seq_length if args.pad_to_max_length else None
         )
@@ -169,6 +226,12 @@ def get_data_collator(args: "Args", pad_token_id: int):
         )
         q = pad_sequences(
             q_unpadded, IGNORED_INDEX, "right", padding_length=padding_length, dtype=torch.float32
+        )
+        q_min = pad_sequences(
+            q_min_unpadded, IGNORED_INDEX, "right", padding_length=padding_length, dtype=torch.float32
+        )
+        q_max = pad_sequences(
+            q_max_unpadded, IGNORED_INDEX, "right", padding_length=padding_length, dtype=torch.float32
         )
         labels = pad_sequences(
             labels_unpadded, IGNORED_INDEX, "right", padding_length=padding_length
@@ -185,7 +248,11 @@ def get_data_collator(args: "Args", pad_token_id: int):
             "input_ids": input_ids,
             "labels": labels,
             "attention_mask": input_ids.ne(pad_token_id),
-            "Q": q
+            "Q": q,
+            "Q_MIN": q_min,
+            "Q_MAX": q_max,
+            "value_loss_weight": value_loss_weight,
+            "lm_loss_weight": lm_loss_weight,
         }
 
     return collate
@@ -205,6 +272,18 @@ class RLTrainer(Trainer):
         Q = inputs.get("Q", None)
         if Q is not None:
             del inputs["Q"]
+        Q_MIN = inputs.get("Q_MIN", None)
+        if Q_MIN is not None:
+            del inputs["Q_MIN"]
+        Q_MAX = inputs.get("Q_MAX", None)
+        if Q_MAX is not None:
+            del inputs["Q_MAX"]
+        value_loss_weight_tensor = inputs.get("value_loss_weight", None)
+        if value_loss_weight_tensor is not None:
+            del inputs["value_loss_weight"]
+        lm_loss_weight_tensor = inputs.get("lm_loss_weight", None)
+        if lm_loss_weight_tensor is not None:
+            del inputs["lm_loss_weight"]
         
         labels = inputs.get("labels", None)
         if labels is not None:
@@ -215,25 +294,49 @@ class RLTrainer(Trainer):
         lm_logits, _, values = model(**inputs, output_hidden_states=True, return_dict=True)
         values = torch.tanh(values)
 
+        if value_loss_weight_tensor is None:
+            value_loss_weight_tensor = torch.ones(Q.shape[0], device=Q.device, dtype=torch.float32)
+        else:
+            value_loss_weight_tensor = value_loss_weight_tensor.to(Q.device, dtype=torch.float32)
+        if lm_loss_weight_tensor is None:
+            lm_loss_weight_tensor = torch.ones(Q.shape[0], device=Q.device, dtype=torch.float32)
+        else:
+            lm_loss_weight_tensor = lm_loss_weight_tensor.to(Q.device, dtype=torch.float32)
+
         # Shift so that tokens < n predict n
         shift_logits = lm_logits[..., :-1, :].contiguous()
-        shift_labels = labels[..., 1:].contiguous()
-        # Flatten the tokens
-        if torch.all(shift_labels==IGNORED_INDEX):
-            loss_fct = CrossEntropyLoss(reduction='sum')
-        else:
-            loss_fct = CrossEntropyLoss()
-        shift_logits = shift_logits.view(-1, model.pretrained_model.config.vocab_size)
-        shift_labels = shift_labels.view(-1)
-        # Enable model parallelism
-        shift_labels = shift_labels.to(shift_logits.device)
-        loss = loss_fct(shift_logits, shift_labels)
+        shift_labels = labels[..., 1:].contiguous().to(shift_logits.device)
+        token_loss = F.cross_entropy(
+            shift_logits.view(-1, model.pretrained_model.config.vocab_size),
+            shift_labels.view(-1),
+            ignore_index=IGNORED_INDEX,
+            reduction="none",
+        ).view_as(shift_labels)
+        lm_mask = shift_labels.ne(IGNORED_INDEX)
+        per_sample_lm_loss = token_loss.sum(dim=1) / (lm_mask.sum(dim=1).float() + 1e-6)
+        effective_lm_weight = lm_loss_weight_tensor.to(shift_logits.device) * lm_mask.any(dim=1).float()
+        loss = (per_sample_lm_loss * effective_lm_weight).sum() / (effective_lm_weight.sum() + 1e-6)
 
         assert not torch.isnan(loss) and Q is not None
 
         Q = Q.type_as(values)
+        if Q_MIN is None:
+            Q_MIN = Q
+        if Q_MAX is None:
+            Q_MAX = Q
+        Q_MIN = Q_MIN.type_as(values).to(values.device)
+        Q_MAX = Q_MAX.type_as(values).to(values.device)
+        mask = mask.to(values.device)
+        Q = Q.to(values.device)
+        value_loss_weight_tensor = value_loss_weight_tensor.to(values.device)
+        lower = torch.minimum(Q_MIN, Q_MAX)
+        upper = torch.maximum(Q_MIN, Q_MAX)
+        interval_error = F.relu(lower - values) ** 2 + F.relu(values - upper) ** 2
+        value_error = torch.where(mask, interval_error, torch.zeros_like(values))
+        per_sample_value_loss = value_error.sum(dim=1) / (mask.sum(dim=1).float() + 1e-6)
+        effective_value_weight = value_loss_weight_tensor * mask.any(dim=1).float()
+        value_loss = (per_sample_value_loss * effective_value_weight).sum() / (effective_value_weight.sum() + 1e-6)
         masked_values = torch.where(mask, values, Q)
-        value_loss = F.mse_loss(masked_values, Q, reduction='sum') / (mask.sum() + 1e-3)
         all_losses =  loss + value_weight * value_loss
 
 

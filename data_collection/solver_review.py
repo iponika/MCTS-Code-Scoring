@@ -97,6 +97,8 @@ def build_record(sample: dict, react: dict) -> dict:
         "difficulty": sample["difficulty"],
         "reference_scores": sample["reference_scores"],
         "dimension_target_scores": sample["dimension_target_scores"],
+        "axiom_target_grade": sample.get("axiom_target_grade"),
+        "axiom_target_score": sample.get("axiom_target_score"),
         "objective": sample["objective"],
         "overall_score": sample["overall_score"],
         "correctness_label": sample["correctness_label"],

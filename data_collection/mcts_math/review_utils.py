@@ -10,6 +10,16 @@ from typing import Any, Dict, List, Tuple
 
 import psutil
 
+from mcts_math.axiom_scoring import (
+    AXIOM_SCALE_TEXT,
+    axiom_functionally_correct,
+    axiom_grade_from_codecritic,
+    axiom_scalar_score,
+    axiom_verdict,
+    grade_alignment,
+    parse_axiom_grade,
+)
+
 
 DEFAULT_DIMENSION_RUBRIC: Dict[str, str] = {
     "Correctness Verification": "Judge whether the code satisfies the task requirements and whether there are concrete logic bugs.",
@@ -77,9 +87,11 @@ def compute_pass_rate(code: str, assertions: List[str]) -> float:
 
 
 def score_to_verdict(score: float) -> str:
-    if score >= 8:
+    if score > 5:
+        score = score / 20.0
+    if score >= 4:
         return "accept"
-    if score >= 5:
+    if score >= 3:
         return "minor_issue"
     return "major_issue"
 
@@ -347,45 +359,56 @@ def build_dimension_target_scores(sample: Dict[str, Any]) -> Dict[str, float]:
     return targets
 
 
+def build_axiom_target_grade(sample: Dict[str, Any]) -> int:
+    mapped = axiom_grade_from_codecritic(sample.get("correctness_label"), sample.get("overall_score"))
+    if mapped is not None:
+        return mapped
+    pass_rate = sample.get("objective", {}).get("full_test_pass_rate", 0.0)
+    if pass_rate >= 0.999:
+        return 4
+    if pass_rate > 0.0:
+        return 2
+    return 1
+
+
 def compute_review_reward(target_dimension: str, final_answer: str, sample: Dict[str, Any]) -> Tuple[float, Dict[str, Any]]:
     parsed = parse_review_payload(final_answer)
     if parsed is None:
         return -1.0, {"error": "invalid_review_json"}
 
     predicted_dimension = str(parsed.get("dimension", "")).strip()
-    predicted_score_raw = parsed.get("score")
-    try:
-        predicted_score = float(predicted_score_raw)
-    except (TypeError, ValueError):
-        return -1.0, {"error": "missing_or_invalid_score", "parsed": parsed}
+    predicted_grade = parse_axiom_grade(parsed)
+    if predicted_grade is None:
+        return -1.0, {"error": "missing_or_invalid_axiom_grade", "parsed": parsed}
+    predicted_score = axiom_scalar_score(predicted_grade)
 
     predicted_verdict = str(parsed.get("verdict", "")).strip()
     evidence_alignment, evidence_details = validate_review_evidence(parsed, sample)
 
-    target_score = sample["dimension_target_scores"][target_dimension]
-    expected_verdict = score_to_verdict(target_score)
-    score_alignment = max(0.0, 1.0 - abs(predicted_score - target_score) / 9.0)
+    target_grade = int(sample.get("axiom_target_grade", build_axiom_target_grade(sample)))
+    target_score = axiom_scalar_score(target_grade)
+    expected_verdict = axiom_verdict(target_grade)
+    score_alignment = grade_alignment(predicted_grade, target_grade)
     dimension_alignment = 1.0 if predicted_dimension == target_dimension else 0.0
     verdict_alignment = _verdict_distance(expected_verdict, predicted_verdict)
+    functionality_alignment = 1.0 if axiom_functionally_correct(predicted_grade) == axiom_functionally_correct(target_grade) else 0.0
 
-    hard_alignment = None
+    hard_alignment = functionality_alignment
     if target_dimension == "Correctness Verification":
-        pass_rate = sample["objective"]["full_test_pass_rate"]
-        hard_expected = "accept" if pass_rate >= 0.999 else "major_issue"
-        hard_alignment = _verdict_distance(hard_expected, predicted_verdict)
         reward_01 = (
             0.45 * score_alignment
-            + 0.20 * dimension_alignment
-            + 0.20 * verdict_alignment
-            + 0.10 * hard_alignment
-            + 0.05 * evidence_alignment
+            + 0.25 * functionality_alignment
+            + 0.10 * dimension_alignment
+            + 0.10 * verdict_alignment
+            + 0.10 * evidence_alignment
         )
     else:
         reward_01 = (
-            0.60 * score_alignment
-            + 0.20 * dimension_alignment
-            + 0.15 * verdict_alignment
-            + 0.05 * evidence_alignment
+            0.50 * score_alignment
+            + 0.20 * functionality_alignment
+            + 0.10 * dimension_alignment
+            + 0.10 * verdict_alignment
+            + 0.10 * evidence_alignment
         )
 
     reward_caps: List[Tuple[str, float]] = []
@@ -398,9 +421,12 @@ def compute_review_reward(target_dimension: str, final_answer: str, sample: Dict
         target_dimension == "Correctness Verification"
         and correctness_label == "correct"
         and sample["objective"]["full_test_pass_rate"] >= 0.999
-        and predicted_verdict == "major_issue"
+        and predicted_grade < 3
     ):
-        reward_caps.append(("major_correctness_issue_conflicts_with_dataset_and_tests", 0.55))
+        reward_caps.append(("functional_correctness_boundary_conflict", 0.55))
+
+    if axiom_functionally_correct(predicted_grade) != axiom_functionally_correct(target_grade):
+        reward_caps.append(("axiom_functionality_boundary_mismatch", 0.60))
 
     if reward_caps:
         reward_01 = min(reward_01, *(cap for _, cap in reward_caps))
@@ -409,10 +435,16 @@ def compute_review_reward(target_dimension: str, final_answer: str, sample: Dict
     details = {
         "parsed": parsed,
         "target_dimension": target_dimension,
+        "target_axiom_grade": target_grade,
+        "predicted_axiom_grade": predicted_grade,
         "target_score": target_score,
+        "predicted_score": predicted_score,
+        "score_scale": "axiom_0_5_scalar_0_100",
+        "score_semantics": AXIOM_SCALE_TEXT,
         "expected_verdict": expected_verdict,
         "score_alignment": round(score_alignment, 4),
         "dimension_alignment": round(dimension_alignment, 4),
+        "functionality_alignment": round(functionality_alignment, 4),
         "verdict_alignment": round(verdict_alignment, 4),
         "evidence_alignment": round(evidence_alignment, 4),
         "evidence_details": evidence_details,
@@ -420,9 +452,8 @@ def compute_review_reward(target_dimension: str, final_answer: str, sample: Dict
     }
     if reward_caps:
         details["reward_caps"] = [{"reason": reason, "cap": cap} for reason, cap in reward_caps]
-    if hard_alignment is not None:
-        details["hard_alignment"] = round(hard_alignment, 4)
-        details["full_test_pass_rate"] = sample["objective"]["full_test_pass_rate"]
+    details["hard_alignment"] = round(hard_alignment, 4)
+    details["full_test_pass_rate"] = sample["objective"]["full_test_pass_rate"]
     return reward, details
 
 
@@ -480,6 +511,8 @@ def prepare_codecriticbench_sample(raw_sample: Dict[str, Any], dataset_index: in
         "full_test_pass_rate": round(compute_pass_rate(candidate_code, all_assertions), 4) if all_assertions else 0.0,
     }
     sample["dimension_target_scores"] = build_dimension_target_scores(sample)
+    sample["axiom_target_grade"] = build_axiom_target_grade(sample)
+    sample["axiom_target_score"] = axiom_scalar_score(sample["axiom_target_grade"])
     sample["question"] = build_review_question(sample)
     return sample
 
