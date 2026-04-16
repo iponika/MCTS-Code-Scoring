@@ -55,6 +55,7 @@ First, set `CUDA_VISIBLE_DEVICES` to specify which 1-2 GPUs to use.
 ### Code Review MCTS Data
 
 The code-evaluation adaptation uses a dedicated converter because review rewards are continuous and terminal leaves are `<review>` JSON blocks rather than generated code.
+The internal scoring target is now the AXIOM 0-5 ordinal grade: `5` production-ready, `4` functionally correct with minor quality tweaks, `3` functionally correct but requiring major quality refactor, `2` functionally defective but minor-fixable, `1` functionally defective and requiring major repair, and `0` fundamentally flawed or mismatched. User-facing 0-100 scores are derived as `grade / 5 * 100`; they are not the primary training label.
 
 ```bash
 python model_training/src/magicoder/preprocess_review_mcts_data.py \
@@ -85,12 +86,44 @@ python model_training/src/magicoder/preprocess_review_mcts_data.py \
   --calibration_strength 0.35 \
   --min_calibration_count 8 \
   --apply_score_consensus \
+  --score_consensus_mode weight \
   --score_consensus_strength 0.25 \
   --score_consensus_min_valid 3 \
   --shuffle_seed 42
 ```
 
-This keeps raw labels in `raw_q_value`/`raw_terminal_q_value`, applies per-dimension anchor standardization only to non-error paths, optionally adjusts labels with per-sample/per-dimension median score consensus, refreshes `train_lm` after calibration, and shuffles the mixed new/replay output. Prefer a fixed `--anchor_input` set for comparable label scales across independent generation batches. `--apply_score_consensus` uses the median parsed review score, MAD, and valid-review rate from repeated terminal reviews under the same `(dataset_index, target_dimension)`; it does not replace the dataset target score, but softly moves q-values toward the median-vs-target alignment reward when the repeated reviews are stable.
+This keeps raw labels in `raw_q_value`/`raw_terminal_q_value`, applies per-dimension anchor standardization only to non-error paths, refreshes `train_lm` after calibration, and shuffles the mixed new/replay output. Prefer a fixed `--anchor_input` set for comparable label scales across independent generation batches. `--apply_score_consensus --score_consensus_mode weight` uses the median parsed AXIOM grade, MAD, and valid-review rate from repeated terminal reviews under the same `(dataset_index, target_dimension)` to emit `value_loss_weight`/`lm_loss_weight`; it does not rewrite `q_value`. Use `--score_consensus_mode q_adjust` only for the older label-blending behavior.
+
+### Static Scalar Scoring Data
+
+Use AXIOM-style static data to calibrate the value head. The current stable path uses AXIOM and CodeCriticBench because their labels align best with the 0-5 ordinal grade. AXIOM becomes exact labels; CodeCriticBench becomes exact mapped labels after filtering non-code answers and extracting fenced code blocks. Code-DiTing can later become interval supervision (`label=1 -> grade 3-5`, `label=0 -> grade 0-2`); CodeJudgeBench can later be included as weak interval proxy data for its positive/negative pairs until a dedicated pairwise ranking loss is added.
+
+Run this from `model_training/src` so the repository-level `datasets/` directory does not shadow Hugging Face `datasets`:
+
+```bash
+cd model_training/src
+uv run python -m magicoder.preprocess_score_datasets \
+  --axiom_dir ../../datasets/axiom-llm-judge \
+  --codecriticbench ../../datasets/CodeCriticBench/data/CodeCriticBench.jsonl \
+  --output_file ../review_mcts_train_data/axiom_codecritic_static_full.jsonl \
+  --shuffle_seed 42
+```
+
+Optional lower-confidence datasets can be added later:
+
+```bash
+cd model_training/src
+uv run python -m magicoder.preprocess_score_datasets \
+  --axiom_dir ../../datasets/axiom-llm-judge \
+  --codecriticbench ../../datasets/CodeCriticBench/data/CodeCriticBench.jsonl \
+  --code_diting_root ../../datasets/Code-DiTing \
+  --codejudgebench_root ../../benchmarks/mattymchen___codejudgebench \
+  --include_codejudge_as_intervals \
+  --output_file ../review_mcts_train_data/axiom_static_score_train_multi.jsonl \
+  --shuffle_seed 42
+```
+
+By default this converter emits value-only items (`train_lm=false`) because the project objective is scalar code scoring and template comments are only auxiliary. Add `--train_lm_exact` only if you intentionally want exact AXIOM/CodeCritic examples to also teach the final `<review>` JSON format. The trainer supports optional `q_min`/`q_max` fields: exact labels have `q_min == q_value == q_max`, while interval labels incur value loss only when predictions fall outside the allowed grade interval.
 
 Run review policy/value training from `model_training/src` to avoid the repository-level `datasets/` directory shadowing Hugging Face `datasets`:
 

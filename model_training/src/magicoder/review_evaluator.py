@@ -18,6 +18,12 @@ from magicoder.review_policy_value_inference import (
 )
 from magicoder.review_value_guided_evaluator import candidate_sort_key
 from magicoder.prompt_template import QWEN_REVIEW_STEP_PROMPT
+from magicoder.axiom_scoring import (
+    AXIOM_SCALE_TEXT,
+    axiom_grade_from_codecritic,
+    axiom_scalar_score,
+    parse_axiom_grade,
+)
 
 
 DEFAULT_DIMENSIONS = [
@@ -61,6 +67,7 @@ def sample_from_record(record: dict[str, Any]) -> dict[str, Any]:
     if "candidate_code" in record:
         return record
     if "answer" in record and "question" in record:
+        axiom_grade = axiom_grade_from_codecritic(record.get("correctness"), record.get("score"))
         return {
             "problem": record["question"],
             "candidate_code": record["answer"],
@@ -73,6 +80,8 @@ def sample_from_record(record: dict[str, Any]) -> dict[str, Any]:
             "source": record.get("source"),
             "subset": record.get("subset"),
             "dataset_index": record.get("dataset_index"),
+            "axiom_target_grade": axiom_grade,
+            "axiom_target_score": axiom_scalar_score(axiom_grade) if axiom_grade is not None else None,
         }
     raise ValueError("Input record must be a review MCTS sample or a CodeCriticBench-style raw sample.")
 
@@ -103,7 +112,7 @@ def prompt_for_dimension(
         instruction += (
             "\n\nCurrent generation mode: finish now. Start your next output with <review> and end it with </review>. "
             "Do not add more <step> blocks. Output exactly one valid JSON object inside the review tags. "
-            "Required JSON keys: dimension, score, verdict, summary, evidence. "
+            "Required JSON keys: dimension, axiom_grade, score, verdict, functional_correctness, repair_effort, summary, evidence. "
             "The evidence value must be a JSON array of strings using square brackets only. "
             "If a previous review block exists, ignore it and output a corrected final review. "
             "Use any <value_feedback> blocks as private guidance; do not quote or repeat them in the review."
@@ -152,11 +161,21 @@ def parse_final_review(text: str) -> dict[str, Any]:
 def parsed_review_score(final_review_parse: dict[str, Any]) -> float | None:
     if not final_review_parse.get("ok"):
         return None
-    score = final_review_parse.get("parsed", {}).get("score")
+    parsed = final_review_parse.get("parsed", {})
+    grade = parse_axiom_grade(parsed)
+    if grade is not None:
+        return axiom_scalar_score(grade)
+    score = parsed.get("score")
     try:
         return float(score)
     except (TypeError, ValueError):
         return None
+
+
+def parsed_review_grade(final_review_parse: dict[str, Any]) -> int | None:
+    if not final_review_parse.get("ok"):
+        return None
+    return parse_axiom_grade(final_review_parse.get("parsed", {}))
 
 
 def score_delta(parsed_score: float | None, reference_score: Any) -> float | None:
@@ -290,12 +309,19 @@ def evaluate_dimension(
 
     final_prompt = prompt_for_dimension(sample, dimension, "", force_final=True)
     final_value_score = score_response(value_model, tokenizer, final_prompt, partial_response)
-    reference_score = sample.get("reference_scores", {}).get(dimension)
+    reference_score = sample.get("axiom_target_score")
+    reference_grade = sample.get("axiom_target_grade")
     parsed_score = parsed_review_score(final_review_parse)
+    parsed_grade = parsed_review_grade(final_review_parse)
     parsed_score_delta = score_delta(parsed_score, reference_score)
     return {
         "dimension": dimension,
+        "score_scale": "axiom_0_5_scalar_0_100",
+        "score_semantics": AXIOM_SCALE_TEXT,
+        "reference_axiom_grade": reference_grade,
         "reference_score": reference_score,
+        "legacy_dimension_score": sample.get("reference_scores", {}).get(dimension),
+        "parsed_axiom_grade": parsed_grade,
         "parsed_score": parsed_score,
         "score_delta": parsed_score_delta,
         "abs_score_delta": abs(parsed_score_delta) if parsed_score_delta is not None else None,

@@ -8,6 +8,8 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any, Iterable
 
+from magicoder.axiom_scoring import axiom_grade_from_scalar, parse_axiom_grade
+
 
 IGNORED_INDEX = -100
 
@@ -81,6 +83,7 @@ def build_instruction(record: dict[str, Any], dimension: str) -> str:
 
     return (
         f"Target review dimension: {dimension}\n\n"
+        "Scoring target: assign the overall AXIOM code grade; use the target dimension as supporting evidence.\n\n"
         f"Task description:\n{record.get('problem') or record.get('question') or ''}\n\n"
         "Candidate code:\n"
         "```python\n"
@@ -143,6 +146,9 @@ def path_to_training_item(
 
     details = terminal_reward_details(terminal)
     parsed = details.get("parsed") if isinstance(details.get("parsed"), dict) else {}
+    parsed_axiom_grade = details.get("predicted_axiom_grade")
+    if parsed_axiom_grade is None:
+        parsed_axiom_grade = parse_axiom_grade(parsed)
 
     return {
         "instruction": build_instruction(record, dimension),
@@ -157,7 +163,9 @@ def path_to_training_item(
         "terminal_q_value": float(terminal.get("q_value", IGNORED_INDEX)),
         "terminal_error": details.get("error"),
         "parsed_score": parsed.get("score"),
+        "parsed_axiom_grade": parsed_axiom_grade,
         "target_score": details.get("target_score"),
+        "target_axiom_grade": details.get("target_axiom_grade"),
     }
 
 
@@ -353,37 +361,45 @@ def build_score_consensus(records: Iterable[dict[str, Any]], min_valid: int) -> 
             if not dimension:
                 continue
             key = (dataset_index, dimension)
-            group = grouped.setdefault(key, {"scores": [], "total": 0, "target_score": None})
+            group = grouped.setdefault(key, {"grades": [], "total": 0, "target_grade": None})
             group["total"] += 1
             details = terminal_reward_details(node)
-            if group["target_score"] is None and isinstance(details.get("target_score"), (int, float)):
-                group["target_score"] = float(details["target_score"])
+            if group["target_grade"] is None:
+                if isinstance(details.get("target_axiom_grade"), (int, float)):
+                    group["target_grade"] = float(details["target_axiom_grade"])
+                elif isinstance(details.get("target_score"), (int, float)):
+                    max_score = 100.0 if float(details["target_score"]) > 10 else 10.0
+                    group["target_grade"] = axiom_grade_from_scalar(details["target_score"], max_score=max_score)
             if details.get("error"):
                 continue
             parsed = details.get("parsed") if isinstance(details.get("parsed"), dict) else {}
-            parsed_score = numeric_q_value(parsed.get("score"), default=IGNORED_INDEX)
-            if parsed_score == IGNORED_INDEX:
+            parsed_grade = details.get("predicted_axiom_grade")
+            if parsed_grade is None:
+                parsed_grade = parse_axiom_grade(parsed)
+            if parsed_grade is None:
                 continue
-            group["scores"].append(parsed_score)
+            group["grades"].append(float(parsed_grade))
 
     consensus = {}
     for key, group in grouped.items():
-        scores = group["scores"]
-        target_score = group.get("target_score")
-        if len(scores) < min_valid or not isinstance(target_score, (int, float)):
+        grades = group["grades"]
+        target_grade = group.get("target_grade")
+        if len(grades) < min_valid or not isinstance(target_grade, (int, float)):
             continue
-        median_score = statistics.median(scores)
-        mad = median_absolute_deviation(scores, median_score)
-        valid_rate = len(scores) / max(1, int(group["total"]))
-        dispersion_confidence = max(0.0, 1.0 - mad / 4.5)
-        target_alignment = max(0.0, 1.0 - abs(median_score - target_score) / 9.0)
+        median_grade = statistics.median(grades)
+        mad = median_absolute_deviation(grades, median_grade)
+        valid_rate = len(grades) / max(1, int(group["total"]))
+        dispersion_confidence = max(0.0, 1.0 - mad / 2.5)
+        target_alignment = max(0.0, 1.0 - abs(median_grade - target_grade) / 5.0)
         consensus[key] = {
-            "median_score": median_score,
+            "median_score": median_grade * 20.0,
+            "median_axiom_grade": median_grade,
             "mad": mad,
-            "valid_count": float(len(scores)),
+            "valid_count": float(len(grades)),
             "total_count": float(group["total"]),
             "valid_rate": valid_rate,
-            "target_score": float(target_score),
+            "target_score": float(target_grade) * 20.0,
+            "target_axiom_grade": float(target_grade),
             "target_alignment": target_alignment,
             "dispersion_confidence": dispersion_confidence,
             "confidence": valid_rate * dispersion_confidence,
@@ -396,6 +412,7 @@ def apply_score_consensus(
     items: list[dict[str, Any]],
     consensus: dict[tuple[str, str], dict[str, float]],
     strength: float,
+    mode: str,
 ) -> dict[str, int]:
     stats = defaultdict(int)
     strength = max(0.0, min(1.0, strength))
@@ -413,51 +430,72 @@ def apply_score_consensus(
 
         item["score_consensus"] = {
             "median_score": round(summary["median_score"], 4),
+            "median_axiom_grade": round(summary["median_axiom_grade"], 4),
             "mad": round(summary["mad"], 4),
             "valid_count": int(summary["valid_count"]),
             "total_count": int(summary["total_count"]),
             "valid_rate": round(summary["valid_rate"], 4),
             "target_score": round(summary["target_score"], 4),
+            "target_axiom_grade": round(summary["target_axiom_grade"], 4),
             "target_alignment": round(summary["target_alignment"], 4),
             "dispersion_confidence": round(summary["dispersion_confidence"], 4),
             "confidence": round(summary["confidence"], 4),
             "reward": round(summary["reward"], 4),
             "strength": strength,
+            "mode": mode,
         }
 
         if item.get("terminal_error"):
             stats["score_consensus_skipped_terminal_error"] += 1
             continue
 
-        if "raw_q_value" not in item:
-            item["raw_q_value"] = [numeric_q_value(value) for value in item.get("q_value", [])]
-            item["raw_terminal_q_value"] = numeric_q_value(item.get("terminal_q_value"))
-
-        score = numeric_q_value(item.get("parsed_score"), default=IGNORED_INDEX)
-        if score == IGNORED_INDEX:
+        grade = item.get("parsed_axiom_grade")
+        if grade is None:
+            parsed_score = item.get("parsed_score")
+            max_score = 100.0
+            try:
+                if float(parsed_score) <= 10.0:
+                    max_score = 10.0
+            except (TypeError, ValueError):
+                pass
+            grade = axiom_grade_from_scalar(parsed_score, max_score=max_score)
+        if grade is None:
             item_alignment = 1.0
         else:
-            item_alignment = max(0.0, 1.0 - abs(score - summary["median_score"]) / 9.0)
+            item_alignment = max(0.0, 1.0 - abs(float(grade) - summary["median_axiom_grade"]) / 5.0)
         effective_strength = strength * summary["confidence"] * item_alignment
-        consensus_reward = summary["reward"]
-        q_values = [numeric_q_value(value) for value in item.get("q_value", [])]
-        adjusted = [
-            value if value == IGNORED_INDEX else round(clamp_reward((1.0 - effective_strength) * value + effective_strength * consensus_reward), 4)
-            for value in q_values
-        ]
-        if adjusted != q_values:
-            item["pre_consensus_q_value"] = q_values
-            item["q_value"] = adjusted
-            if adjusted:
-                item["terminal_q_value"] = adjusted[-1]
-            item["score_consensus"]["item_alignment"] = round(item_alignment, 4)
-            item["score_consensus"]["effective_strength"] = round(effective_strength, 4)
-            stats["score_consensus_adjusted_items"] += 1
+        item["score_consensus"]["item_alignment"] = round(item_alignment, 4)
+        item["score_consensus"]["effective_strength"] = round(effective_strength, 4)
+
+        if mode == "weight":
+            sample_weight = round(max(0.0, 1.0 - strength + 2.0 * effective_strength), 4)
+            item["value_loss_weight"] = sample_weight
+            item["lm_loss_weight"] = sample_weight
+            stats["score_consensus_weighted_items"] += 1
+        elif mode == "q_adjust":
+            if "raw_q_value" not in item:
+                item["raw_q_value"] = [numeric_q_value(value) for value in item.get("q_value", [])]
+                item["raw_terminal_q_value"] = numeric_q_value(item.get("terminal_q_value"))
+            consensus_reward = summary["reward"]
+            q_values = [numeric_q_value(value) for value in item.get("q_value", [])]
+            adjusted = [
+                value if value == IGNORED_INDEX else round(clamp_reward((1.0 - effective_strength) * value + effective_strength * consensus_reward), 4)
+                for value in q_values
+            ]
+            if adjusted != q_values:
+                item["pre_consensus_q_value"] = q_values
+                item["q_value"] = adjusted
+                if adjusted:
+                    item["terminal_q_value"] = adjusted[-1]
+                stats["score_consensus_adjusted_items"] += 1
+            else:
+                stats["score_consensus_unchanged_items"] += 1
         else:
-            stats["score_consensus_unchanged_items"] += 1
+            raise ValueError(f"Unsupported score consensus mode: {mode}")
 
     stats["score_consensus_enabled"] = 1
     stats["score_consensus_groups"] = len(consensus)
+    stats["score_consensus_mode_weight" if mode == "weight" else "score_consensus_mode_q_adjust"] = 1
     return dict(stats)
 
 
@@ -548,13 +586,19 @@ def main() -> None:
     parser.add_argument(
         "--apply_score_consensus",
         action="store_true",
-        help="Adjust non-error q_values using per-sample/per-dimension median review score consensus.",
+        help="Apply per-sample/per-dimension median review score consensus as confidence metadata.",
+    )
+    parser.add_argument(
+        "--score_consensus_mode",
+        choices=["weight", "q_adjust"],
+        default="weight",
+        help="weight keeps q_values unchanged and emits loss weights; q_adjust preserves the older behavior that blends q_values toward consensus reward.",
     )
     parser.add_argument(
         "--score_consensus_strength",
         type=float,
         default=0.25,
-        help="Maximum blend strength for score-consensus label adjustment.",
+        help="Maximum strength for score-consensus weighting or legacy q-value adjustment.",
     )
     parser.add_argument(
         "--score_consensus_min_valid",
@@ -611,7 +655,7 @@ def main() -> None:
         stats["calibration_enabled"] = 0
     if args.apply_score_consensus:
         consensus = build_score_consensus([*new_records, *replay_records], min_valid=args.score_consensus_min_valid)
-        stats.update(apply_score_consensus(items, consensus, strength=args.score_consensus_strength))
+        stats.update(apply_score_consensus(items, consensus, strength=args.score_consensus_strength, mode=args.score_consensus_mode))
     else:
         stats["score_consensus_enabled"] = 0
     stats.update({f"final_{key}": value for key, value in refresh_policy_flags(items, args.policy_min_q).items()})
