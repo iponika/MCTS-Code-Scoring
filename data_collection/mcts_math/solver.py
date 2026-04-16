@@ -29,6 +29,7 @@ from .agents.tree import BaseTree
 
 from .llms.local_llms import local_generator, server_generator
 from .llms.local_llm_engine import llm_engine
+from .llms.openai_api_llm import OpenAICompatibleGenerator, build_api_sampling_params
 from .constants import TIMEOUT_SECONDS, ERROR_COLOR
 
 
@@ -89,6 +90,14 @@ class Solver(BaseModel):
     def create_llm(self) -> Callable[[...], List[str]]:
         if self.config.seed:
             set_seed(self.config.seed)
+        if getattr(self.config, "llm_backend", "vllm") == "openai_api":
+            generator = OpenAICompatibleGenerator(self.config)
+            sampling_params = build_api_sampling_params(self.config)
+            self.generate_sampling_params = sampling_params
+            self.value_sampling_params = copy.deepcopy(sampling_params)
+            self.value_sampling_params.max_tokens = 1
+            self.value_sampling_params.n = 1
+            return generator
         engine, sampling_params = llm_engine(self.config)
         self.engine = engine
         self.generate_sampling_params = sampling_params
