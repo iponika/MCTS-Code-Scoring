@@ -1,5 +1,6 @@
 datasets/
 reference/
 data_collection/review_mcts_runs/
+data_collection/review_api_runs/
 model_training/review_mcts_train_data/
 model_training/src/output/

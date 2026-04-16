@@ -201,6 +201,27 @@ class BaseConfig:
     disable_process_pool: bool = field(
         default=False, metadata={"help": "run generation postprocessing in the main process"}
     )
+    llm_backend: str = field(
+        default="vllm", metadata={"help": "LLM backend: vllm or openai_api"}
+    )
+    api_base_url_env: str = field(
+        default="ZENMUX_BASE_URL", metadata={"help": "Environment variable containing OpenAI-compatible API base URL"}
+    )
+    api_key_env: str = field(
+        default="ZENMUX_API_KEY", metadata={"help": "Environment variable containing OpenAI-compatible API key"}
+    )
+    api_model_env: str = field(
+        default="ZENMUX_MODEL", metadata={"help": "Environment variable containing API model name; falls back to model_dir"}
+    )
+    api_timeout: int = field(
+        default=120, metadata={"help": "OpenAI-compatible API request timeout in seconds"}
+    )
+    api_max_retries: int = field(
+        default=3, metadata={"help": "OpenAI-compatible API retry count"}
+    )
+    api_retry_sleep: float = field(
+        default=2.0, metadata={"help": "Base sleep seconds between API retries"}
+    )
 
 
 if __name__ == '__main__':
