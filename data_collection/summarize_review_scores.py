@@ -7,7 +7,9 @@ from collections import Counter
 from pathlib import Path
 from typing import Any
 
-from mcts_math.axiom_scoring import axiom_functionally_correct, clamp_axiom_grade
+from mcts_math.axiom_scoring import axiom_functionally_correct, clamp_axiom_grade, parse_axiom_grade
+
+CORRECTNESS_DIMENSION = "Correctness Verification"
 
 
 def parse_args() -> argparse.Namespace:
@@ -75,6 +77,8 @@ def mcts_record_prediction(record: dict[str, Any]) -> dict[str, Any]:
         except json.JSONDecodeError:
             details = {}
         grade = details.get("predicted_axiom_grade")
+        if not isinstance(grade, (int, float)):
+            grade = parse_axiom_grade(details.get("parsed") or {})
         if isinstance(grade, (int, float)):
             grades.append(float(grade))
             chosen.append(
@@ -87,7 +91,7 @@ def mcts_record_prediction(record: dict[str, Any]) -> dict[str, Any]:
                     "reward_details": details,
                 }
             )
-    predicted_grade = clamp_axiom_grade(statistics.median(grades)) if grades else None
+    predicted_grade, aggregation = aggregate_review_grades(chosen)
     target_grade = record.get("axiom_target_grade")
     return {
         "dataset_index": record.get("dataset_index"),
@@ -101,7 +105,47 @@ def mcts_record_prediction(record: dict[str, Any]) -> dict[str, Any]:
             if predicted_grade is not None and target_grade is not None
             else False
         ),
+        "aggregation": aggregation,
         "dimension_predictions": chosen,
+    }
+
+
+def aggregate_review_grades(chosen: list[dict[str, Any]]) -> tuple[int | None, dict[str, Any]]:
+    grade_items = [
+        {
+            "dimension": item.get("dimension"),
+            "grade": clamp_axiom_grade(item.get("predicted_axiom_grade")),
+        }
+        for item in chosen
+        if isinstance(item.get("predicted_axiom_grade"), (int, float))
+    ]
+    if not grade_items:
+        return None, {"method": "no_valid_dimension"}
+
+    correctness_items = [item for item in grade_items if item["dimension"] == CORRECTNESS_DIMENSION]
+    if not correctness_items:
+        return clamp_axiom_grade(statistics.median(item["grade"] for item in grade_items)), {
+            "method": "median_fallback_no_correctness",
+            "grades": grade_items,
+        }
+
+    correctness_grade = correctness_items[0]["grade"]
+    correctness_boundary = axiom_functionally_correct(correctness_grade)
+    same_boundary_grades = [
+        item["grade"]
+        for item in grade_items
+        if axiom_functionally_correct(item["grade"]) == correctness_boundary
+    ]
+    # Correctness fixes the functional boundary; auxiliary dimensions can only refine within that side.
+    refined = clamp_axiom_grade(statistics.median([correctness_grade, correctness_grade] + same_boundary_grades))
+    if correctness_boundary:
+        refined = max(3, min(5, refined))
+    else:
+        refined = max(0, min(2, refined))
+    return refined, {
+        "method": "correctness_boundary_first",
+        "correctness_grade": correctness_grade,
+        "grades": grade_items,
     }
 
 

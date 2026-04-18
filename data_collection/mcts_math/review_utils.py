@@ -490,6 +490,9 @@ def prepare_codecriticbench_sample(raw_sample: Dict[str, Any], dataset_index: in
     for dimension, checklist in zip(raw_sample["checklist_dimensions"], raw_sample["checklists"]):
         default_rubric = DEFAULT_DIMENSION_RUBRIC.get(dimension, "")
         dimension_rubrics[dimension] = f"{default_rubric}\nReference checklist item: {checklist}".strip()
+    if "Correctness Verification" not in reference_scores:
+        reference_scores["Correctness Verification"] = float(raw_sample.get("score") or 0)
+        dimension_rubrics["Correctness Verification"] = DEFAULT_DIMENSION_RUBRIC["Correctness Verification"]
 
     sample = {
         "dataset_index": dataset_index,

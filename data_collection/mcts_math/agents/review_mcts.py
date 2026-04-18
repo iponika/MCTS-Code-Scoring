@@ -39,6 +39,11 @@ class ReviewMCTS(MCTS):
         super().validate_config(cfg)
         if cfg.mode != "mcts":
             raise ValueError("ReviewMCTS only supports mcts mode.")
+        if getattr(cfg, "self_review_value_func", False):
+            raise ValueError(
+                "self_review_value_func has been removed. Use objective labeled rewards for data generation "
+                "or a trained value head with need_value_func=True."
+            )
         return cfg
 
     def create_node(self, parent: Optional[Type[MCTSNode]] = None) -> Type[MCTSNode]:
@@ -51,19 +56,38 @@ class ReviewMCTS(MCTS):
     def _bootstrap_dimension_children(self) -> None:
         if self.root.children:
             return
-        dimensions = list(self.review_sample["reference_scores"].keys())[: self.config.max_review_dimensions]
+        dimensions = self._selected_review_dimensions()
         if not dimensions:
             self.root.is_terminal = True
             return
 
-        prior = 1.0 / len(dimensions)
+        correctness_prior = 0.6 if "Correctness Verification" in dimensions and len(dimensions) > 1 else None
         for index, dimension in enumerate(dimensions):
             child = self.create_node(parent=self.root)
             child.tag = f"{self.root.tag}.{index}"
             child.depth = self.root.depth + 1
-            child.prior = prior
+            if correctness_prior is not None:
+                child.prior = correctness_prior if dimension == "Correctness Verification" else (1.0 - correctness_prior) / (len(dimensions) - 1)
+            else:
+                child.prior = 1.0 / len(dimensions)
             child.state["target_dimension"] = dimension
             self.root.children.append(child)
+
+    def _selected_review_dimensions(self) -> List[str]:
+        available = list(dict.fromkeys(self.review_sample["reference_scores"].keys()))
+        preferred = [
+            "Correctness Verification",
+            "Robustness Validation",
+            "Time Complexity Optimization",
+            "Algorithm Optimization",
+            "Output Format Compliance",
+            "Space Complexity Control",
+            "Maintainability",
+            "Code Readability Enhancement",
+        ]
+        ordered = [dimension for dimension in preferred if dimension in available]
+        ordered.extend(dimension for dimension in available if dimension not in ordered)
+        return ordered[: self.config.max_review_dimensions]
 
     def _get_target_dimension(self, node: Type[MCTSNode]) -> str:
         cursor = node
@@ -211,7 +235,17 @@ class ReviewMCTS(MCTS):
             self.final_answer_nodes.append(node)
 
     def select_next_step(self, outputs=None) -> None:
-        del outputs
+        if outputs is not None:
+            for candidate_node, output in zip(self.candidate_nodes, outputs):
+                if candidate_node.is_terminal and candidate_node.state.get("reward_details"):
+                    continue
+                value_estimate = output.value_estimate if output and output.value_estimate is not None else self.config.negative_reward
+                if output is None or output.value_estimate is None:
+                    candidate_node.is_terminal = True
+                candidate_node.update_recursive(value_estimate, self.root)
+                if self.__class__.is_valid_final_answer_node(candidate_node):
+                    self.final_answer_nodes.append(candidate_node)
+
         self.current_nodes = []
         selection_node = self.selection()
         if selection_node is not None:
@@ -234,7 +268,7 @@ class ReviewMCTS(MCTS):
             if self.__class__.is_valid_final_answer_node(node)
         }
         selected_nodes = []
-        for dimension in list(self.review_sample["reference_scores"].keys())[: self.config.max_review_dimensions]:
+        for dimension in self._selected_review_dimensions():
             if dimension in terminal_dimensions:
                 continue
             leaf_candidates = [

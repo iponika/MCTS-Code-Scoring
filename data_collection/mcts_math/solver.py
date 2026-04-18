@@ -95,14 +95,14 @@ class Solver(BaseModel):
             sampling_params = build_api_sampling_params(self.config)
             self.generate_sampling_params = sampling_params
             self.value_sampling_params = copy.deepcopy(sampling_params)
-            self.value_sampling_params.max_tokens = 1
+            self.value_sampling_params.max_tokens = int(getattr(self.config, "value_max_tokens", 1) or 1)
             self.value_sampling_params.n = 1
             return generator
         engine, sampling_params = llm_engine(self.config)
         self.engine = engine
         self.generate_sampling_params = sampling_params
         self.value_sampling_params = copy.deepcopy(sampling_params)
-        self.value_sampling_params.max_tokens = 1
+        self.value_sampling_params.max_tokens = int(getattr(self.config, "value_max_tokens", 1) or 1)
         self.value_sampling_params.n = 1
         return partial(
             local_generator,
@@ -245,6 +245,15 @@ class Solver(BaseModel):
             for bos_idx, eos_idx in zip(prompts_span, prompts_span[1:])
         ]
         updated_solvers = self.generate_postprocess(reconstructed_outputs, valid_solvers)
+        if self.need_value_func:
+            prompts, prompts_span = self.value_preprocess(updated_solvers)
+            if prompts:
+                outputs = self.llm(prompts, self.value_sampling_params)
+                reconstructed_outputs = [
+                    outputs[bos_idx:eos_idx]
+                    for bos_idx, eos_idx in zip(prompts_span, prompts_span[1:])
+                ]
+                updated_solvers = self.value_postprocess(reconstructed_outputs, updated_solvers)
         updated_by_question = {solver.question: solver for solver in updated_solvers}
         return [updated_by_question.get(solver.question, solver) for solver in solvers]
     

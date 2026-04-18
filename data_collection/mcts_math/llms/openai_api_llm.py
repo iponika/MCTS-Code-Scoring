@@ -37,6 +37,7 @@ def build_api_sampling_params(config: Any) -> ApiSamplingParams:
 
 class OpenAICompatibleGenerator:
     def __init__(self, config: Any) -> None:
+        load_env_file(getattr(config, "api_env_file", ""))
         base_url = os.environ.get(config.api_base_url_env, "").rstrip("/")
         api_key = os.environ.get(config.api_key_env, "")
         model = os.environ.get(config.api_model_env) or config.model_dir
@@ -53,6 +54,7 @@ class OpenAICompatibleGenerator:
         self.timeout = int(config.api_timeout)
         self.max_retries = int(config.api_max_retries)
         self.retry_sleep = float(config.api_retry_sleep)
+        self.prompt_suffix = str(getattr(config, "api_prompt_suffix", "") or "")
 
     def __call__(self, prompts: list[str], sampling_params: ApiSamplingParams) -> list[RequestOutput]:
         return [self._generate_one(prompt, sampling_params) for prompt in prompts]
@@ -90,7 +92,7 @@ class OpenAICompatibleGenerator:
     def _request(self, prompt: str, sampling_params: ApiSamplingParams, n: int) -> list[str]:
         payload = {
             "model": self.model,
-            "messages": [{"role": "user", "content": prompt}],
+            "messages": [{"role": "user", "content": self._prompt(prompt)}],
             "temperature": float(getattr(sampling_params, "temperature", 0.7)),
             "top_p": float(getattr(sampling_params, "top_p", 1.0)),
             "max_tokens": int(getattr(sampling_params, "max_tokens", 512)),
@@ -131,3 +133,29 @@ class OpenAICompatibleGenerator:
             if attempt + 1 < self.max_retries:
                 time.sleep(self.retry_sleep * (attempt + 1))
         raise RuntimeError(f"OpenAI-compatible API request failed after {self.max_retries} attempts: {last_error}")
+
+    def _prompt(self, prompt: str) -> str:
+        if not self.prompt_suffix:
+            return prompt
+        if self.prompt_suffix in prompt[-200:]:
+            return prompt
+        return prompt.rstrip() + "\n" + self.prompt_suffix
+
+
+def load_env_file(path: str) -> None:
+    if not path:
+        return
+    if not os.path.exists(path):
+        return
+    with open(path, "r", encoding="utf-8") as handle:
+        for line in handle:
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, value = line.split("=", 1)
+            key = key.strip()
+            if key.startswith("export "):
+                key = key[len("export ") :].strip()
+            value = value.strip().strip("'").strip('"')
+            if key and key not in os.environ:
+                os.environ[key] = value

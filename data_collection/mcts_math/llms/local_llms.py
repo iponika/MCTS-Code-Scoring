@@ -59,7 +59,9 @@ def local_generator(
     sampling_params: SamplingParams,
     engine: LLM,
 ):
-    
+    if not prompts or any('@@ Response' not in prompt for prompt in prompts):
+        return engine.generate(prompts, sampling_params=sampling_params)
+
     if "</step>\n\nHere is your question:" in prompts[0]:
         direct_prompts = []
         step_prompts = []
