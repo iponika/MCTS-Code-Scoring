@@ -166,6 +166,12 @@ class BaseConfig:
     need_value_func: bool = field(
         default=False, metadata={"help": "whether to use value head in decoding"}
     )
+    self_review_value_func: bool = field(
+        default=False, metadata={"help": "deprecated; base-LLM text self-judging is disabled"}
+    )
+    value_max_tokens: int = field(
+        default=1, metadata={"help": "maximum tokens generated for value/judge prompts"}
+    )
     update_leaf_value: bool = field(
         default=False, metadata={"help": "update leaf value in mcts"}
     )
@@ -207,6 +213,9 @@ class BaseConfig:
     api_base_url_env: str = field(
         default="ZENMUX_BASE_URL", metadata={"help": "Environment variable containing OpenAI-compatible API base URL"}
     )
+    api_env_file: str = field(
+        default=".zenmux.env", metadata={"help": "Optional local dotenv-style file for API env vars; ignored if absent"}
+    )
     api_key_env: str = field(
         default="ZENMUX_API_KEY", metadata={"help": "Environment variable containing OpenAI-compatible API key"}
     )
@@ -221,6 +230,9 @@ class BaseConfig:
     )
     api_retry_sleep: float = field(
         default=2.0, metadata={"help": "Base sleep seconds between API retries"}
+    )
+    api_prompt_suffix: str = field(
+        default="", metadata={"help": "Optional suffix appended to every API prompt, e.g. /no_think for Qwen3 APIs"}
     )
 
 

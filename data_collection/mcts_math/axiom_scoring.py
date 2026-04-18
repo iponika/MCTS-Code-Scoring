@@ -89,7 +89,7 @@ def axiom_functionally_correct(grade: float | int) -> bool:
 def parse_axiom_grade(payload: dict[str, Any]) -> int | None:
     if not isinstance(payload, dict):
         return None
-    for key in ("axiom_grade", "grade"):
+    for key in ("axiom_grade", "predicted_axiom_grade", "axiogram_grade", "grade"):
         if key in payload:
             try:
                 return clamp_axiom_grade(float(payload[key]))
@@ -109,4 +109,3 @@ def parse_axiom_grade(payload: dict[str, Any]) -> int | None:
 
 def grade_alignment(predicted_grade: int, target_grade: int) -> float:
     return max(0.0, 1.0 - abs(predicted_grade - target_grade) / 5.0)
-

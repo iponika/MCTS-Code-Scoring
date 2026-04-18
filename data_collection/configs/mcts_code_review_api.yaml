@@ -29,3 +29,4 @@ api_model_env: "ZENMUX_MODEL"
 api_timeout: 120
 api_max_retries: 3
 api_retry_sleep: 2.0
+api_prompt_suffix: "/no_think"
