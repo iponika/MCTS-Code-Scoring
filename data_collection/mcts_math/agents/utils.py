@@ -173,6 +173,7 @@ def review_prompt_wrap(
         rubric=review_context["dimension_rubric"],
         question=question,
         candidate_code=review_context["candidate_code"],
+        code_language=review_context.get("code_language", "python"),
         tests=tests,
         partial_solution=partial_solution.strip() if partial_solution else "None",
         mode_instruction=mode_instruction,

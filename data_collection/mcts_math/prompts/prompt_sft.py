@@ -64,7 +64,7 @@ Task description:
 {question}
 
 Candidate code:
-```python
+```{code_language}
 {candidate_code}
 ```
 

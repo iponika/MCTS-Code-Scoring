@@ -92,6 +92,7 @@ def build_record(sample: dict, react: dict) -> dict:
         "question": sample["question"],
         "problem": sample["problem"],
         "candidate_code": sample["candidate_code"],
+        "code_language": sample.get("code_language", "python"),
         "source": sample["source"],
         "subset": sample["subset"],
         "difficulty": sample["difficulty"],
