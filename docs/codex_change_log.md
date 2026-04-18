@@ -4,6 +4,7 @@ This file records Codex-made project changes so work can be resumed safely acros
 
 ## 2026-04-18
 
+- Removed previously tracked Python bytecode/cache files from git tracking. Runtime caches are now covered by `.gitignore`.
 - Removed base-model text self-judging for review MCTS node scoring.
 - `ReviewMCTS` now rejects configs with `self_review_value_func: True` to prevent accidental self-labeled data generation.
 - Kept objective reward labeling and future trained value-head inference paths.
