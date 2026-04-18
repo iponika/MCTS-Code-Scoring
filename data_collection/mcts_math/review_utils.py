@@ -498,6 +498,7 @@ def prepare_codecriticbench_sample(raw_sample: Dict[str, Any], dataset_index: in
         "dataset_index": dataset_index,
         "problem": raw_sample["question"],
         "candidate_code": candidate_code,
+        "code_language": raw_sample.get("lang") or raw_sample.get("language") or "python",
         "tests": all_assertions,
         "tests_for_prompt": format_public_tests({"tests": public_assertions}),
         "difficulty": raw_sample.get("difficulty"),
@@ -520,6 +521,28 @@ def prepare_codecriticbench_sample(raw_sample: Dict[str, Any], dataset_index: in
     return sample
 
 
+def prepare_prebuilt_review_sample(raw_sample: Dict[str, Any], dataset_index: int | None = None) -> Dict[str, Any]:
+    """Load a normalized review-scoring sample produced by preprocessing scripts."""
+    sample = dict(raw_sample)
+    sample["dataset_index"] = dataset_index if dataset_index is not None else sample.get("dataset_index")
+    sample.setdefault("code_language", "python")
+    sample.setdefault("difficulty", None)
+    sample.setdefault("source", "prepared")
+    sample.setdefault("subset", "prepared")
+    sample.setdefault("tests", [])
+    sample.setdefault("tests_for_prompt", format_public_tests({"tests": sample["tests"]}))
+    sample.setdefault("reference_scores", {"Correctness Verification": float(sample.get("overall_score", 0) or 0)})
+    sample.setdefault("dimension_rubrics", {"Correctness Verification": DEFAULT_DIMENSION_RUBRIC["Correctness Verification"]})
+    sample.setdefault("dimension_target_scores", dict(sample["reference_scores"]))
+    sample.setdefault("objective", {"public_test_pass_rate": 0.0, "private_test_pass_rate": 0.0, "full_test_pass_rate": 0.0})
+    sample.setdefault("overall_score", axiom_scalar_score(sample.get("axiom_target_grade", 0)) / 10.0)
+    sample.setdefault("correctness_label", "Correct" if int(sample.get("axiom_target_grade", 0)) >= 3 else "Error")
+    sample.setdefault("axiom_target_grade", build_axiom_target_grade(sample))
+    sample.setdefault("axiom_target_score", axiom_scalar_score(sample["axiom_target_grade"]))
+    sample.setdefault("question", build_review_question(sample))
+    return sample
+
+
 def load_codecriticbench_dataset(path: str, start: int = 0, limit: int | None = None) -> List[Dict[str, Any]]:
     loaded: List[Dict[str, Any]] = []
     with open(path, "r", encoding="utf-8") as handle:
@@ -527,6 +550,13 @@ def load_codecriticbench_dataset(path: str, start: int = 0, limit: int | None = 
             if index < start:
                 continue
             raw_sample = json.loads(line)
+            if raw_sample.get("prepared_review_sample") or (
+                "candidate_code" in raw_sample and "reference_scores" in raw_sample
+            ):
+                loaded.append(prepare_prebuilt_review_sample(raw_sample, dataset_index=index))
+                if limit is not None and len(loaded) >= limit:
+                    break
+                continue
             has_tests = bool(raw_sample.get("public_test", {}).get("input") or raw_sample.get("private_test", {}).get("input"))
             if not raw_sample.get("checklist_dimensions") or "answer" not in raw_sample or not has_tests:
                 continue

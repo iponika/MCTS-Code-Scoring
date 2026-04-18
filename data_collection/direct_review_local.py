@@ -47,6 +47,7 @@ def build_prompt(sample: dict[str, Any], dimension: str) -> str:
         rubric=rubric,
         question=sample["question"],
         candidate_code=sample["candidate_code"],
+        code_language=sample.get("code_language", "python"),
         tests=sample["tests_for_prompt"],
         partial_solution="None",
         mode_instruction=(

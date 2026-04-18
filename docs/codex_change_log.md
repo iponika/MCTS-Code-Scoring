@@ -4,6 +4,9 @@ This file records Codex-made project changes so work can be resumed safely acros
 
 ## 2026-04-18
 
+- Added a long-term experiment plan and a standard AXIOM+CodeCritic supervised medium-run pipeline.
+- Added unified review-scoring dataset preparation for AXIOMBench and CodeCriticBench.
+- Updated review prompts to use the sample code language instead of hard-coding Python fences.
 - Removed previously tracked Python bytecode/cache files from git tracking. Runtime caches are now covered by `.gitignore`.
 - Removed base-model text self-judging for review MCTS node scoring.
 - `ReviewMCTS` now rejects configs with `self_review_value_func: True` to prevent accidental self-labeled data generation.
