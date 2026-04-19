@@ -298,6 +298,57 @@ def _validate_call_return_claims(text: str, sample: Dict[str, Any]) -> List[Dict
     return checks
 
 
+def _validate_provided_test_failure_claim(parsed: Dict[str, Any], sample: Dict[str, Any]) -> List[Dict[str, Any]]:
+    evidence_type = str(parsed.get("evidence_type", "")).strip()
+    if evidence_type != "provided_test_failure":
+        return []
+
+    assertions = list(sample.get("tests") or [])
+    if not assertions:
+        return [
+            {
+                "kind": "provided_test_failure",
+                "claim": "evidence_type=provided_test_failure",
+                "supported": False,
+                "actual": {"reason": "no_listed_executable_tests"},
+            }
+        ]
+
+    objective = sample.get("objective") or {}
+    pass_rate = objective.get("full_test_pass_rate")
+    if isinstance(pass_rate, (int, float)):
+        if pass_rate >= 0.999:
+            return [
+                {
+                    "kind": "provided_test_failure",
+                    "claim": "evidence_type=provided_test_failure",
+                    "supported": False,
+                    "actual": {"full_test_pass_rate": pass_rate, "reason": "all_listed_tests_pass"},
+                }
+            ]
+        return [
+            {
+                "kind": "provided_test_failure",
+                "claim": "evidence_type=provided_test_failure",
+                "supported": True,
+                "actual": {"full_test_pass_rate": pass_rate},
+            }
+        ]
+
+    checked = []
+    for assertion in assertions[:8]:
+        checked.append({"assertion": assertion, "passed": evaluate_assertion(sample["candidate_code"], assertion)})
+    failing = [item for item in checked if not item["passed"]]
+    return [
+        {
+            "kind": "provided_test_failure",
+            "claim": "evidence_type=provided_test_failure",
+            "supported": bool(failing),
+            "actual": {"checked": checked, "failing_count": len(failing), "truncated": len(assertions) > len(checked)},
+        }
+    ]
+
+
 def validate_review_evidence(parsed: Dict[str, Any], sample: Dict[str, Any]) -> Tuple[float, Dict[str, Any]]:
     evidence = parsed.get("evidence")
     evidence_items = evidence if isinstance(evidence, list) else []
@@ -313,6 +364,7 @@ def validate_review_evidence(parsed: Dict[str, Any], sample: Dict[str, Any]) -> 
     fact_checks.extend(_validate_call_instead_of_claims(claim_text, sample))
     fact_checks.extend(_validate_call_exception_claims(claim_text, sample))
     fact_checks.extend(_validate_call_return_claims(claim_text, sample))
+    fact_checks.extend(_validate_provided_test_failure_claim(parsed, sample))
 
     true_claim_count = sum(1 for check in fact_checks if check["supported"])
     false_claim_count = sum(1 for check in fact_checks if not check["supported"])
@@ -418,9 +470,15 @@ def compute_review_reward(target_dimension: str, final_answer: str, sample: Dict
         )
 
     reward_caps: List[Tuple[str, float]] = []
+    unsupported_provided_test_failure = any(
+        check.get("kind") == "provided_test_failure" and not check.get("supported")
+        for check in evidence_details.get("fact_checks", [])
+    )
     if evidence_details["false_claim_count"] > 0:
         false_claim_cap = 0.70 if evidence_details["true_claim_count"] > 0 else 0.55
         reward_caps.append(("false_executable_evidence_claim", false_claim_cap))
+    if unsupported_provided_test_failure:
+        reward_caps.append(("unsupported_provided_test_failure_evidence", 0.35))
 
     concrete_evidence_types = {"provided_test_failure", "deduced_counterexample", "static_logic_contradiction"}
     has_listed_tests = bool(sample.get("tests"))
