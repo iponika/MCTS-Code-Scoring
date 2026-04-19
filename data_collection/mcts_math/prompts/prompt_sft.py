@@ -87,8 +87,10 @@ Rules:
    - static_logic_contradiction: cite the exact violated requirement and the exact code logic that contradicts it.
    - uncertain: use this when the concern is speculative, opaque, stylistic, or not fully verified.
 6. Do not claim that tests pass or fail unless those tests are explicitly listed in Available tests. If Available tests says no tests are available, never cite test results.
-7. Do not lower a functionally correct solution below 3 for style, readability, performance, maintainability, opacity, or missing explanation alone.
-8. Keep the final JSON compact: summary under 35 words; evidence has at most 2 items, each under 25 words. Output no prose outside <review>.
+7. If no listed test can be shown to fail, do not assign grade 0 or 1 unless the code is unrelated to the task, has a certain runtime/syntax error, or directly contradicts an explicit requirement. Use grade 2 for a likely but not fully proven functional defect; use grade 3 for a plausible correct solution with serious quality/verification concerns.
+8. Do not lower a functionally correct solution below 3 for style, readability, performance, maintainability, opacity, missing explanation, missing input validation, or lack of proof alone.
+9. A listed test is evidence only if you trace the candidate code behavior against that exact test. Do not infer test failure from a vague mismatch.
+10. Keep the final JSON compact: summary under 35 words; evidence has at most 2 items, each under 25 words. Output no prose outside <review>.
 
 Structured final review format:
 <review>
