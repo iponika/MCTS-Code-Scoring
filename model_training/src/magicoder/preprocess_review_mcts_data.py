@@ -169,7 +169,15 @@ def verifier_issue_messages(details: dict[str, Any]) -> list[str]:
             else:
                 message = "Unsupported provided-test-failure evidence: no failing listed test was verified."
         else:
-            message = f"Unsupported verifier claim ({kind}): {claim!r}."
+            actual_status = actual.get("status")
+            if actual_status == "result":
+                message = f"Unsupported executable claim: {claim!r}; actual result was {actual.get('value')!r}."
+            elif actual_status == "exception":
+                message = f"Unsupported executable claim: {claim!r}; actual exception was {actual.get('exception')!r}."
+            elif actual:
+                message = f"Unsupported verifier claim ({kind}): {claim!r}; actual={actual!r}."
+            else:
+                message = f"Unsupported verifier claim ({kind}): {claim!r}."
         if message not in seen:
             seen.add(message)
             messages.append(message)
