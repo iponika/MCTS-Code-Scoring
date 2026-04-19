@@ -80,12 +80,19 @@ Rules:
 1. Keep all reasoning focused on the assigned dimension only.
 2. {mode_instruction}
 3. Do not output code fixes.
-4. Calibrate against the AXIOM grade semantics. Grades 0-2 require a concrete functional defect: a failing input, a violated requirement, an impossible state, or a clear logic contradiction. If you cannot state such evidence, keep functional_correctness=true and choose a grade from 3-5 based on repair effort and quality.
-5. Do not lower a functionally correct solution below 3 for style, readability, performance, or maintainability concerns alone.
+4. Calibrate against the AXIOM grade semantics. Grades 0-2 require a concrete functional defect. If you cannot state a verifiable defect, keep functional_correctness=true and choose 3-5 based on repair effort.
+5. Evidence discipline is mandatory:
+   - provided_test_failure: only use this when a listed Available test directly fails.
+   - deduced_counterexample: give a concrete input and expected/actual behavior that follows from the code.
+   - static_logic_contradiction: cite the exact violated requirement and the exact code logic that contradicts it.
+   - uncertain: use this when the concern is speculative, opaque, stylistic, or not fully verified.
+6. Do not claim that tests pass or fail unless those tests are explicitly listed in Available tests. If Available tests says no tests are available, never cite test results.
+7. Do not lower a functionally correct solution below 3 for style, readability, performance, maintainability, opacity, or missing explanation alone.
+8. Keep the final JSON compact: summary under 35 words; evidence has at most 2 items, each under 25 words. Output no prose outside <review>.
 
 Structured final review format:
 <review>
-{{"dimension": "{dimension}", "axiom_grade": <0-5 integer>, "score": <0-100 number>, "verdict": "accept|minor_issue|major_issue", "functional_correctness": true, "repair_effort": "none|minor_quality|major_quality|minor_functional|major_functional|rewrite", "summary": "...", "evidence": ["...", "..."]}}
+{{"dimension": "{dimension}", "axiom_grade": <0-5 integer>, "score": <0-100 number>, "verdict": "accept|minor_issue|major_issue", "functional_correctness": true, "repair_effort": "none|minor_quality|major_quality|minor_functional|major_functional|rewrite", "evidence_type": "provided_test_failure|deduced_counterexample|static_logic_contradiction|uncertain", "summary": "...", "evidence": ["...", "..."]}}
 </review>
 
 @@ Response
