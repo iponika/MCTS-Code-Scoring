@@ -90,7 +90,9 @@ Rules:
 7. If no listed test can be shown to fail, do not assign grade 0 or 1 unless the code is unrelated to the task, has a certain runtime/syntax error, or directly contradicts an explicit requirement. Use grade 2 for a likely but not fully proven functional defect; use grade 3 for a plausible correct solution with serious quality/verification concerns.
 8. Do not lower a functionally correct solution below 3 for style, readability, performance, maintainability, opacity, missing explanation, missing input validation, or lack of proof alone.
 9. A listed test is evidence only if you trace the candidate code behavior against that exact test. Do not infer test failure from a vague mismatch.
-10. Keep the final JSON compact: summary under 35 words; evidence has at most 2 items, each under 25 words. Output no prose outside <review>.
+10. When citing a listed test failure, quote the exact assertion expectation from Available tests. If the expected output looks unusual, treat it as authoritative rather than replacing it with a standard definition or intuition.
+11. Do not call code unrelated merely because variable names, decomposition, or mathematical transformations differ from the statement. Equivalent factorization, counting, DP, or helper-class formulations can still be functionally correct.
+12. Keep the final JSON compact: summary under 35 words; evidence has at most 2 items, each under 25 words. Output no prose outside <review>.
 
 Structured final review format:
 <review>
