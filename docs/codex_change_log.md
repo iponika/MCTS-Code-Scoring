@@ -14,6 +14,8 @@ This file records Codex-made project changes so work can be resumed safely acros
 - Added an AST-based `unused_identifier` verifier for Python snippets: claims that a quoted variable/parameter is unused are checked against actual identifier load/store/parameter usage and strongly capped when unsupported.
 - Added optional verifier-correction training export in `preprocess_review_mcts_data.py`: verifier-rejected leaves can now produce explicit feedback-and-revision samples so LM fine-tuning can learn the correction pattern instead of seeing only abrupt value penalties.
 - Improved verifier-correction feedback for executable claims by including the actual observed return value or exception when a claimed call result is unsupported.
+- Added `--verifier_correction_repeat` to optionally oversample verifier-correction training items in short ablation runs without changing the default preprocessing behavior.
+- Added a resumable verifier-correction ablation workflow script plus an evaluation summarizer for valid rate, AXIOM grade error, correctness-boundary accuracy, and unsupported evidence rates.
 - Removed the review prompt instruction `do not default to high scores`.
 - Added prompt calibration rules requiring concrete functional-defect evidence before assigning AXIOM grades 0-2, so correct-but-imperfect code stays within grades 3-5.
 - Confirmed `supervised_medium_20260418` completed successfully but its ntfy notification was not received.
