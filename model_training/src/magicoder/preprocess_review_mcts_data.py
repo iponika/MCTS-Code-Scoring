@@ -8,7 +8,15 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any, Iterable
 
-from magicoder.axiom_scoring import axiom_grade_from_scalar, parse_axiom_grade
+from magicoder.axiom_scoring import (
+    AXIOM_GRADE_DESCRIPTIONS,
+    axiom_functionally_correct,
+    axiom_grade_from_scalar,
+    axiom_scalar_score,
+    axiom_verdict,
+    clamp_axiom_grade,
+    parse_axiom_grade,
+)
 
 
 IGNORED_INDEX = -100
@@ -116,6 +124,178 @@ def terminal_reward_details(node: dict[str, Any]) -> dict[str, Any]:
     return details if isinstance(details, dict) else {}
 
 
+def repair_effort_for_grade(grade: int) -> str:
+    grade = clamp_axiom_grade(grade)
+    if grade == 5:
+        return "none"
+    if grade == 4:
+        return "minor_quality"
+    if grade == 3:
+        return "major_quality"
+    if grade == 2:
+        return "minor_functional"
+    if grade == 1:
+        return "major_functional"
+    return "rewrite"
+
+
+def verifier_issue_messages(details: dict[str, Any]) -> list[str]:
+    evidence_details = details.get("evidence_details") if isinstance(details.get("evidence_details"), dict) else {}
+    fact_checks = evidence_details.get("fact_checks") if isinstance(evidence_details.get("fact_checks"), list) else []
+    messages: list[str] = []
+    seen: set[str] = set()
+
+    for check in fact_checks:
+        if not isinstance(check, dict) or check.get("supported", True):
+            continue
+        kind = str(check.get("kind") or "fact_check")
+        claim = str(check.get("claim") or "").strip()
+        actual = check.get("actual") if isinstance(check.get("actual"), dict) else {}
+        if kind == "unused_identifier":
+            identifier = actual.get("identifier")
+            usage = actual.get("usage") if isinstance(actual.get("usage"), dict) else {}
+            message = (
+                f"Unsupported unused-identifier claim: {claim!r}. "
+                f"AST usage for {identifier!r}: load={usage.get('load', 0)}, "
+                f"store={usage.get('store', 0)}, param={usage.get('param', 0)}."
+            )
+        elif kind == "provided_test_failure":
+            reason = actual.get("reason")
+            pass_rate = actual.get("full_test_pass_rate")
+            if reason:
+                message = f"Unsupported provided-test-failure evidence: {reason}."
+            elif pass_rate is not None:
+                message = f"Unsupported provided-test-failure evidence: full_test_pass_rate={pass_rate}."
+            else:
+                message = "Unsupported provided-test-failure evidence: no failing listed test was verified."
+        else:
+            message = f"Unsupported verifier claim ({kind}): {claim!r}."
+        if message not in seen:
+            seen.add(message)
+            messages.append(message)
+
+    for cap in details.get("reward_caps") or []:
+        if not isinstance(cap, dict):
+            continue
+        reason = str(cap.get("reason") or "")
+        if not reason.startswith("unsupported_"):
+            continue
+        message = f"Reward cap triggered by verifier: {reason}."
+        if message not in seen:
+            seen.add(message)
+            messages.append(message)
+    return messages
+
+
+def build_verifier_correction_instruction(
+    record: dict[str, Any],
+    dimension: str,
+    terminal_text: str,
+    messages: list[str],
+) -> str:
+    feedback = "\n".join(f"- {message}" for message in messages)
+    return (
+        build_instruction(record, dimension)
+        + "\n\nA previous review for this same sample was rejected by deterministic verifier checks.\n"
+        "Use the verifier feedback to repair the reasoning. Do not repeat unsupported evidence; "
+        "if the failed claim was central, re-evaluate the AXIOM grade from the task, code, and verified tests.\n\n"
+        f"Previous rejected review:\n{terminal_text.strip()}\n\n"
+        f"Verifier feedback:\n{feedback}"
+    )
+
+
+def build_verifier_correction_response(details: dict[str, Any], dimension: str, messages: list[str]) -> list[str] | None:
+    target_grade = target_grade_from_details(details)
+    if target_grade is None:
+        return None
+    target_grade = clamp_axiom_grade(target_grade)
+
+    feedback_summary = "; ".join(messages[:3])
+    step = (
+        "<step>\n"
+        "Verifier correction: the previous review used unsupported evidence. "
+        f"{feedback_summary} "
+        "I will discard that claim and anchor the score to the verified AXIOM correctness boundary.\n"
+        "</step>"
+    )
+    payload = {
+        "dimension": dimension,
+        "axiom_grade": target_grade,
+        "score": axiom_scalar_score(target_grade),
+        "verdict": axiom_verdict(target_grade),
+        "functional_correctness": axiom_functionally_correct(target_grade),
+        "repair_effort": repair_effort_for_grade(target_grade),
+        "evidence_type": "verifier_corrected",
+        "summary": (
+            f"Corrected after verifier rejected unsupported evidence. "
+            f"Use AXIOM grade {target_grade}: {AXIOM_GRADE_DESCRIPTIONS[target_grade]}"
+        ),
+        "evidence": [
+            "Unsupported evidence from the previous review was removed.",
+            f"The corrected score follows AXIOM grade {target_grade} after removing unsupported evidence.",
+        ],
+    }
+    review = "<review>\n" + json.dumps(payload, ensure_ascii=False) + "\n</review>"
+    return [step, review]
+
+
+def target_grade_from_details(details: dict[str, Any]) -> int | None:
+    target_grade = details.get("target_axiom_grade")
+    if isinstance(target_grade, (int, float)):
+        return clamp_axiom_grade(target_grade)
+    target_score = details.get("target_score")
+    max_score = 100.0 if isinstance(target_score, (int, float)) and float(target_score) > 10.0 else 10.0
+    return axiom_grade_from_scalar(target_score, max_score=max_score)
+
+
+def verifier_correction_training_item(
+    record: dict[str, Any],
+    tag: str,
+    q_value: float,
+    lm_loss_weight: float,
+    value_loss_weight: float,
+) -> dict[str, Any] | None:
+    terminal = record.get("react", {}).get(tag)
+    if not isinstance(terminal, dict):
+        return None
+    dimension = terminal.get("target_dimension") or ""
+    if not dimension:
+        return None
+    details = terminal_reward_details(terminal)
+    messages = verifier_issue_messages(details)
+    if not messages:
+        return None
+    response = build_verifier_correction_response(details, dimension, messages)
+    if not response:
+        return None
+    target_grade = target_grade_from_details(details)
+    if target_grade is None:
+        return None
+    q_value = clamp_reward(q_value)
+    return {
+        "instruction": build_verifier_correction_instruction(record, dimension, str(terminal.get("text") or ""), messages),
+        "response": response,
+        "q_value": [q_value for _ in response],
+        "train_lm": True,
+        "dataset_index": record.get("dataset_index"),
+        "source": record.get("source"),
+        "subset": record.get("subset"),
+        "target_dimension": dimension,
+        "terminal_tag": f"{tag}#verifier_correction",
+        "terminal_q_value": q_value,
+        "terminal_error": None,
+        "parsed_score": axiom_scalar_score(target_grade),
+        "parsed_axiom_grade": target_grade,
+        "target_score": details.get("target_score"),
+        "target_axiom_grade": details.get("target_axiom_grade"),
+        "is_best_path": True,
+        "synthetic_type": "verifier_correction",
+        "verifier_feedback": messages,
+        "value_loss_weight": value_loss_weight,
+        "lm_loss_weight": lm_loss_weight,
+    }
+
+
 def path_to_training_item(
     record: dict[str, Any],
     tag: str,
@@ -202,10 +382,16 @@ def convert_records(
     policy_min_q: float,
     max_value_paths_per_dimension: int,
     data_split: str = "main",
+    emit_verifier_corrections: bool = False,
+    verifier_correction_q: float = 0.8,
+    verifier_correction_lm_weight: float = 0.5,
+    verifier_correction_value_weight: float = 0.5,
+    max_verifier_corrections: int = 0,
 ) -> tuple[list[dict[str, Any]], dict[str, int]]:
     items: list[dict[str, Any]] = []
     stats = defaultdict(int)
     seen: set[tuple[Any, str]] = set()
+    verifier_corrections = 0
 
     for record in records:
         stats["records"] += 1
@@ -236,6 +422,32 @@ def convert_records(
             stats["policy_paths" if train_lm else "value_only_paths"] += 1
             if error:
                 stats[f"error_{error}"] += 1
+
+            if emit_verifier_corrections and (max_verifier_corrections <= 0 or verifier_corrections < max_verifier_corrections):
+                correction = verifier_correction_training_item(
+                    record,
+                    tag,
+                    q_value=verifier_correction_q,
+                    lm_loss_weight=verifier_correction_lm_weight,
+                    value_loss_weight=verifier_correction_value_weight,
+                )
+                if correction is not None:
+                    correction["data_split"] = data_split
+                    correction_key = (
+                        correction.get("source"),
+                        correction.get("subset"),
+                        correction.get("dataset_index"),
+                        correction.get("terminal_tag"),
+                    )
+                    if correction_key in seen:
+                        stats["duplicate_verifier_corrections"] += 1
+                    else:
+                        seen.add(correction_key)
+                        items.append(correction)
+                        verifier_corrections += 1
+                        stats["paths"] += 1
+                        stats["policy_paths"] += 1
+                        stats["verifier_correction_paths"] += 1
 
     return items, dict(stats)
 
@@ -606,6 +818,35 @@ def main() -> None:
         default=3,
         help="Minimum valid review scores needed for a sample-dimension consensus group.",
     )
+    parser.add_argument(
+        "--emit_verifier_corrections",
+        action="store_true",
+        help="Emit extra LM/value training items that explicitly repair verifier-rejected review evidence.",
+    )
+    parser.add_argument(
+        "--verifier_correction_q",
+        type=float,
+        default=0.8,
+        help="Target q_value assigned to synthetic verifier-correction responses.",
+    )
+    parser.add_argument(
+        "--verifier_correction_lm_weight",
+        type=float,
+        default=0.5,
+        help="LM loss weight for synthetic verifier-correction responses.",
+    )
+    parser.add_argument(
+        "--verifier_correction_value_weight",
+        type=float,
+        default=0.5,
+        help="Value loss weight for synthetic verifier-correction responses.",
+    )
+    parser.add_argument(
+        "--max_verifier_corrections",
+        type=int,
+        default=0,
+        help="Maximum synthetic verifier-correction items per split. 0 means no cap.",
+    )
     parser.add_argument("--shuffle_seed", type=int, default=42, help="Seed for replay sampling and output shuffling.")
     parser.add_argument(
         "--shuffle",
@@ -622,6 +863,11 @@ def main() -> None:
         policy_min_q=args.policy_min_q,
         max_value_paths_per_dimension=args.max_value_paths_per_dimension,
         data_split="new",
+        emit_verifier_corrections=args.emit_verifier_corrections,
+        verifier_correction_q=args.verifier_correction_q,
+        verifier_correction_lm_weight=args.verifier_correction_lm_weight,
+        verifier_correction_value_weight=args.verifier_correction_value_weight,
+        max_verifier_corrections=args.max_verifier_corrections,
     )
     stats = {f"new_{key}": value for key, value in new_stats.items()}
 
@@ -632,6 +878,11 @@ def main() -> None:
         policy_min_q=args.policy_min_q,
         max_value_paths_per_dimension=args.max_value_paths_per_dimension,
         data_split="replay",
+        emit_verifier_corrections=args.emit_verifier_corrections,
+        verifier_correction_q=args.verifier_correction_q,
+        verifier_correction_lm_weight=args.verifier_correction_lm_weight,
+        verifier_correction_value_weight=args.verifier_correction_value_weight,
+        max_verifier_corrections=args.max_verifier_corrections,
     )
     stats.update({f"replay_{key}": value for key, value in replay_stats.items()})
     selected_replay_items = select_replay_items(
