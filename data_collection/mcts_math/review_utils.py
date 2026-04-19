@@ -361,9 +361,14 @@ def build_dimension_target_scores(sample: Dict[str, Any]) -> Dict[str, float]:
 
 def build_axiom_target_grade(sample: Dict[str, Any]) -> int:
     mapped = axiom_grade_from_codecritic(sample.get("correctness_label"), sample.get("overall_score"))
-    if mapped is not None:
-        return mapped
+    has_executable_tests = bool(sample.get("tests"))
     pass_rate = sample.get("objective", {}).get("full_test_pass_rate", 0.0)
+    if mapped is not None:
+        if has_executable_tests and pass_rate >= 0.999 and mapped < 3:
+            return 3
+        if has_executable_tests and pass_rate <= 0.0 and mapped >= 3:
+            return 2
+        return mapped
     if pass_rate >= 0.999:
         return 4
     if pass_rate > 0.0:
