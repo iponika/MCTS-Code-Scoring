@@ -383,6 +383,7 @@ def compute_review_reward(target_dimension: str, final_answer: str, sample: Dict
     predicted_score = axiom_scalar_score(predicted_grade)
 
     predicted_verdict = str(parsed.get("verdict", "")).strip()
+    evidence_type = str(parsed.get("evidence_type", "")).strip()
     evidence_alignment, evidence_details = validate_review_evidence(parsed, sample)
 
     target_grade = int(sample.get("axiom_target_grade", build_axiom_target_grade(sample)))
@@ -416,6 +417,15 @@ def compute_review_reward(target_dimension: str, final_answer: str, sample: Dict
         false_claim_cap = 0.70 if evidence_details["true_claim_count"] > 0 else 0.55
         reward_caps.append(("false_executable_evidence_claim", false_claim_cap))
 
+    concrete_evidence_types = {"provided_test_failure", "deduced_counterexample", "static_logic_contradiction"}
+    has_listed_tests = bool(sample.get("tests"))
+    if predicted_grade < 3 and evidence_type not in concrete_evidence_types:
+        reward_caps.append(("low_grade_without_concrete_evidence_type", 0.55))
+    if predicted_grade < 3 and evidence_type == "provided_test_failure" and not has_listed_tests:
+        reward_caps.append(("test_failure_claim_without_available_tests", 0.35))
+    if predicted_grade < 3 and evidence_type == "uncertain":
+        reward_caps.append(("uncertain_evidence_cannot_support_low_grade", 0.45))
+
     correctness_label = str(sample.get("correctness_label") or "").lower()
     if (
         target_dimension == "Correctness Verification"
@@ -426,7 +436,7 @@ def compute_review_reward(target_dimension: str, final_answer: str, sample: Dict
         reward_caps.append(("functional_correctness_boundary_conflict", 0.55))
 
     if axiom_functionally_correct(predicted_grade) != axiom_functionally_correct(target_grade):
-        reward_caps.append(("axiom_functionality_boundary_mismatch", 0.60))
+        reward_caps.append(("axiom_functionality_boundary_mismatch", 0.35))
 
     if reward_caps:
         reward_01 = min(reward_01, *(cap for _, cap in reward_caps))
@@ -446,6 +456,7 @@ def compute_review_reward(target_dimension: str, final_answer: str, sample: Dict
         "dimension_alignment": round(dimension_alignment, 4),
         "functionality_alignment": round(functionality_alignment, 4),
         "verdict_alignment": round(verdict_alignment, 4),
+        "evidence_type": evidence_type,
         "evidence_alignment": round(evidence_alignment, 4),
         "evidence_details": evidence_details,
         "reward_01": round(reward_01, 4),
