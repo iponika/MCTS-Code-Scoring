@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import copy
 import json
 import random
 import statistics
@@ -394,6 +395,7 @@ def convert_records(
     verifier_correction_q: float = 0.8,
     verifier_correction_lm_weight: float = 0.5,
     verifier_correction_value_weight: float = 0.5,
+    verifier_correction_repeat: int = 1,
     max_verifier_corrections: int = 0,
 ) -> tuple[list[dict[str, Any]], dict[str, int]]:
     items: list[dict[str, Any]] = []
@@ -441,21 +443,29 @@ def convert_records(
                 )
                 if correction is not None:
                     correction["data_split"] = data_split
-                    correction_key = (
-                        correction.get("source"),
-                        correction.get("subset"),
-                        correction.get("dataset_index"),
-                        correction.get("terminal_tag"),
-                    )
-                    if correction_key in seen:
-                        stats["duplicate_verifier_corrections"] += 1
-                    else:
+                    repeat_count = max(1, verifier_correction_repeat)
+                    base_terminal_tag = str(correction.get("terminal_tag") or "")
+                    for repeat_index in range(repeat_count):
+                        repeated = correction if repeat_index == 0 else copy.deepcopy(correction)
+                        if repeat_count > 1:
+                            repeated["terminal_tag"] = f"{base_terminal_tag}#repeat{repeat_index}"
+                            repeated["synthetic_repeat_index"] = repeat_index
+                            repeated["synthetic_repeat_count"] = repeat_count
+                        correction_key = (
+                            repeated.get("source"),
+                            repeated.get("subset"),
+                            repeated.get("dataset_index"),
+                            repeated.get("terminal_tag"),
+                        )
+                        if correction_key in seen:
+                            stats["duplicate_verifier_corrections"] += 1
+                            continue
                         seen.add(correction_key)
-                        items.append(correction)
-                        verifier_corrections += 1
+                        items.append(repeated)
                         stats["paths"] += 1
                         stats["policy_paths"] += 1
                         stats["verifier_correction_paths"] += 1
+                    verifier_corrections += 1
 
     return items, dict(stats)
 
@@ -850,6 +860,12 @@ def main() -> None:
         help="Value loss weight for synthetic verifier-correction responses.",
     )
     parser.add_argument(
+        "--verifier_correction_repeat",
+        type=int,
+        default=1,
+        help="Repeat each synthetic verifier-correction item this many times with unique tags. Useful for short ablations.",
+    )
+    parser.add_argument(
         "--max_verifier_corrections",
         type=int,
         default=0,
@@ -875,6 +891,7 @@ def main() -> None:
         verifier_correction_q=args.verifier_correction_q,
         verifier_correction_lm_weight=args.verifier_correction_lm_weight,
         verifier_correction_value_weight=args.verifier_correction_value_weight,
+        verifier_correction_repeat=args.verifier_correction_repeat,
         max_verifier_corrections=args.max_verifier_corrections,
     )
     stats = {f"new_{key}": value for key, value in new_stats.items()}
@@ -890,6 +907,7 @@ def main() -> None:
         verifier_correction_q=args.verifier_correction_q,
         verifier_correction_lm_weight=args.verifier_correction_lm_weight,
         verifier_correction_value_weight=args.verifier_correction_value_weight,
+        verifier_correction_repeat=args.verifier_correction_repeat,
         max_verifier_corrections=args.max_verifier_corrections,
     )
     stats.update({f"replay_{key}": value for key, value in replay_stats.items()})
