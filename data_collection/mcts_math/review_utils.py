@@ -298,6 +298,61 @@ def _validate_call_return_claims(text: str, sample: Dict[str, Any]) -> List[Dict
     return checks
 
 
+def _identifier_usage_counts(code: str, name: str) -> Dict[str, int] | None:
+    try:
+        tree = ast.parse(_normalize_candidate_code(code))
+    except SyntaxError:
+        return None
+    counts = {"load": 0, "store": 0, "param": 0, "delete": 0}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Name) and node.id == name:
+            if isinstance(node.ctx, ast.Load):
+                counts["load"] += 1
+            elif isinstance(node.ctx, ast.Store):
+                counts["store"] += 1
+            elif isinstance(node.ctx, ast.Del):
+                counts["delete"] += 1
+        elif isinstance(node, ast.arg) and node.arg == name:
+            counts["param"] += 1
+    return counts
+
+
+def _validate_unused_identifier_claims(text: str, sample: Dict[str, Any]) -> List[Dict[str, Any]]:
+    checks = []
+    pattern = re.compile(
+        r"(?:variable|parameter|argument|identifier|name|input|target(?:\s+\w+)?)?\s*"
+        r"[`'\"](?P<name>[A-Za-z_]\w*)[`'\"]\s+"
+        r"(?:is\s+|was\s+|being\s+)?"
+        r"(?P<claim>unused|not\s+used|never\s+used|ignored|not\s+referenced|never\s+referenced)",
+        flags=re.IGNORECASE,
+    )
+    seen: set[tuple[str, str]] = set()
+    for match in pattern.finditer(text):
+        name = match.group("name")
+        key = (name, match.group(0))
+        if key in seen:
+            continue
+        seen.add(key)
+        counts = _identifier_usage_counts(sample["candidate_code"], name)
+        if counts is None:
+            continue
+        defined = counts["store"] + counts["param"] > 0
+        supported = defined and counts["load"] == 0
+        checks.append(
+            {
+                "kind": "unused_identifier",
+                "claim": match.group(0).strip(),
+                "supported": supported,
+                "actual": {
+                    "identifier": name,
+                    "usage": counts,
+                    "reason": "identifier_unused" if supported else "identifier_used_or_not_defined",
+                },
+            }
+        )
+    return checks
+
+
 def _validate_provided_test_failure_claim(parsed: Dict[str, Any], sample: Dict[str, Any]) -> List[Dict[str, Any]]:
     evidence_type = str(parsed.get("evidence_type", "")).strip()
     if evidence_type != "provided_test_failure":
@@ -364,6 +419,7 @@ def validate_review_evidence(parsed: Dict[str, Any], sample: Dict[str, Any]) -> 
     fact_checks.extend(_validate_call_instead_of_claims(claim_text, sample))
     fact_checks.extend(_validate_call_exception_claims(claim_text, sample))
     fact_checks.extend(_validate_call_return_claims(claim_text, sample))
+    fact_checks.extend(_validate_unused_identifier_claims(claim_text, sample))
     fact_checks.extend(_validate_provided_test_failure_claim(parsed, sample))
 
     true_claim_count = sum(1 for check in fact_checks if check["supported"])
@@ -474,11 +530,17 @@ def compute_review_reward(target_dimension: str, final_answer: str, sample: Dict
         check.get("kind") == "provided_test_failure" and not check.get("supported")
         for check in evidence_details.get("fact_checks", [])
     )
+    unsupported_unused_identifier = any(
+        check.get("kind") == "unused_identifier" and not check.get("supported")
+        for check in evidence_details.get("fact_checks", [])
+    )
     if evidence_details["false_claim_count"] > 0:
         false_claim_cap = 0.70 if evidence_details["true_claim_count"] > 0 else 0.55
         reward_caps.append(("false_executable_evidence_claim", false_claim_cap))
     if unsupported_provided_test_failure:
         reward_caps.append(("unsupported_provided_test_failure_evidence", 0.15))
+    if unsupported_unused_identifier:
+        reward_caps.append(("unsupported_unused_identifier_evidence", 0.25))
 
     concrete_evidence_types = {"provided_test_failure", "deduced_counterexample", "static_logic_contradiction"}
     has_listed_tests = bool(sample.get("tests"))
