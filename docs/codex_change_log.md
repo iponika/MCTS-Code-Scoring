@@ -6,6 +6,7 @@ This file records Codex-made project changes so work can be resumed safely acros
 
 - Tightened the review prompt around evidence discipline: low AXIOM grades now require an explicit concrete evidence type, test-result claims are forbidden without listed tests, and final JSON is kept compact to reduce truncation.
 - Made supervised review rewards more aggressive against functional-boundary mistakes and low-grade predictions without concrete evidence.
+- Added a stronger no-test calibration rule: without a traced listed-test failure, grade 0/1 is reserved for unrelated code, certain runtime/syntax errors, or direct requirement contradictions; plausible but unproven defects should stay at 2/3.
 - Removed the review prompt instruction `do not default to high scores`.
 - Added prompt calibration rules requiring concrete functional-defect evidence before assigning AXIOM grades 0-2, so correct-but-imperfect code stays within grades 3-5.
 - Confirmed `supervised_medium_20260418` completed successfully but its ntfy notification was not received.
