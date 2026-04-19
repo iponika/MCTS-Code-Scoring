@@ -80,7 +80,8 @@ Rules:
 1. Keep all reasoning focused on the assigned dimension only.
 2. {mode_instruction}
 3. Do not output code fixes.
-4. Calibrate against the AXIOM grade semantics; do not default to high scores.
+4. Calibrate against the AXIOM grade semantics. Grades 0-2 require a concrete functional defect: a failing input, a violated requirement, an impossible state, or a clear logic contradiction. If you cannot state such evidence, keep functional_correctness=true and choose a grade from 3-5 based on repair effort and quality.
+5. Do not lower a functionally correct solution below 3 for style, readability, performance, or maintainability concerns alone.
 
 Structured final review format:
 <review>
