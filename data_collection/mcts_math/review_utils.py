@@ -478,7 +478,7 @@ def compute_review_reward(target_dimension: str, final_answer: str, sample: Dict
         false_claim_cap = 0.70 if evidence_details["true_claim_count"] > 0 else 0.55
         reward_caps.append(("false_executable_evidence_claim", false_claim_cap))
     if unsupported_provided_test_failure:
-        reward_caps.append(("unsupported_provided_test_failure_evidence", 0.35))
+        reward_caps.append(("unsupported_provided_test_failure_evidence", 0.15))
 
     concrete_evidence_types = {"provided_test_failure", "deduced_counterexample", "static_logic_contradiction"}
     has_listed_tests = bool(sample.get("tests"))
