@@ -10,8 +10,9 @@ DIRECT_OUT="$RUN_DIR/direct_local.jsonl"
 MCTS_OUT="$RUN_DIR/supervised_mcts_local.jsonl"
 SUMMARY="$RUN_DIR/summary.json"
 LOG="$RUN_DIR/run.log"
+NOTIFY_LOG="$RUN_DIR/notify.log"
 CFG="${CFG:-data_collection/configs/mcts_code_review_supervised_medium.yaml}"
-NTFY_TOPIC="${NTFY_TOPIC:-ntfy.sh/iponika_mcts}"
+NTFY_TOPIC="${NTFY_TOPIC:-https://ntfy.sh/iponika_mcts}"
 
 line_count() {
   if [[ -f "$1" ]]; then
@@ -22,7 +23,18 @@ line_count() {
 }
 
 notify() {
-  curl -d "$1" "$NTFY_TOPIC" >/dev/null 2>&1 || true
+  local message="$1"
+  local attempt
+  mkdir -p "$RUN_DIR"
+  for attempt in 1 2 3; do
+    if curl -fsS -d "$message" "$NTFY_TOPIC" >>"$NOTIFY_LOG" 2>&1; then
+      echo "[$(date '+%F %T')] notify ok attempt=$attempt message=$message" >>"$NOTIFY_LOG"
+      return 0
+    fi
+    echo "[$(date '+%F %T')] notify failed attempt=$attempt message=$message" >>"$NOTIFY_LOG"
+    sleep $((attempt * 5))
+  done
+  return 0
 }
 
 mkdir -p "$RUN_DIR/samples" "$RUN_DIR/logs"

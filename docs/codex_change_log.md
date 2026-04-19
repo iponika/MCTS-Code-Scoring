@@ -2,6 +2,11 @@
 
 This file records Codex-made project changes so work can be resumed safely across forks and sessions. Each future code or workflow change should update this log and be followed by a git commit.
 
+## 2026-04-19
+
+- Confirmed `supervised_medium_20260418` completed successfully but its ntfy notification was not received.
+- Added retrying ntfy notifications and `notify.log` diagnostics to the supervised medium run script.
+
 ## 2026-04-18
 
 - Added a long-term experiment plan and a standard AXIOM+CodeCritic supervised medium-run pipeline.
