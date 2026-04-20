@@ -4,6 +4,7 @@ This file records Codex-made project changes so work can be resumed safely acros
 
 ## 2026-04-20
 
+- Added `run_report_pilot_training.sh` to build a report-oriented static AXIOM/CodeCritic + repeated MCTS value-only training mix, train a 480-step LoRA/value-head checkpoint, and compare base direct, report direct, and report value-guided MCTS outputs.
 - Added `run_verifier_valueonly_repeat3.sh` to run deterministic evaluation of the current value-only verifier ablation and three fresh seeded baseline-vs-value-only repeats with aggregate summaries.
 - Added `run_verifier_valueonly_ablation.sh` for a clean filtered1152 baseline-vs-value-only verifier correction comparison, training both fresh checkpoints on separate GPUs and writing a post-eval comparison summary.
 - Changed verifier-correction export to default to value-only supervision: synthetic corrections no longer produce LM loss unless `--verifier_correction_mode policy` or `paired_repair` is explicitly selected. Original MCTS leaves with verifier-flagged unsupported evidence are also forced out of policy imitation.
