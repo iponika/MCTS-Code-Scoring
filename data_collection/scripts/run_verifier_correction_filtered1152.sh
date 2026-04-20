@@ -104,7 +104,7 @@ convert_and_filter() {
       --model_key Qwen/Qwen3.5-9B \
       --model_name_or_path "${MODEL_PATH}" \
       --max_tokens 1152 \
-      --min_policy_items 40 \
+      --min_policy_items 20 \
       --shuffle_seed 20260420
   else
     echo "[stage:${CURRENT_STAGE}] baseline filtered exists: ${BASE_DATA}"
@@ -123,7 +123,7 @@ convert_and_filter() {
       --model_key Qwen/Qwen3.5-9B \
       --model_name_or_path "${MODEL_PATH}" \
       --max_tokens 1152 \
-      --min_policy_items 70 \
+      --min_policy_items 30 \
       --shuffle_seed 20260420
   else
     echo "[stage:${CURRENT_STAGE}] correction weak filtered exists: ${CORR_DATA}"
