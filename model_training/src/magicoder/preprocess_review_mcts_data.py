@@ -263,6 +263,7 @@ def verifier_correction_training_item(
     q_value: float,
     lm_loss_weight: float,
     value_loss_weight: float,
+    mode: str,
 ) -> dict[str, Any] | None:
     terminal = record.get("react", {}).get(tag)
     if not isinstance(terminal, dict):
@@ -281,27 +282,32 @@ def verifier_correction_training_item(
     if target_grade is None:
         return None
     q_value = clamp_reward(q_value)
+    train_lm = mode in {"policy", "paired_repair"}
+    synthetic_type = "verifier_correction" if mode == "policy" else f"verifier_correction_{mode}"
+    terminal_suffix = f"verifier_correction_{mode}"
     return {
         "instruction": build_verifier_correction_instruction(record, dimension, str(terminal.get("text") or ""), messages),
         "response": response,
         "q_value": [q_value for _ in response],
-        "train_lm": True,
+        "train_lm": train_lm,
         "dataset_index": record.get("dataset_index"),
         "source": record.get("source"),
         "subset": record.get("subset"),
         "target_dimension": dimension,
-        "terminal_tag": f"{tag}#verifier_correction",
+        "terminal_tag": f"{tag}#{terminal_suffix}",
         "terminal_q_value": q_value,
         "terminal_error": None,
         "parsed_score": axiom_scalar_score(target_grade),
         "parsed_axiom_grade": target_grade,
         "target_score": details.get("target_score"),
         "target_axiom_grade": details.get("target_axiom_grade"),
-        "is_best_path": True,
-        "synthetic_type": "verifier_correction",
+        "is_best_path": train_lm,
+        "synthetic_type": synthetic_type,
         "verifier_feedback": messages,
         "value_loss_weight": value_loss_weight,
-        "lm_loss_weight": lm_loss_weight,
+        "lm_loss_weight": lm_loss_weight if train_lm else 0.0,
+        "force_value_only": not train_lm,
+        "allow_verifier_policy": train_lm,
     }
 
 
@@ -334,12 +340,13 @@ def path_to_training_item(
         return None
 
     details = terminal_reward_details(terminal)
+    verifier_feedback = verifier_issue_messages(details)
     parsed = details.get("parsed") if isinstance(details.get("parsed"), dict) else {}
     parsed_axiom_grade = details.get("predicted_axiom_grade")
     if parsed_axiom_grade is None:
         parsed_axiom_grade = parse_axiom_grade(parsed)
 
-    return {
+    item = {
         "instruction": build_instruction(record, dimension),
         "response": responses,
         "q_value": q_values,
@@ -356,6 +363,11 @@ def path_to_training_item(
         "target_score": details.get("target_score"),
         "target_axiom_grade": details.get("target_axiom_grade"),
     }
+    if verifier_feedback:
+        item["verifier_feedback"] = verifier_feedback
+        item["force_value_only"] = True
+        item["lm_loss_weight"] = 0.0
+    return item
 
 
 def collect_terminal_tags(record: dict[str, Any]) -> list[str]:
@@ -392,6 +404,7 @@ def convert_records(
     max_value_paths_per_dimension: int,
     data_split: str = "main",
     emit_verifier_corrections: bool = False,
+    verifier_correction_mode: str = "value_only",
     verifier_correction_q: float = 0.8,
     verifier_correction_lm_weight: float = 0.5,
     verifier_correction_value_weight: float = 0.5,
@@ -414,7 +427,9 @@ def convert_records(
                 continue
             q_value = float(node.get("q_value", IGNORED_INDEX))
             error = terminal_error(node)
-            train_lm = tag in best and q_value >= policy_min_q and error is None
+            details = terminal_reward_details(node)
+            has_verifier_issues = bool(verifier_issue_messages(details))
+            train_lm = tag in best and q_value >= policy_min_q and error is None and not has_verifier_issues
             item = path_to_training_item(record, tag, train_lm=train_lm)
             if item is None:
                 stats["skipped_paths"] += 1
@@ -440,6 +455,7 @@ def convert_records(
                     q_value=verifier_correction_q,
                     lm_loss_weight=verifier_correction_lm_weight,
                     value_loss_weight=verifier_correction_value_weight,
+                    mode=verifier_correction_mode,
                 )
                 if correction is not None:
                     correction["data_split"] = data_split
@@ -463,8 +479,12 @@ def convert_records(
                         seen.add(correction_key)
                         items.append(repeated)
                         stats["paths"] += 1
-                        stats["policy_paths"] += 1
+                        if repeated.get("train_lm"):
+                            stats["policy_paths"] += 1
+                        else:
+                            stats["value_only_paths"] += 1
                         stats["verifier_correction_paths"] += 1
+                        stats[f"verifier_correction_mode_{verifier_correction_mode}"] += 1
                     verifier_corrections += 1
 
     return items, dict(stats)
@@ -734,8 +754,16 @@ def refresh_policy_flags(items: list[dict[str, Any]], policy_min_q: float) -> di
     for item in items:
         old_train_lm = bool(item.get("train_lm"))
         terminal_q = numeric_q_value(item.get("terminal_q_value"))
-        new_train_lm = bool(item.get("is_best_path")) and terminal_q >= policy_min_q and item.get("terminal_error") is None
+        new_train_lm = (
+            bool(item.get("is_best_path"))
+            and terminal_q >= policy_min_q
+            and item.get("terminal_error") is None
+            and not item.get("force_value_only")
+            and (not item.get("verifier_feedback") or item.get("allow_verifier_policy"))
+        )
         item["train_lm"] = new_train_lm
+        if not new_train_lm and item.get("force_value_only"):
+            item["lm_loss_weight"] = 0.0
         if old_train_lm != new_train_lm:
             stats["policy_flag_changed"] += 1
             stats["policy_flag_upgraded" if new_train_lm else "policy_flag_downgraded"] += 1
@@ -839,7 +867,16 @@ def main() -> None:
     parser.add_argument(
         "--emit_verifier_corrections",
         action="store_true",
-        help="Emit extra LM/value training items that explicitly repair verifier-rejected review evidence.",
+        help="Emit extra verifier-feedback items. Defaults to value-only supervision, not policy imitation.",
+    )
+    parser.add_argument(
+        "--verifier_correction_mode",
+        choices=["value_only", "policy", "paired_repair"],
+        default="value_only",
+        help=(
+            "How emitted verifier corrections are trained. value_only gives value-head supervision with no LM loss; "
+            "policy preserves the older behavior; paired_repair is reserved for explicit repair-process imitation."
+        ),
     )
     parser.add_argument(
         "--verifier_correction_q",
@@ -888,6 +925,7 @@ def main() -> None:
         max_value_paths_per_dimension=args.max_value_paths_per_dimension,
         data_split="new",
         emit_verifier_corrections=args.emit_verifier_corrections,
+        verifier_correction_mode=args.verifier_correction_mode,
         verifier_correction_q=args.verifier_correction_q,
         verifier_correction_lm_weight=args.verifier_correction_lm_weight,
         verifier_correction_value_weight=args.verifier_correction_value_weight,
@@ -904,6 +942,7 @@ def main() -> None:
         max_value_paths_per_dimension=args.max_value_paths_per_dimension,
         data_split="replay",
         emit_verifier_corrections=args.emit_verifier_corrections,
+        verifier_correction_mode=args.verifier_correction_mode,
         verifier_correction_q=args.verifier_correction_q,
         verifier_correction_lm_weight=args.verifier_correction_lm_weight,
         verifier_correction_value_weight=args.verifier_correction_value_weight,

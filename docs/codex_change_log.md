@@ -2,6 +2,10 @@
 
 This file records Codex-made project changes so work can be resumed safely across forks and sessions. Each future code or workflow change should update this log and be followed by a git commit.
 
+## 2026-04-20
+
+- Changed verifier-correction export to default to value-only supervision: synthetic corrections no longer produce LM loss unless `--verifier_correction_mode policy` or `paired_repair` is explicitly selected. Original MCTS leaves with verifier-flagged unsupported evidence are also forced out of policy imitation.
+
 ## 2026-04-19
 
 - Tightened the review prompt around evidence discipline: low AXIOM grades now require an explicit concrete evidence type, test-result claims are forbidden without listed tests, and final JSON is kept compact to reduce truncation.
