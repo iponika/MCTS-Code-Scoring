@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -16,15 +17,33 @@ from magicoder.review_policy_value_inference import (
     resolve_model_path,
     score_response,
 )
-from magicoder.review_value_guided_evaluator import VALUE_SCORE_KEYS, candidate_sort_key
+from magicoder.review_value_guided_evaluator import VALUE_SCORE_KEYS
 from magicoder.prompt_template import QWEN_REVIEW_STEP_PROMPT
 from magicoder.axiom_scoring import (
     AXIOM_SCALE_TEXT,
+    axiom_grade_from_scalar,
     axiom_grade_from_codecritic,
     axiom_scalar_score,
     clamp_axiom_grade,
     parse_axiom_grade,
 )
+
+
+QWEN_REVIEW_FINAL_ONLY_PROMPT = """You are an exceptionally intelligent code scoring model.
+@@ Instruction
+Score the candidate code using the AXIOM 0-5 ordinal code-quality scale.
+Textual critique is only supporting evidence; the primary output is a stable scalar grade.
+Functionality is the primary boundary: grades 3-5 are functionally correct, grades 0-2 are not.
+
+{instruction}
+
+Output exactly one JSON object wrapped in <review> tags.
+Do not output <step> blocks, markdown, code fixes, or prose outside the tags.
+Required JSON keys: dimension, axiom_grade, score, verdict, functional_correctness, repair_effort, summary, evidence.
+Use a compact evidence array with at most 2 short strings.
+
+@@ Response
+"""
 
 
 DEFAULT_DIMENSIONS = [
@@ -122,8 +141,17 @@ def prompt_for_dimension(
     partial_response: str = "",
     force_final: bool = False,
     parse_error: dict[str, Any] | None = None,
+    final_only: bool = False,
 ) -> str:
     instruction = build_instruction(sample, dimension)
+    if final_only:
+        if parse_error:
+            instruction += (
+                "\n\nPrevious final review parse error: "
+                f"{parse_error.get('error')}: {parse_error.get('message', '')}. "
+                "Correct the JSON syntax in the next review block."
+            )
+        return QWEN_REVIEW_FINAL_ONLY_PROMPT.format(instruction=instruction)
     if force_final:
         instruction += (
             "\n\nCurrent generation mode: finish now. Start your next output with <review> and end it with </review>. "
@@ -172,6 +200,20 @@ def parse_final_review(text: str) -> dict[str, Any]:
     except json.JSONDecodeError as exc:
         return {"ok": False, "error": "invalid_review_json", "raw_review": review_text, "message": str(exc)}
     return {"ok": True, "parsed": parsed}
+
+
+def lenient_axiom_grade(text: str) -> int | None:
+    if not text:
+        return None
+    matches = re.findall(r'"(?:axiom_grade|grade)"\s*:\s*([0-5](?:\.\d+)?)', text)
+    if not matches:
+        matches = re.findall(r'\b(?:axiom_grade|grade)\b[^0-9]{0,20}([0-5](?:\.\d+)?)', text, flags=re.IGNORECASE)
+    if matches:
+        return clamp_axiom_grade(float(matches[-1]))
+    score_matches = re.findall(r'"score"\s*:\s*([0-9]+(?:\.\d+)?)', text)
+    if score_matches:
+        return axiom_grade_from_scalar(float(score_matches[-1]), max_score=100.0)
+    return None
 
 
 def parsed_review_score(final_review_parse: dict[str, Any]) -> float | None:
@@ -228,6 +270,42 @@ def neutral_value_score() -> dict[str, float | int]:
     }
 
 
+def final_candidate_sort_key(candidate: dict[str, Any], args, force_final: bool) -> tuple[float, float]:
+    value_score = candidate["value_score"]
+    primary = float(value_score[args.score_key])
+    tie_break = float(value_score["last_value"])
+    if not force_final:
+        return primary, tie_break
+
+    continuation = str(candidate.get("continuation") or "")
+    grade = lenient_axiom_grade(continuation)
+    if grade is None:
+        primary -= float(args.format_penalty)
+    elif grade < 3 and not concrete_low_grade_evidence(continuation):
+        primary -= float(args.low_grade_no_evidence_penalty)
+    return primary, tie_break
+
+
+def concrete_low_grade_evidence(text: str) -> bool:
+    lowered = text.lower()
+    evidence_markers = (
+        "fails",
+        "incorrect",
+        "wrong",
+        "exception",
+        "runtime error",
+        "syntax error",
+        "does not",
+        "missing",
+        "mismatch",
+        "counterexample",
+        "test",
+        "expected",
+        "actual",
+    )
+    return any(marker in lowered for marker in evidence_markers)
+
+
 def evaluate_dimension(
     sample: dict[str, Any],
     dimension: str,
@@ -241,10 +319,10 @@ def evaluate_dimension(
     rethink_count = 0
 
     for step_index in range(args.max_steps):
-        force_final = step_index == args.max_steps - 1
+        force_final = args.final_only_json or step_index == args.max_steps - 1
         max_new_tokens = (args.final_max_new_tokens or args.max_new_tokens) if force_final else args.max_new_tokens
         stop = "</review>" if force_final else ["</step>", "</review>"]
-        prompt = prompt_for_dimension(sample, dimension, partial_response, force_final=force_final)
+        prompt = prompt_for_dimension(sample, dimension, partial_response, force_final=force_final, final_only=args.final_only_json)
         candidates = []
         for candidate_index in range(args.num_candidates):
             with torch.no_grad():
@@ -266,7 +344,7 @@ def evaluate_dimension(
                 }
             )
 
-        best = max(candidates, key=lambda candidate: candidate_sort_key(candidate, args.score_key))
+        best = max(candidates, key=lambda candidate: final_candidate_sort_key(candidate, args, force_final))
         selected_value = float(best["value_score"][args.score_key])
         spread = value_spread(candidates, args.score_key)
         candidate_rethink_reasons = []
@@ -299,6 +377,8 @@ def evaluate_dimension(
 
         if accepted and should_finish(best["continuation"]):
             break
+        if args.final_only_json:
+            break
 
     final_review_parse = parse_final_review(partial_response)
     final_retries = []
@@ -312,6 +392,7 @@ def evaluate_dimension(
             clean_partial_response,
             force_final=True,
             parse_error=final_review_parse,
+            final_only=args.final_only_json,
         )
         with torch.no_grad():
             continuation = generate_response(
@@ -335,21 +416,28 @@ def evaluate_dimension(
             }
         )
 
-    final_prompt = prompt_for_dimension(sample, dimension, "", force_final=True)
+    final_prompt = prompt_for_dimension(sample, dimension, "", force_final=True, final_only=args.final_only_json)
     final_value_score = score_response(value_model, tokenizer, final_prompt, partial_response) if value_model is not None else neutral_value_score()
     reference_score = sample.get("axiom_target_score")
     reference_grade = sample.get("axiom_target_grade")
+    reference_interval = sample.get("axiom_target_interval")
     parsed_score = parsed_review_score(final_review_parse)
     parsed_grade = parsed_review_grade(final_review_parse)
+    lenient_grade = lenient_axiom_grade(partial_response)
     parsed_score_delta = score_delta(parsed_score, reference_score)
     return {
         "dimension": dimension,
         "score_scale": "axiom_0_5_scalar_0_100",
         "score_semantics": AXIOM_SCALE_TEXT,
         "reference_axiom_grade": reference_grade,
+        "reference_axiom_interval": reference_interval,
         "reference_score": reference_score,
+        "label_type": sample.get("label_type"),
+        "pair_id": sample.get("pair_id"),
+        "pair_role": sample.get("pair_role"),
         "legacy_dimension_score": sample.get("reference_scores", {}).get(dimension),
         "parsed_axiom_grade": parsed_grade,
+        "lenient_axiom_grade": lenient_grade,
         "parsed_score": parsed_score,
         "score_delta": parsed_score_delta,
         "abs_score_delta": abs(parsed_score_delta) if parsed_score_delta is not None else None,
@@ -416,6 +504,9 @@ def main() -> None:
     parser.add_argument("--top_p", type=float, default=0.95)
     parser.add_argument("--score_key", choices=VALUE_SCORE_KEYS, default="response_mean_value")
     parser.add_argument("--seed", type=int)
+    parser.add_argument("--final_only_json", action="store_true", help="Generate only one compact final <review> JSON block; no step reasoning.")
+    parser.add_argument("--format_penalty", type=float, default=1.0, help="Final-candidate value penalty when no AXIOM grade can be parsed.")
+    parser.add_argument("--low_grade_no_evidence_penalty", type=float, default=0.4, help="Final-candidate value penalty for grades 0-2 without concrete defect evidence.")
     parser.add_argument("--rethink_threshold", type=float, default=-0.2)
     parser.add_argument("--rethink_spread_threshold", type=float, default=0.0, help="0 disables spread-based rethink.")
     parser.add_argument("--max_rethinks", type=int, default=1)

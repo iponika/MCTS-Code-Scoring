@@ -45,6 +45,7 @@ V_HEAD_SAFE_WEIGHTS_NAME = "value_head.safetensors"
 
 model_name = ''
 value_weight = ''
+boundary_value_weight = 0.0
 
 
 def optional_float(value: Any, default: float) -> float:
@@ -87,6 +88,10 @@ class Args:
     )
     use_flash_attention: bool = field(default=False)
     value_weight: float = field(default=0.2)
+    boundary_value_weight: float = field(
+        default=0.0,
+        metadata={"help": "Optional auxiliary margin loss for the AXIOM functional boundary; 0 disables it."},
+    )
     task: str = field(default="code", metadata={"help": "code or review"})
     skip_save: bool = field(default=False, metadata={"help": "Skip final model saving for smoke tests."})
     save_merged_model: bool = field(
@@ -336,12 +341,17 @@ class RLTrainer(Trainer):
         per_sample_value_loss = value_error.sum(dim=1) / (mask.sum(dim=1).float() + 1e-6)
         effective_value_weight = value_loss_weight_tensor * mask.any(dim=1).float()
         value_loss = (per_sample_value_loss * effective_value_weight).sum() / (effective_value_weight.sum() + 1e-6)
+        target_sign = torch.where(Q >= 0, torch.ones_like(Q), -torch.ones_like(Q))
+        boundary_error = F.relu(0.1 - target_sign * values) ** 2
+        boundary_error = torch.where(mask, boundary_error, torch.zeros_like(values))
+        per_sample_boundary_loss = boundary_error.sum(dim=1) / (mask.sum(dim=1).float() + 1e-6)
+        boundary_loss = (per_sample_boundary_loss * effective_value_weight).sum() / (effective_value_weight.sum() + 1e-6)
         masked_values = torch.where(mask, values, Q)
-        all_losses =  loss + value_weight * value_loss
+        all_losses =  loss + value_weight * value_loss + boundary_value_weight * boundary_loss
 
 
         if return_outputs:
-            return all_losses, [all_losses, value_loss, value_loss, masked_values, Q]
+            return all_losses, [all_losses, value_loss, boundary_loss, masked_values, Q]
         return all_losses #, value_loss
 
         
@@ -370,8 +380,9 @@ def train():
     training_args.save_safetensors=False
     global model_name
     model_name = model_args.model_key
-    global value_weight
+    global value_weight, boundary_value_weight
     value_weight = args.value_weight
+    boundary_value_weight = args.boundary_value_weight
     dataset = load_dataset("json", data_files=args.datafile_paths, split="train")
     
     model_key = model_args.model_key
