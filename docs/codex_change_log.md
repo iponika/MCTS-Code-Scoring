@@ -4,6 +4,7 @@ This file records Codex-made project changes so work can be resumed safely acros
 
 ## 2026-04-21
 
+- Added review prompt truncation and revised the AXIOM held-out report eval to write a fresh `axiom_report_eval_v2_20260421` run with shorter generations and no final retry, avoiding OOM on long AXIOM tasks.
 - Added direct AXIOM raw-record support to the review evaluator and updated review prompts to preserve the sample language in code fences.
 - Added `run_axiom_report_eval.sh` to build a balanced 60-item AXIOM held-out set excluding AXIOM items used in the report checkpoint training mix, then compare base direct, trained direct, and trained value-guided mean inference.
 - Changed the default value-guided MCTS candidate score from `last_value` to `response_mean_value`, and added optional `--seed` support to review evaluators for repeatable stochastic evaluation.
