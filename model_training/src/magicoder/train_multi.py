@@ -29,7 +29,7 @@ from magicoder.llm_wrapper import (
     get_model_wvalue_context,
     pad_sequences,
 )
-from magicoder.prompt_template import DSC_PROMPT, QWEN_REVIEW_STEP_PROMPT, QWEN_STEP_PROMPT
+from magicoder.prompt_template import DSC_PROMPT, QWEN_REVIEW_STEP_PROMPT, QWEN_REVIEW_TRAIN_PROMPT, QWEN_STEP_PROMPT
 from magicoder.utils import N_CORES
 from torch.nn import MSELoss, CrossEntropyLoss
 import torch.nn.functional as F
@@ -100,6 +100,7 @@ class Args:
     )
     pairwise_margin: float = field(default=0.2, metadata={"help": "Required value margin between positive and negative paired samples."})
     disable_train_shuffle: bool = field(default=False, metadata={"help": "Keep tokenized training examples in dataset order."})
+    review_prompt_mode: str = field(default="step", metadata={"help": "Review training prompt: step uses the full MCTS prompt; short uses a compact scoring-only prompt."})
     task: str = field(default="code", metadata={"help": "code or review"})
     skip_save: bool = field(default=False, metadata={"help": "Skip final model saving for smoke tests."})
     save_merged_model: bool = field(
@@ -151,7 +152,8 @@ def map_dataset(
 
  
         if args.task == "review":
-            prompt = QWEN_REVIEW_STEP_PROMPT.format(instruction=instruction, response="")
+            review_prompt = QWEN_REVIEW_TRAIN_PROMPT if args.review_prompt_mode == "short" else QWEN_REVIEW_STEP_PROMPT
+            prompt = review_prompt.format(instruction=instruction, response="")
         elif 'deepseek' in model_name or 'dsc' in model_name:
             prompt = DSC_PROMPT.format(instruction=instruction, response="<step>\n")
         else:
