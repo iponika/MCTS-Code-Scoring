@@ -10,7 +10,7 @@ TRAIN_DATA="${ROOT}/model_training/review_mcts_train_data/report_static_mcts_val
 RUN_DIR="${ROOT}/data_collection/review_mcts_runs/${RUN_NAME}"
 LOG_DIR="${RUN_DIR}/logs"
 EVAL_ROOT="${ROOT}/model_training/src/output/review-eval-${RUN_NAME}"
-EVAL_FILE="${RUN_DIR}/axiom_heldout_balanced_60.jsonl"
+EVAL_FILE="${RUN_DIR}/axiom_heldout_balanced_30.jsonl"
 INDICES_FILE="${RUN_DIR}/axiom_heldout_indices.json"
 
 mkdir -p "${RUN_DIR}" "${LOG_DIR}" "${EVAL_ROOT}"
