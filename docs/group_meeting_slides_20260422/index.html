@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-themes="engineering-whiteprint,corporate-clean,academic-paper,blueprint,tokyo-night">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>代码评分项目组会汇报 · 2026-04-22</title>
+<link rel="stylesheet" href="../../.agents/skills/html-ppt/assets/fonts.css">
+<link rel="stylesheet" href="../../.agents/skills/html-ppt/assets/base.css">
+<link rel="stylesheet" id="theme-link" href="../../.agents/skills/html-ppt/assets/themes/engineering-whiteprint.css">
+<link rel="stylesheet" href="../../.agents/skills/html-ppt/assets/animations/animations.css">
+<link rel="stylesheet" href="style.css">
+</head>
+<body class="tpl-code-score-report">
+<div class="deck">
+
+  <section class="slide" data-title="Cover">
+    <p class="kicker">group meeting / model training progress</p>
+    <h1 class="h1 anim-fade-up" data-anim="fade-up">代码评分项目<br><span class="gradient-text">训练闭环与评测设计</span></h1>
+    <p class="lede mt-m">目标：让模型对代码质量输出更稳定、更可信的 AXIOM 0-5 分数；评论文本只作为评分证据与解释。</p>
+    <div class="three-panel mt-l">
+      <div class="tagline">Qwen3.5-9B</div>
+      <div class="tagline">LoRA + Value Head</div>
+      <div class="tagline">Value-Guided MCTS</div>
+    </div>
+    <div class="deck-footer">
+      <span>2026-04-22 · group report</span>
+      <span class="slide-number" data-current="1" data-total="13"></span>
+    </div>
+    <aside class="notes">
+      <p>这一页先把项目目标讲清楚：我们不是要训练一个更会写代码评审文本的模型，而是要让模型给代码打出更稳定、更可信的分数。评论文本是辅助，它的作用是解释为什么给这个分。</p>
+      <p>今天我主要汇报三件事：第一，训练闭环已经跑通；第二，哪些技术选择目前看是有效的；第三，目前遇到的难点，特别是评测和对照实验该怎么设计才有说服力。</p>
+    </aside>
+  </section>
+
+  <section class="slide" data-title="Main Claim">
+    <p class="kicker">current state</p>
+    <h2 class="h2">现在可以客观汇报什么？</h2>
+    <div class="metric-grid mt-l">
+      <div class="metric">
+        <div class="label">CodeCritic MAE</div>
+        <div class="value good">1.450 → 1.089</div>
+        <div class="delta">Base Direct 到 Value-Guided MCTS</div>
+      </div>
+      <div class="metric">
+        <div class="label">Boundary Acc</div>
+        <div class="value good">0.775 → 0.804</div>
+        <div class="delta">功能正确性边界略有提升</div>
+      </div>
+      <div class="metric">
+        <div class="label">Unsupported</div>
+        <div class="value good">0.100 → 0.018</div>
+        <div class="delta">无依据证据明显减少</div>
+      </div>
+      <div class="metric">
+        <div class="label">AXIOM held-out</div>
+        <div class="value danger">negative</div>
+        <div class="delta">保留集上没有复现收益</div>
+      </div>
+    </div>
+    <div class="callout ok">结论边界：同分布 CodeCritic 上已有正向结果；AXIOM 保留集泛化仍未解决。</div>
+    <aside class="notes">
+      <p>这页是整场汇报的结论边界。我们目前不能说项目已经证明了通用代码评分能力，因为 AXIOM 保留集上结果是负的。</p>
+      <p>但我们可以说，训练和 value-guided 推理在 CodeCritic 同分布保留集上有明确正向结果：MAE 从 1.450 降到 1.089，boundary accuracy 从 0.775 到 0.804，无依据证据从 0.100 降到 0.018。</p>
+      <p>所以今天不是只报喜。更重要的是想讨论：什么实验设计能让后续结果更可信。</p>
+    </aside>
+  </section>
+
+  <section class="slide" data-title="Pipeline">
+    <p class="kicker">implementation path</p>
+    <h2 class="h2">已跑通的最小闭环</h2>
+    <div class="flow">
+      <div class="node">
+        <b>评分标准</b>
+        <p class="dim">AXIOM 0-5 ordinal grade，correctness 是主轴。</p>
+      </div>
+      <div class="arrow">→</div>
+      <div class="node">
+        <b>数据生成</b>
+        <p class="dim">MCTS 探索思考路径，用标签和 verifier 标注节点价值。</p>
+      </div>
+      <div class="arrow">→</div>
+      <div class="node">
+        <b>模型训练</b>
+        <p class="dim">Qwen3.5-9B，LoRA 微调 policy，同时训练 value head。</p>
+      </div>
+      <div class="arrow">→</div>
+      <div class="node">
+        <b>监督推理</b>
+        <p class="dim">policy 生成候选，value model 选择更可信路径。</p>
+      </div>
+    </div>
+    <div class="callout">当前重点不是最终大规模训练，而是证明这个闭环的哪一段确实带来收益。</div>
+    <aside class="notes">
+      <p>这里把系统路线图压缩成四步。第一步是统一评分标准，否则不同数据集的分数没法混在一起。第二步是 MCTS 数据生成，探索不同思考路径并标注节点价值。第三步是训练，policy 负责输出评分和证据，value head 负责评估候选路径。第四步是 value-guided 推理。</p>
+      <p>现在最小闭环已经跑通，问题不再是“能不能跑”，而是“哪一段真正有效，以及怎么评测才公平”。</p>
+    </aside>
+  </section>
+
+  <section class="slide" data-title="AXIOM">
+    <p class="kicker">scoring semantics</p>
+    <h2 class="h2">为什么用 AXIOM，而不是简单 0-100？</h2>
+    <p class="lede">AXIOM 是 ordinal scale：核心语义是“修到可部署状态所需工作量”。先判断功能正确性，再细分修复/重构成本。</p>
+    <div class="score-scale">
+      <div class="grade"><strong>0</strong><p>严重不匹配或根本错误，重写比修复更划算。</p></div>
+      <div class="grade"><strong>1</strong><p>功能有缺陷，需要较大修复。</p></div>
+      <div class="grade"><strong>2</strong><p>功能有缺陷，小修可恢复。</p></div>
+      <div class="grade"><strong>3</strong><p>功能正确，但需要较大质量重构。</p></div>
+      <div class="grade"><strong>4</strong><p>功能正确，仅需小幅代码质量调整。</p></div>
+      <div class="grade"><strong>5</strong><p>Production-ready，无需修改。</p></div>
+    </div>
+    <div class="boundary">
+      <div class="wrong">0-2：功能不正确 / 不匹配</div>
+      <div class="correct">3-5：功能正确 / 质量分层</div>
+    </div>
+    <aside class="notes">
+      <p>AXIOM 的好处是它给每个分数档明确语义，不是简单的一到五星。它的核心边界是 correctness：0 到 2 表示功能不正确或者不匹配；3 到 5 表示功能正确，然后再根据代码质量和修复工作量细分。</p>
+      <p>这也决定了我们的评测不能只看 MAE，还要看 boundary accuracy、low-FP 和 high-FN。因为把正确代码打成错误，和把错误代码打成正确，都是比差一分更严重的问题。</p>
+    </aside>
+  </section>
+
+  <section class="slide" data-title="Training Data">
+    <p class="kicker">data alignment</p>
+    <h2 class="h2">训练数据：先对齐标签语义</h2>
+    <table class="mt-l">
+      <thead>
+        <tr><th>数据源</th><th>当前定位</th><th>标签处理</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>CodeCriticBench</td><td>主训练/评测数据之一</td><td>correctness + score 映射到 AXIOM 0-5</td></tr>
+        <tr><td>AXIOMBench</td><td>评分语义锚点</td><td>原始 0-5 直接作为 AXIOM grade</td></tr>
+        <tr><td>Code-DiTing</td><td>弱正确性监督</td><td>只作为 0-2 / 3-5 区间标签</td></tr>
+        <tr><td>CodeJudgeBench</td><td>相对排序监督候选</td><td>更适合 pairwise ranking，短期低权重</td></tr>
+      </tbody>
+    </table>
+    <div class="callout">原则：不要把所有数据集粗暴线性映射到同一个 0-100 回归目标。</div>
+    <aside class="notes">
+      <p>训练数据里目前主要有这四类。CodeCritic 和 AXIOM 是当前最可靠的精确或近似精确标签。Code-DiTing 是二分类，只能说明大致正确或错误，不应该直接当成 0 或 5。CodeJudgeBench 是正负样本对，天然更适合排序训练。</p>
+      <p>这里最重要的技术选择是：先对齐标签语义，再训练。否则模型学到的只是不同数据集的平均打分风格，而不是统一评分原则。</p>
+    </aside>
+  </section>
+
+  <section class="slide" data-title="Effective Choices">
+    <p class="kicker">effective choices</p>
+    <h2 class="h2">目前看有效的技术选择</h2>
+    <div class="three-panel">
+      <div class="card">
+        <h3>去掉模型自评分</h3>
+        <p class="dim">不再让基础模型给自己的思考节点打分，避免把模型偏见直接写入训练标签。</p>
+      </div>
+      <div class="card">
+        <h3>Verifier value-only</h3>
+        <p class="dim">verifier 发现无依据证据时，只作为 value 负样本，不强迫 policy 模仿突变修正文本。</p>
+      </div>
+      <div class="card">
+        <h3>response_mean_value</h3>
+        <p class="dim">候选选择不再只看最后 token 的 value，而看 response token 平均 value。</p>
+      </div>
+    </div>
+    <div class="callout ok">这些选择的共同点：让 value 更像“证据质量和评分可靠性”的监督，而不是模型自我感觉。</div>
+    <aside class="notes">
+      <p>这里有三个目前看比较有效的选择。第一，去掉模型自评分。早期想过让模型给自己打分，但这会把基础模型的偏见写进标签，现在已经改成客观标签和 verifier 约束。</p>
+      <p>第二，verifier correction 改成 value-only。如果强迫 policy 学 verifier 修正后的文本，输出会变得不自然，所以只把无依据路径作为 value 负样本。</p>
+      <p>第三，value-guided 选择从 last_value 改为 response_mean_value。最后 token 很容易掩盖前面低置信的判断，平均 value 更稳定。</p>
+    </aside>
+  </section>
+
+  <section class="slide" data-title="Supervised MCTS">
+    <p class="kicker">experiment 1 / data generation</p>
+    <h2 class="h2">有监督 MCTS：证明搜索数据生成有上限</h2>
+    <table class="mt-l">
+      <thead>
+        <tr><th>方法</th><th>count</th><th>valid_rate</th><th>MAE</th><th>median_err</th><th>boundary_acc</th><th>Pearson proxy</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Direct</td><td class="num">378</td><td class="num">0.622</td><td class="num">1.136</td><td class="num">1.000</td><td class="num">0.715</td><td class="num">0.581</td></tr>
+        <tr><td><b>Supervised MCTS</b></td><td class="num">378</td><td class="num good">1.000</td><td class="num good">0.746</td><td class="num good">0.000</td><td class="num good">0.754</td><td class="num good">0.737</td></tr>
+      </tbody>
+    </table>
+    <div class="bar-list">
+      <div class="bar-row"><div class="name">MAE lower is better</div><div class="bar-track"><div class="bar goodbar" style="width:65.7%"></div></div><div class="bar-value">-34%</div></div>
+      <div class="bar-row"><div class="name">Valid rate</div><div class="bar-track"><div class="bar goodbar" style="width:100%"></div></div><div class="bar-value">1.000</div></div>
+    </div>
+    <aside class="notes">
+      <p>这组实验是有监督 MCTS 数据生成。它不能直接证明最终部署有效，因为用了标签监督，但它证明了一件事：如果 reward 可靠，MCTS 确实能生成更好的评分路径。</p>
+      <p>在 378 条、六个分数档均衡的数据上，valid rate 从 0.622 到 1.000，MAE 从 1.136 到 0.746，相关性也提升。这说明 MCTS 搜索这个机制本身是有潜力的。</p>
+    </aside>
+  </section>
+
+  <section class="slide" data-title="CodeCritic Results">
+    <p class="kicker">experiment 2 / held-out positive result</p>
+    <h2 class="h2">CodeCritic 保留集：训练 + value-guided 有收益</h2>
+    <table class="compact-table mt-l">
+      <thead>
+        <tr><th>方法</th><th>valid_rate</th><th>MAE</th><th>boundary_acc</th><th>low-FP</th><th>high-FN</th><th>unsupported</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Base Direct</td><td class="num">1.000</td><td class="num">1.450</td><td class="num">0.775</td><td class="num">0.025</td><td class="num">0.200</td><td class="num">0.100</td></tr>
+        <tr><td>Trained Direct</td><td class="num">0.950</td><td class="num">1.342</td><td class="num">0.789</td><td class="num">0.053</td><td class="num">0.158</td><td class="num">0.053</td></tr>
+        <tr><td><b>Value-Guided MCTS mean</b></td><td class="num">0.942</td><td class="num good">1.089</td><td class="num good">0.804</td><td class="num danger">0.125</td><td class="num good">0.071</td><td class="num good">0.018</td></tr>
+      </tbody>
+    </table>
+    <div class="callout ok">正向点：MAE、boundary_acc、high-FN、unsupported 都改善。风险点：low-FP 上升，模型偏保守。</div>
+    <aside class="notes">
+      <p>这是目前最重要的正结果。评测是 40 条 CodeCritic 保留集，value-guided MCTS 是三次 seed 的平均。</p>
+      <p>相对基础模型直接评分，MAE 从 1.450 降到 1.089，boundary accuracy 提升到 0.804，把错误代码评高的 high-FN 从 0.200 降到 0.071，无依据证据也明显减少。</p>
+      <p>但它不是全指标胜利。low-FP 从 0.025 升到 0.125，说明 value-guided 有保守偏置，更容易把正确代码打低。</p>
+    </aside>
+  </section>
+
+  <section class="slide" data-title="Value Score Key">
+    <p class="kicker">ablation / candidate selection</p>
+    <h2 class="h2">value-guided 的选择指标很关键</h2>
+    <div class="two-panel">
+      <div>
+        <table class="compact-table">
+          <thead>
+            <tr><th>score_key</th><th>MAE</th><th>boundary</th><th>unsupported</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>last_value</td><td class="num">1.316</td><td class="num">0.737</td><td class="num">0.026</td></tr>
+            <tr><td><b>response_mean_value</b></td><td class="num good">1.081</td><td class="num good">0.757</td><td class="num">0.027</td></tr>
+            <tr><td>conservative_value</td><td class="num danger">1.410</td><td class="num danger">0.667</td><td class="num good">0.000</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="card">
+        <h3>解释</h3>
+        <p class="dim">`last_value` 只看最后 token，可能掩盖同一步思考中前面的低置信判断。</p>
+        <p class="dim mt-m">`response_mean_value` 对整段 response 求平均，更适合选择稳定候选。</p>
+        <p class="dim mt-m">过度保守会减少 unsupported，但会伤害 MAE 和边界判断。</p>
+      </div>
+    </div>
+    <aside class="notes">
+      <p>这里是一个关键消融。最开始我们用 last_value，也就是 response 最后一个 token 的 value。后来发现它容易掩盖前面判断中的问题。</p>
+      <p>改成 response_mean_value 后，MAE 和 boundary 都明显更好。conservative_value 虽然把 unsupported 降到 0，但代价是 MAE 和 boundary 变差。所以现在默认用 response_mean_value。</p>
+    </aside>
+  </section>
+
+  <section class="slide" data-title="AXIOM Negative">
+    <p class="kicker">held-out negative result</p>
+    <h2 class="h2">AXIOM 保留集：没有复现收益</h2>
+    <table class="compact-table mt-l">
+      <thead>
+        <tr><th>方法</th><th>valid_rate</th><th>MAE</th><th>boundary_acc</th><th>low-FP</th><th>high-FN</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Base Direct</td><td class="num">0.633</td><td class="num">1.421</td><td class="num">0.579</td><td class="num">0.368</td><td class="num">0.053</td></tr>
+        <tr><td>Trained Direct</td><td class="num">0.467</td><td class="num">1.429</td><td class="num">0.571</td><td class="num">0.357</td><td class="num">0.071</td></tr>
+        <tr><td>Trained Value-Guided MCTS</td><td class="num danger">0.267</td><td class="num danger">1.625</td><td class="num danger">0.500</td><td class="num danger">0.375</td><td class="num">0.125</td></tr>
+      </tbody>
+    </table>
+    <div class="callout risk">更准确的表述：AXIOM 不是完全未见数据集，因为训练中用了 AXIOM；这里暴露的是 AXIOM 保留集 / 跨来源泛化不足。</div>
+    <aside class="notes">
+      <p>这页需要如实讲。AXIOM 保留集不是完全跨数据集，因为训练里已经用了 AXIOM 样本；但它排除了训练中出现过的样本，所以仍然能测试模型有没有稳定学会 AXIOM 评分语义。</p>
+      <p>结果是负的。strict valid rate 下降，value-guided MCTS 最差；而且 low-FP 很高，说明模型容易把正确代码打到 0 到 2。</p>
+      <p>所以这里的结论是：当前模型还没有证明通用评分能力。它更像是适应了 CodeCritic 分布。</p>
+    </aside>
+  </section>
+
+  <section class="slide" data-title="Difficulties">
+    <p class="kicker">technical difficulties</p>
+    <h2 class="h2">目前需要汇报请教的难点</h2>
+    <div class="three-panel">
+      <div class="card">
+        <h3>泛化能力</h3>
+        <p class="dim">同分布有效，但 AXIOM 保留集失败。需要证明模型学到的是评分原则，不是数据集风格。</p>
+      </div>
+      <div class="card">
+        <h3>保守偏置</h3>
+        <p class="dim">value-guided 降低 high-FN，但提高 low-FP。评分任务到底应如何权衡两类错误？</p>
+      </div>
+      <div class="card">
+        <h3>长样本显存</h3>
+        <p class="dim">4090 上 Qwen3.5-9B + value head + 1152 token 已经很紧。双卡 DDP 不能合并单样本显存。</p>
+      </div>
+    </div>
+    <div class="callout">正在尝试：短训练 prompt 把保留训练样本从 130/1360 提高到 640/1360，但长样本仍是瓶颈。</div>
+    <aside class="notes">
+      <p>这页是希望老师和同学给建议的地方。第一是泛化，尤其是怎么设计实验证明学到的是评分原则。第二是风险偏好，value-guided 现在偏保守，这在安全场景可能可以接受，但在评分场景会影响校准。第三是资源限制，长样本训练显存压力很大，普通双卡 DDP 不能解决单样本 OOM。</p>
+      <p>我们已经用短训练 prompt 把样本保留量从 130 条提高到 640 条，但这还不是最终解决方案。</p>
+    </aside>
+  </section>
+
+  <section class="slide" data-title="Evaluation Plan">
+    <p class="kicker">evaluation design</p>
+    <h2 class="h2">后续评测：怎样才让人信服？</h2>
+    <div class="two-panel">
+      <div class="card">
+        <h3>固定对照组</h3>
+        <p class="dim">Base Direct、Trained Direct、Base MCTS / Self-MCTS、Trained Value-Guided MCTS、Supervised MCTS 上限。</p>
+      </div>
+      <div class="card">
+        <h3>固定测试套件</h3>
+        <p class="dim">CodeCritic held-out、AXIOM held-out、Code-DiTing boundary、CodeJudgeBench pairwise。每次训练都同时报告。</p>
+      </div>
+    </div>
+    <div class="two-panel">
+      <div class="card">
+        <h3>指标组合</h3>
+        <p class="dim">valid_rate、MAE、median_err、boundary_acc、low-FP、high-FN、unsupported、pairwise_acc、repeat std。</p>
+      </div>
+      <div class="card">
+        <h3>公平性约束</h3>
+        <p class="dim">MCTS 与 direct 要控制 token / 采样预算；如果 MCTS 多采样，应增加 direct 多采样 rerank baseline。</p>
+      </div>
+    </div>
+    <aside class="notes">
+      <p>后续评测我建议固定四类对照和四类测试集。每次训练都跑同一套指标，避免只展示有利数据集。</p>
+      <p>公平性上，MCTS 如果用了更多 token 或更多采样，就不能只和 direct 单次询问比较。最好增加 direct 多采样 rerank baseline，或者明确报告推理成本。</p>
+    </aside>
+  </section>
+
+  <section class="slide" data-title="Questions">
+    <p class="kicker">discussion</p>
+    <h2 class="h2">希望组会上请教的问题</h2>
+    <div class="question-list">
+      <div class="question">什么样的对照实验最能证明项目有效：同数据集提升是否足够，还是必须跨数据集也提升？</div>
+      <div class="question">AXIOM 0-5 是否适合作为最终统一评分标准，还是应该拆成 correctness classifier + quality scorer？</div>
+      <div class="question">是否应该优先实现 pairwise ranking？它可能比绝对分数更稳健，但训练实现需要调整。</div>
+      <div class="question">最终报告应该强调 value-guided MCTS 的推理收益，还是强调 MCTS 生成数据 + value head 训练的完整路线？</div>
+      <div class="question">资源受限时，是优先做 FSDP/QLoRA，还是先扩大小而严格的评测套件？</div>
+    </div>
+    <div class="deck-footer">
+      <span>Press S for speaker notes · T theme · ← → navigate</span>
+      <span class="slide-number" data-current="13" data-total="13"></span>
+    </div>
+    <aside class="notes">
+      <p>最后这页就是我希望组会上重点讨论的问题。第一个是评测标准：同数据集提升是否足够，还是必须跨数据集提升。第二个是评分建模方式：AXIOM 一体化评分是否合适，还是应该拆成 correctness 和 quality 两阶段。第三个是 pairwise ranking 是否应该优先做。第四个是项目叙事：到底强调 value-guided 推理，还是强调 MCTS 生成训练数据和 value head 训练路线。</p>
+      <p>如果时间有限，我最想请教第一个和第二个，因为它们决定后续实验怎么设计。</p>
+    </aside>
+  </section>
+
+</div>
+
+<div class="footer-hint">S 演讲者视图 · T 切换主题 · ← → 翻页 · F 全屏 · O 总览</div>
+<script src="../../.agents/skills/html-ppt/assets/runtime.js"></script>
+</body>
+</html>
