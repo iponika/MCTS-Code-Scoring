@@ -46,6 +46,8 @@ V_HEAD_SAFE_WEIGHTS_NAME = "value_head.safetensors"
 model_name = ''
 value_weight = ''
 boundary_value_weight = 0.0
+pairwise_value_weight = 0.0
+pairwise_margin = 0.2
 
 
 def optional_float(value: Any, default: float) -> float:
@@ -92,6 +94,12 @@ class Args:
         default=0.0,
         metadata={"help": "Optional auxiliary margin loss for the AXIOM functional boundary; 0 disables it."},
     )
+    pairwise_value_weight: float = field(
+        default=0.0,
+        metadata={"help": "Optional margin-ranking loss for paired value labels; 0 disables it."},
+    )
+    pairwise_margin: float = field(default=0.2, metadata={"help": "Required value margin between positive and negative paired samples."})
+    disable_train_shuffle: bool = field(default=False, metadata={"help": "Keep tokenized training examples in dataset order."})
     task: str = field(default="code", metadata={"help": "code or review"})
     skip_save: bool = field(default=False, metadata={"help": "Skip final model saving for smoke tests."})
     save_merged_model: bool = field(
@@ -119,6 +127,8 @@ def map_dataset(
         "labels": [],
         "value_loss_weight": [],
         "lm_loss_weight": [],
+        "pair_id": [],
+        "pair_role": [],
         "exceeding_length": [],
     }
 
@@ -134,6 +144,10 @@ def map_dataset(
         lm_loss_weights = examples.get("lm_loss_weight")
         value_loss_weight = optional_float(value_loss_weights[i], 1.0) if value_loss_weights is not None else 1.0
         lm_loss_weight = optional_float(lm_loss_weights[i], 1.0) if lm_loss_weights is not None else 1.0
+        pair_ids = examples.get("pair_id")
+        pair_roles = examples.get("pair_role")
+        pair_id = "" if pair_ids is None or pair_ids[i] is None else str(pair_ids[i])
+        pair_role = "" if pair_roles is None or pair_roles[i] is None else str(pair_roles[i])
 
  
         if args.task == "review":
@@ -207,6 +221,8 @@ def map_dataset(
             model_inputs["labels"].append([IGNORED_INDEX] * len(labels))
         model_inputs["value_loss_weight"].append(value_loss_weight)
         model_inputs["lm_loss_weight"].append(lm_loss_weight)
+        model_inputs["pair_id"].append(pair_id)
+        model_inputs["pair_role"].append(pair_role)
 
     return model_inputs
 
@@ -223,6 +239,8 @@ def get_data_collator(args: "Args", pad_token_id: int):
         q_max_unpadded = [example.get("Q_MAX", example["Q"]) for example in examples]
         value_loss_weight = torch.tensor([example.get("value_loss_weight", 1.0) for example in examples], dtype=torch.float32)
         lm_loss_weight = torch.tensor([example.get("lm_loss_weight", 1.0) for example in examples], dtype=torch.float32)
+        pair_ids = [str(example.get("pair_id", "") or "") for example in examples]
+        pair_roles = [str(example.get("pair_role", "") or "") for example in examples]
         padding_length = (
             args.max_training_seq_length if args.pad_to_max_length else None
         )
@@ -258,9 +276,52 @@ def get_data_collator(args: "Args", pad_token_id: int):
             "Q_MAX": q_max,
             "value_loss_weight": value_loss_weight,
             "lm_loss_weight": lm_loss_weight,
+            "pair_id": pair_ids,
+            "pair_role": pair_roles,
         }
 
     return collate
+
+
+def normalize_pair_role(role: str) -> str:
+    role = str(role or "").lower()
+    if role in {"pos", "positive", "pos_response"}:
+        return "pos"
+    if role in {"neg", "negative", "neg_response"}:
+        return "neg"
+    return ""
+
+
+def pairwise_margin_loss(
+    values: torch.Tensor,
+    mask: torch.Tensor,
+    pair_ids: list[str] | None,
+    pair_roles: list[str] | None,
+) -> torch.Tensor:
+    if not pair_ids or not pair_roles or pairwise_value_weight <= 0:
+        return values.new_tensor(0.0)
+    terminal_values: list[torch.Tensor | None] = []
+    for sample_idx in range(values.shape[0]):
+        positions = torch.nonzero(mask[sample_idx], as_tuple=False).flatten()
+        terminal_values.append(values[sample_idx, positions[-1]] if positions.numel() > 0 else None)
+
+    grouped: dict[str, dict[str, torch.Tensor]] = {}
+    for pair_id, role, value in zip(pair_ids, pair_roles, terminal_values):
+        if value is None or not pair_id:
+            continue
+        normalized_role = normalize_pair_role(role)
+        if normalized_role not in {"pos", "neg"}:
+            continue
+        grouped.setdefault(str(pair_id), {})[normalized_role] = value
+
+    losses = []
+    for pair in grouped.values():
+        if "pos" not in pair or "neg" not in pair:
+            continue
+        losses.append(F.relu(values.new_tensor(pairwise_margin) - (pair["pos"] - pair["neg"])) ** 2)
+    if not losses:
+        return values.new_tensor(0.0)
+    return torch.stack(losses).mean()
 
 
 class RLTrainer(Trainer):
@@ -289,6 +350,12 @@ class RLTrainer(Trainer):
         lm_loss_weight_tensor = inputs.get("lm_loss_weight", None)
         if lm_loss_weight_tensor is not None:
             del inputs["lm_loss_weight"]
+        pair_ids = inputs.get("pair_id")
+        if pair_ids is not None:
+            del inputs["pair_id"]
+        pair_roles = inputs.get("pair_role")
+        if pair_roles is not None:
+            del inputs["pair_role"]
         
         labels = inputs.get("labels", None)
         if labels is not None:
@@ -346,12 +413,13 @@ class RLTrainer(Trainer):
         boundary_error = torch.where(mask, boundary_error, torch.zeros_like(values))
         per_sample_boundary_loss = boundary_error.sum(dim=1) / (mask.sum(dim=1).float() + 1e-6)
         boundary_loss = (per_sample_boundary_loss * effective_value_weight).sum() / (effective_value_weight.sum() + 1e-6)
+        pairwise_loss = pairwise_margin_loss(values, mask, pair_ids, pair_roles)
         masked_values = torch.where(mask, values, Q)
-        all_losses =  loss + value_weight * value_loss + boundary_value_weight * boundary_loss
+        all_losses =  loss + value_weight * value_loss + boundary_value_weight * boundary_loss + pairwise_value_weight * pairwise_loss
 
 
         if return_outputs:
-            return all_losses, [all_losses, value_loss, boundary_loss, masked_values, Q]
+            return all_losses, [all_losses, value_loss, boundary_loss, pairwise_loss, masked_values, Q]
         return all_losses #, value_loss
 
         
@@ -380,9 +448,11 @@ def train():
     training_args.save_safetensors=False
     global model_name
     model_name = model_args.model_key
-    global value_weight, boundary_value_weight
+    global value_weight, boundary_value_weight, pairwise_value_weight, pairwise_margin
     value_weight = args.value_weight
     boundary_value_weight = args.boundary_value_weight
+    pairwise_value_weight = args.pairwise_value_weight
+    pairwise_margin = args.pairwise_margin
     dataset = load_dataset("json", data_files=args.datafile_paths, split="train")
     
     model_key = model_args.model_key
@@ -423,7 +493,8 @@ def train():
         training_args.evaluation_strategy = "no"
         evaluation_strategy = training_args.evaluation_strategy
     if training_args.eval_steps is None and evaluation_strategy == "no":
-        train_dataset = train_dataset.shuffle(seed=training_args.seed)
+        if not args.disable_train_shuffle:
+            train_dataset = train_dataset.shuffle(seed=training_args.seed)
         eval_dataset = None
     else:
         print("Splitting dataset")

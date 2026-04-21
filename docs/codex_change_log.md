@@ -4,6 +4,7 @@ This file records Codex-made project changes so work can be resumed safely acros
 
 ## 2026-04-21
 
+- Added batch-local pairwise value ranking loss for paired CodeJudgeBench labels, plus score-dataset preprocessing support for top-level pair metadata and a cross-dataset loss-alignment training/eval workflow.
 - Added `run_cross_dataset_review_eval.sh` to build a combined CodeCritic/AXIOM/Code-DiTing/CodeJudgeBench held-out manifest and compare base direct, trained direct, and trained value-reranked final-only scoring in a resumable tmux-friendly workflow.
 - Added a multi-dataset eval manifest builder for CodeCritic, AXIOM, Code-DiTing, and CodeJudgeBench, plus final-only review generation, lenient grade parsing, interval/pairwise summary metrics, value-guided final-candidate penalties, and an optional AXIOM boundary auxiliary value loss.
 - Expanded the report pilot brief into an objective group-report draft covering supervised MCTS, verifier value-only ablations, report pilot training, score-key ablation, CodeCritic repeats, and the negative AXIOM held-out result.
