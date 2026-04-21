@@ -139,12 +139,16 @@ def score_response(value_model, tokenizer, prompt: str, response: str) -> dict[s
     values = torch.tanh(values).squeeze(0).float().detach().cpu()
     prompt_len = prompt_encoded["input_ids"].shape[1]
     response_values = values[prompt_len:] if values.shape[0] > prompt_len else values[-1:]
+    response_mean_value = float(response_values.mean().item())
+    response_min_value = float(response_values.min().item())
+    response_conservative_value = 0.7 * response_mean_value + 0.3 * response_min_value
     return {
         "prompt_tokens": prompt_len,
         "total_tokens": int(full_encoded["input_ids"].shape[1]),
         "last_value": round(float(values[-1].item()), 6),
-        "response_mean_value": round(float(response_values.mean().item()), 6),
-        "response_min_value": round(float(response_values.min().item()), 6),
+        "response_mean_value": round(response_mean_value, 6),
+        "response_min_value": round(response_min_value, 6),
+        "response_conservative_value": round(response_conservative_value, 6),
         "response_max_value": round(float(response_values.max().item()), 6),
     }
 

@@ -16,7 +16,7 @@ from magicoder.review_policy_value_inference import (
     resolve_model_path,
     score_response,
 )
-from magicoder.review_value_guided_evaluator import candidate_sort_key
+from magicoder.review_value_guided_evaluator import VALUE_SCORE_KEYS, candidate_sort_key
 from magicoder.prompt_template import QWEN_REVIEW_STEP_PROMPT
 from magicoder.axiom_scoring import (
     AXIOM_SCALE_TEXT,
@@ -385,7 +385,7 @@ def main() -> None:
     parser.add_argument("--final_max_new_tokens", type=int, default=0, help="0 means reuse --max_new_tokens for final review generation and retries.")
     parser.add_argument("--temperature", type=float, default=0.7)
     parser.add_argument("--top_p", type=float, default=0.95)
-    parser.add_argument("--score_key", choices=["last_value", "response_mean_value", "response_min_value"], default="last_value")
+    parser.add_argument("--score_key", choices=VALUE_SCORE_KEYS, default="last_value")
     parser.add_argument("--rethink_threshold", type=float, default=-0.2)
     parser.add_argument("--rethink_spread_threshold", type=float, default=0.0, help="0 disables spread-based rethink.")
     parser.add_argument("--max_rethinks", type=int, default=1)
