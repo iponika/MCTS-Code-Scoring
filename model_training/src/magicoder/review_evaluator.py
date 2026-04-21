@@ -436,7 +436,12 @@ def main() -> None:
     tokenizer = AutoTokenizer.from_pretrained(policy_model_path, use_fast=True)
     if tokenizer.pad_token_id is None:
         tokenizer.pad_token_id = tokenizer.eos_token_id
-    if args.skip_value_scoring:
+    if args.skip_value_scoring and (args.share_policy_value_model or value_model_path == policy_model_path):
+        value_wrapper = load_value_model(value_model_path, args.device, args.dtype)
+        policy_model = value_wrapper.pretrained_model
+        policy_model.eval()
+        value_model = None
+    elif args.skip_value_scoring:
         policy_model = load_policy(policy_model_path, args.device, args.dtype)
         value_model = None
     elif args.share_policy_value_model or value_model_path == policy_model_path:
