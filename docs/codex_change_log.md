@@ -4,6 +4,8 @@ This file records Codex-made project changes so work can be resumed safely acros
 
 ## 2026-04-21
 
+- Added direct AXIOM raw-record support to the review evaluator and updated review prompts to preserve the sample language in code fences.
+- Added `run_axiom_report_eval.sh` to build a balanced 60-item AXIOM held-out set excluding AXIOM items used in the report checkpoint training mix, then compare base direct, trained direct, and trained value-guided mean inference.
 - Changed the default value-guided MCTS candidate score from `last_value` to `response_mean_value`, and added optional `--seed` support to review evaluators for repeatable stochastic evaluation.
 - Added `run_report_mean_mcts_repeat.sh` to run two additional seeded report-pilot repeats with `response_mean_value` and aggregate them with the existing mean-value run for presentation-ready stability statistics.
 - Added `response_conservative_value` as a value-guided candidate selection score, defined as `0.7 * response_mean_value + 0.3 * response_min_value`, to penalize low-confidence spans without relying only on the final token value.
