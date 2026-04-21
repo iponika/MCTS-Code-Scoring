@@ -101,10 +101,10 @@ def build_instruction(record: dict[str, Any], dimension: str) -> str:
     return (
         f"Target review dimension: {dimension}\n\n"
         "Scoring target: assign the overall AXIOM code grade; use the target dimension as supporting evidence.\n\n"
-        f"Task description:\n{truncate_for_review(record.get('problem') or record.get('question') or '', 5000)}\n\n"
+        f"Task description:\n{truncate_for_review(record.get('problem') or record.get('question') or '', 3500)}\n\n"
         "Candidate code:\n"
         f"```{language}\n"
-        f"{truncate_for_review(record.get('candidate_code') or '', 6000)}\n"
+        f"{truncate_for_review(record.get('candidate_code') or '', 3500)}\n"
         "```\n\n"
         f"Available tests:\n{tests_text}\n\n"
         "Review only the target dimension. Use concrete evidence from the task, code, and tests."
