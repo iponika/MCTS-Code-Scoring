@@ -81,6 +81,13 @@ def normalize_response_segment(text: str) -> str:
     return f"<step>\n{cleaned}\n</step>"
 
 
+def truncate_for_review(value: object, max_chars: int) -> str:
+    text = str(value or "").strip()
+    if len(text) <= max_chars:
+        return text
+    return text[:max_chars].rstrip() + "\n... [truncated]"
+
+
 def build_instruction(record: dict[str, Any], dimension: str) -> str:
     tests = record.get("tests") or []
     if tests:
@@ -94,10 +101,10 @@ def build_instruction(record: dict[str, Any], dimension: str) -> str:
     return (
         f"Target review dimension: {dimension}\n\n"
         "Scoring target: assign the overall AXIOM code grade; use the target dimension as supporting evidence.\n\n"
-        f"Task description:\n{record.get('problem') or record.get('question') or ''}\n\n"
+        f"Task description:\n{truncate_for_review(record.get('problem') or record.get('question') or '', 5000)}\n\n"
         "Candidate code:\n"
         f"```{language}\n"
-        f"{record.get('candidate_code') or ''}\n"
+        f"{truncate_for_review(record.get('candidate_code') or '', 6000)}\n"
         "```\n\n"
         f"Available tests:\n{tests_text}\n\n"
         "Review only the target dimension. Use concrete evidence from the task, code, and tests."

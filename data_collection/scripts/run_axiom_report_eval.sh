@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT="/data1/xianzhiwei/mcts-code-review"
-RUN_NAME="axiom_report_eval_20260421"
+RUN_NAME="axiom_report_eval_v2_20260421"
 BASE_MODEL_PATH="/data1/xianzhiwei/model/huggingface/hub/models--Qwen--Qwen3.5-9B/snapshots/c202236235762e1c871ad0ccb60c8ee5ba337b9a"
 REPORT_MODEL_PATH="${ROOT}/model_training/src/output/review-lora-report-static-mcts-valueonly-480step"
 AXIOM_DIR="${ROOT}/datasets/axiom-llm-judge/axiombench"
@@ -47,8 +47,8 @@ from pathlib import Path
 root = Path("/data1/xianzhiwei/mcts-code-review")
 axiom_dir = root / "datasets/axiom-llm-judge/axiombench"
 train_data = root / "model_training/review_mcts_train_data/report_static_mcts_valueonly_20260420.jsonl"
-out_file = root / "data_collection/review_mcts_runs/axiom_report_eval_20260421/axiom_heldout_balanced_60.jsonl"
-indices_file = root / "data_collection/review_mcts_runs/axiom_report_eval_20260421/axiom_heldout_indices.json"
+out_file = root / "data_collection/review_mcts_runs/axiom_report_eval_v2_20260421/axiom_heldout_balanced_60.jsonl"
+indices_file = root / "data_collection/review_mcts_runs/axiom_report_eval_v2_20260421/axiom_heldout_indices.json"
 
 used = set()
 if train_data.exists():
@@ -131,8 +131,8 @@ eval_one() {
       --dtype bf16 \
       --max_steps "${max_steps}" \
       --num_candidates "${num_candidates}" \
-      --max_new_tokens 256 \
-      --final_max_new_tokens 384 \
+      --max_new_tokens 192 \
+      --final_max_new_tokens 256 \
       --temperature "${temperature}" \
       --top_p "${top_p}" \
       --score_key response_mean_value \
@@ -140,7 +140,7 @@ eval_one() {
       --final_temperature 0 \
       --rethink_threshold -0.2 \
       --max_rethinks "${max_rethinks}" \
-      --max_final_retries 2
+      --max_final_retries 0
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONPATH="${ROOT}/model_training/src:${ROOT}/data_collection" \
     HF_HUB_OFFLINE=1 \
@@ -158,7 +158,7 @@ write_comparison() {
 import json
 from pathlib import Path
 
-root = Path("/data1/xianzhiwei/mcts-code-review/model_training/src/output/review-eval-axiom_report_eval_20260421")
+root = Path("/data1/xianzhiwei/mcts-code-review/model_training/src/output/review-eval-axiom_report_eval_v2_20260421")
 metrics = [
     "valid_rate",
     "grade_mae",
