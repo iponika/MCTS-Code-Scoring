@@ -4,6 +4,7 @@ This file records Codex-made project changes so work can be resumed safely acros
 
 ## 2026-04-21
 
+- Added a multi-dataset eval manifest builder for CodeCritic, AXIOM, Code-DiTing, and CodeJudgeBench, plus final-only review generation, lenient grade parsing, interval/pairwise summary metrics, value-guided final-candidate penalties, and an optional AXIOM boundary auxiliary value loss.
 - Expanded the report pilot brief into an objective group-report draft covering supervised MCTS, verifier value-only ablations, report pilot training, score-key ablation, CodeCritic repeats, and the negative AXIOM held-out result.
 - Fixed the AXIOM v3 eval file path and made `--skip_value_scoring --share_policy_value_model` load LoRA checkpoints through the existing value-wrapper path while disabling value scoring.
 - Added `--skip_value_scoring` to review evaluators so direct baselines do not load or run value-head scoring, and revised the AXIOM held-out report eval to a fresh 30-item v3 run with tighter prompt truncation.
