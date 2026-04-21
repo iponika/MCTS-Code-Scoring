@@ -181,6 +181,9 @@ def make_item(
     }
     if metadata:
         item["metadata"] = metadata
+        for key in ("pair_id", "pair_role"):
+            if key in metadata:
+                item[key] = metadata[key]
     return item
 
 
@@ -304,8 +307,8 @@ def load_codejudge_interval_items(root: Path, limit: int) -> Iterable[dict[str, 
                 task += f"\n\nBuggy code to repair:\n{row.get('wrong_code')}"
             pair_id = f"{subset}:{row.get('question_id', row_idx)}:{row_idx}"
             for role, code, interval in (
-                ("pos_response", row.get("pos_response"), (3, 5)),
-                ("neg_response", row.get("neg_response"), (0, 2)),
+                ("pos", row.get("pos_response"), (3, 5)),
+                ("neg", row.get("neg_response"), (0, 2)),
             ):
                 if not code:
                     continue
@@ -336,6 +339,7 @@ def main() -> None:
     parser.add_argument("--train_lm_exact", action="store_true", help="Also train LM tokens for exact AXIOM/CodeCritic labels. Default trains value only.")
     parser.add_argument("--limit_per_source", type=int, default=0, help="Maximum rows per source family; 0 keeps all.")
     parser.add_argument("--shuffle_seed", type=int, default=42)
+    parser.add_argument("--disable_shuffle", action="store_true", help="Keep source order; useful when preserving adjacent CodeJudgeBench pairs for pairwise loss.")
     parser.add_argument("--output_file", type=Path, required=True)
     args = parser.parse_args()
 
@@ -349,7 +353,8 @@ def main() -> None:
     if args.codejudgebench_root and args.include_codejudge_as_intervals:
         items.extend(load_codejudge_interval_items(args.codejudgebench_root, limit=args.limit_per_source))
 
-    random.Random(args.shuffle_seed).shuffle(items)
+    if not args.disable_shuffle:
+        random.Random(args.shuffle_seed).shuffle(items)
     args.output_file.parent.mkdir(parents=True, exist_ok=True)
     with args.output_file.open("w", encoding="utf-8") as handle:
         for item in items:
