@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 
 import torch
-from transformers import AutoTokenizer
+from transformers import AutoTokenizer, set_seed
 
 from magicoder.preprocess_review_mcts_data import build_instruction, iter_records
 from magicoder.review_policy_value_inference import (
@@ -385,13 +385,16 @@ def main() -> None:
     parser.add_argument("--final_max_new_tokens", type=int, default=0, help="0 means reuse --max_new_tokens for final review generation and retries.")
     parser.add_argument("--temperature", type=float, default=0.7)
     parser.add_argument("--top_p", type=float, default=0.95)
-    parser.add_argument("--score_key", choices=VALUE_SCORE_KEYS, default="last_value")
+    parser.add_argument("--score_key", choices=VALUE_SCORE_KEYS, default="response_mean_value")
+    parser.add_argument("--seed", type=int)
     parser.add_argument("--rethink_threshold", type=float, default=-0.2)
     parser.add_argument("--rethink_spread_threshold", type=float, default=0.0, help="0 disables spread-based rethink.")
     parser.add_argument("--max_rethinks", type=int, default=1)
     parser.add_argument("--max_final_retries", type=int, default=1)
     parser.add_argument("--final_temperature", type=float, default=0.0)
     args = parser.parse_args()
+    if args.seed is not None:
+        set_seed(args.seed)
 
     record = load_record(args.input_record, args.record_index)
     sample = fill_sample_metadata(sample_from_record(record), args.record_index)

@@ -5,7 +5,7 @@ import json
 from typing import Any
 
 import torch
-from transformers import AutoTokenizer
+from transformers import AutoTokenizer, set_seed
 
 from magicoder.prompt_template import QWEN_REVIEW_STEP_PROMPT
 from magicoder.review_policy_value_inference import (
@@ -42,8 +42,11 @@ def main() -> None:
     parser.add_argument("--max_new_tokens", type=int, default=256)
     parser.add_argument("--temperature", type=float, default=0.7)
     parser.add_argument("--top_p", type=float, default=0.95)
-    parser.add_argument("--score_key", choices=VALUE_SCORE_KEYS, default="last_value")
+    parser.add_argument("--score_key", choices=VALUE_SCORE_KEYS, default="response_mean_value")
+    parser.add_argument("--seed", type=int)
     args = parser.parse_args()
+    if args.seed is not None:
+        set_seed(args.seed)
 
     item = load_jsonl_item(args.datafile_path, args.item_index)
     tokenizer = AutoTokenizer.from_pretrained(resolve_model_path(args.policy_model_path), use_fast=True)

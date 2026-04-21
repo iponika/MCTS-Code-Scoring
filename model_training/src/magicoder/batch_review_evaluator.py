@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from transformers import AutoTokenizer
+from transformers import AutoTokenizer, set_seed
 
 from magicoder.review_evaluator import (
     VALUE_SCORE_KEYS,
@@ -56,7 +56,8 @@ def main() -> None:
     parser.add_argument("--final_max_new_tokens", type=int, default=0)
     parser.add_argument("--temperature", type=float, default=0.7)
     parser.add_argument("--top_p", type=float, default=0.95)
-    parser.add_argument("--score_key", choices=VALUE_SCORE_KEYS, default="last_value")
+    parser.add_argument("--score_key", choices=VALUE_SCORE_KEYS, default="response_mean_value")
+    parser.add_argument("--seed", type=int)
     parser.add_argument("--rethink_threshold", type=float, default=-0.2)
     parser.add_argument("--rethink_spread_threshold", type=float, default=0.0)
     parser.add_argument("--max_rethinks", type=int, default=1)
@@ -64,6 +65,8 @@ def main() -> None:
     parser.add_argument("--final_temperature", type=float, default=0.0)
     parser.add_argument("--skip_existing", action=argparse.BooleanOptionalAction, default=True)
     args = parser.parse_args()
+    if args.seed is not None:
+        set_seed(args.seed)
 
     indices = load_indices(args)
     if not indices:
