@@ -89,13 +89,14 @@ def build_instruction(record: dict[str, Any], dimension: str) -> str:
             tests_text += f"\n... ({len(tests) - 5} more assertions omitted)"
     else:
         tests_text = "No tests are available."
+    language = str(record.get("language") or record.get("lang") or "python").strip() or "python"
 
     return (
         f"Target review dimension: {dimension}\n\n"
         "Scoring target: assign the overall AXIOM code grade; use the target dimension as supporting evidence.\n\n"
         f"Task description:\n{record.get('problem') or record.get('question') or ''}\n\n"
         "Candidate code:\n"
-        "```python\n"
+        f"```{language}\n"
         f"{record.get('candidate_code') or ''}\n"
         "```\n\n"
         f"Available tests:\n{tests_text}\n\n"

@@ -22,6 +22,7 @@ from magicoder.axiom_scoring import (
     AXIOM_SCALE_TEXT,
     axiom_grade_from_codecritic,
     axiom_scalar_score,
+    clamp_axiom_grade,
     parse_axiom_grade,
 )
 
@@ -66,6 +67,20 @@ def load_record(path: str, index: int) -> dict[str, Any]:
 def sample_from_record(record: dict[str, Any]) -> dict[str, Any]:
     if "candidate_code" in record:
         return record
+    if "inst" in record and "code" in record and "score" in record:
+        axiom_grade = clamp_axiom_grade(record.get("score", 0))
+        return {
+            "problem": record["inst"],
+            "candidate_code": record["code"],
+            "tests": [],
+            "reference_scores": {},
+            "source": record.get("source") or "axiom",
+            "subset": record.get("subset"),
+            "dataset_index": record.get("dataset_index"),
+            "language": record.get("lang") or "unknown",
+            "axiom_target_grade": axiom_grade,
+            "axiom_target_score": axiom_scalar_score(axiom_grade),
+        }
     if "answer" in record and "question" in record:
         axiom_grade = axiom_grade_from_codecritic(record.get("correctness"), record.get("score"))
         return {
@@ -80,10 +95,11 @@ def sample_from_record(record: dict[str, Any]) -> dict[str, Any]:
             "source": record.get("source"),
             "subset": record.get("subset"),
             "dataset_index": record.get("dataset_index"),
+            "language": record.get("language") or "python",
             "axiom_target_grade": axiom_grade,
             "axiom_target_score": axiom_scalar_score(axiom_grade) if axiom_grade is not None else None,
         }
-    raise ValueError("Input record must be a review MCTS sample or a CodeCriticBench-style raw sample.")
+    raise ValueError("Input record must be a review MCTS sample, AXIOM raw sample, or CodeCriticBench-style raw sample.")
 
 
 def fill_sample_metadata(sample: dict[str, Any], record_index: int) -> dict[str, Any]:
