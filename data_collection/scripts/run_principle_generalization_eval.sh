@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT="${ROOT:-/data1/xianzhiwei/mcts-code-review}"
-RUN_NAME="${RUN_NAME:-principle_generalization_compact_20260421}"
+RUN_NAME="${RUN_NAME:-principle_generalization_shortprompt_20260421}"
 MODEL_PATH="${MODEL_PATH:-/data1/xianzhiwei/model/huggingface/hub/models--Qwen--Qwen3.5-9B/snapshots/c202236235762e1c871ad0ccb60c8ee5ba337b9a}"
 CROSS_EVAL_RUN="${CROSS_EVAL_RUN:-cross_dataset_review_eval_20260421}"
 RUN_DIR="${ROOT}/data_collection/review_mcts_runs/${RUN_NAME}"
@@ -14,7 +14,7 @@ EVAL_ROOT="${ROOT}/model_training/src/output/review-eval-${RUN_NAME}"
 CROSS_EVAL_ROOT="${ROOT}/model_training/src/output/review-eval-${CROSS_EVAL_RUN}"
 MANIFEST="${ROOT}/data_collection/review_mcts_runs/${CROSS_EVAL_RUN}/manifests/all.jsonl"
 INDICES="${ROOT}/data_collection/review_mcts_runs/${CROSS_EVAL_RUN}/manifests/all_indices.json"
-MAX_TRAINING_SEQ_LENGTH="${MAX_TRAINING_SEQ_LENGTH:-640}"
+MAX_TRAINING_SEQ_LENGTH="${MAX_TRAINING_SEQ_LENGTH:-1152}"
 NTFY_URL="${NTFY_URL:-https://ntfy.sh/iponika_mcts}"
 
 mkdir -p "${RUN_DIR}" "${LOG_DIR}" "${EVAL_ROOT}"
@@ -119,37 +119,15 @@ for row in selected:
         row["train_lm"] = False
         row["lm_loss_weight"] = 0.0
 
-def truncate_text(text, max_chars):
-    text = str(text or "")
-    if len(text) <= max_chars:
-        return text
-    return text[:max_chars].rstrip() + "\n... [truncated for training]"
-
-def compact_instruction(instruction):
-    marker = "Task description:\n"
-    code_marker = "\n\nCandidate code:\n"
-    if marker not in instruction or code_marker not in instruction:
-        return truncate_text(instruction, 3200)
-    prefix, rest = instruction.split(marker, 1)
-    task, code_section = rest.split(code_marker, 1)
-    return (
-        prefix
-        + marker
-        + truncate_text(task, 1000)
-        + code_marker
-        + truncate_text(code_section, 1800)
-    )
-
 for row in selected:
-    row["instruction"] = compact_instruction(row.get("instruction", ""))
-    row["compacted_for_principle_generalization"] = True
+    row["short_review_prompt_for_principle_generalization"] = True
 
-# Keep CodeJudge pairs adjacent for batch-local pairwise loss. Exact and interval items are shuffled within their block.
 exact_like = [row for row in selected if row.get("source") in {"axiom", "codecritic"}]
 diting = [row for row in selected if row.get("source") == "code_diting"]
 codejudge = [row for row in selected if row.get("source") == "codejudgebench"]
 rng.shuffle(exact_like)
 rng.shuffle(diting)
+rng.shuffle(codejudge)
 ordered = exact_like + diting + codejudge
 
 train_path.parent.mkdir(parents=True, exist_ok=True)
@@ -200,8 +178,8 @@ train_model() {
     --output_dir "${OUTPUT_MODEL}" \
     --max_steps 200 \
     --num_train_epochs 1 \
-    --per_device_train_batch_size 2 \
-    --gradient_accumulation_steps 4 \
+    --per_device_train_batch_size 1 \
+    --gradient_accumulation_steps 8 \
     --max_training_seq_length "${MAX_TRAINING_SEQ_LENGTH}" \
     --bf16 True \
     --logging_steps 20 \
@@ -216,8 +194,9 @@ train_model() {
     --peft lora \
     --value_weight 0.04 \
     --boundary_value_weight 0.01 \
-    --pairwise_value_weight 0.015 \
+    --pairwise_value_weight 0.0 \
     --pairwise_margin 0.15 \
+    --review_prompt_mode short \
     --disable_train_shuffle True \
     --train_sampling_strategy sequential \
     --num_proc 1 \
@@ -280,7 +259,7 @@ eval_one() {
       --low_grade_no_evidence_penalty 0.4 \
       --final_temperature 0 \
       --max_final_retries 2
-    PYTHONPATH="${ROOT}/model_training/src:${ROOT}/data_collection" \
+    PYTHONPATH="${ROOT}:${ROOT}/model_training/src:${ROOT}/data_collection" \
     PYTHONDONTWRITEBYTECODE=1 \
     HF_HUB_OFFLINE=1 \
     UV_CACHE_DIR=/tmp/uv-cache \
@@ -293,7 +272,7 @@ eval_one() {
 
 write_comparison() {
   CURRENT_STAGE="write_comparison"
-  PYTHONPATH="${ROOT}/model_training/src:${ROOT}/data_collection" \
+  PYTHONPATH="${ROOT}:${ROOT}/model_training/src:${ROOT}/data_collection" \
   PYTHONDONTWRITEBYTECODE=1 \
   UV_CACHE_DIR=/tmp/uv-cache \
   uv run python - <<PY
