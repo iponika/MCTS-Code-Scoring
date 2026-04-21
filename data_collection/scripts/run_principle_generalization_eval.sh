@@ -2,19 +2,24 @@
 set -euo pipefail
 
 ROOT="${ROOT:-/data1/xianzhiwei/mcts-code-review}"
-RUN_NAME="${RUN_NAME:-principle_generalization_shortprompt_20260421}"
+RUN_NAME="${RUN_NAME:-principle_generalization_balanced_clean_v2_20260422}"
 MODEL_PATH="${MODEL_PATH:-/data1/xianzhiwei/model/huggingface/hub/models--Qwen--Qwen3.5-9B/snapshots/c202236235762e1c871ad0ccb60c8ee5ba337b9a}"
 CROSS_EVAL_RUN="${CROSS_EVAL_RUN:-cross_dataset_review_eval_20260421}"
 RUN_DIR="${ROOT}/data_collection/review_mcts_runs/${RUN_NAME}"
 LOG_DIR="${RUN_DIR}/logs"
 CANDIDATE_DATA="${ROOT}/model_training/review_mcts_train_data/${RUN_NAME}_candidates.jsonl"
 TRAIN_DATA="${ROOT}/model_training/review_mcts_train_data/${RUN_NAME}.jsonl"
-OUTPUT_MODEL="${ROOT}/model_training/src/output/review-lora-${RUN_NAME}-200step"
 EVAL_ROOT="${ROOT}/model_training/src/output/review-eval-${RUN_NAME}"
 CROSS_EVAL_ROOT="${ROOT}/model_training/src/output/review-eval-${CROSS_EVAL_RUN}"
 MANIFEST="${ROOT}/data_collection/review_mcts_runs/${CROSS_EVAL_RUN}/manifests/all.jsonl"
 INDICES="${ROOT}/data_collection/review_mcts_runs/${CROSS_EVAL_RUN}/manifests/all_indices.json"
 MAX_TRAINING_SEQ_LENGTH="${MAX_TRAINING_SEQ_LENGTH:-1152}"
+SOURCE_LIMIT="${SOURCE_LIMIT:-2000}"
+MAX_STEPS="${MAX_STEPS:-600}"
+EXACT_PER_GRADE="${EXACT_PER_GRADE:-120}"
+WEAK_INTERVAL_ITEMS="${WEAK_INTERVAL_ITEMS:-60}"
+CODEJUDGE_PAIRS="${CODEJUDGE_PAIRS:-30}"
+OUTPUT_MODEL="${ROOT}/model_training/src/output/review-lora-${RUN_NAME}-${MAX_STEPS}step"
 NTFY_URL="${NTFY_URL:-https://ntfy.sh/iponika_mcts}"
 
 mkdir -p "${RUN_DIR}" "${LOG_DIR}" "${EVAL_ROOT}"
@@ -63,34 +68,86 @@ prepare_data() {
       --codejudgebench_root "${ROOT}/benchmarks/mattymchen___codejudgebench" \
       --include_codejudge_as_intervals \
       --train_lm_exact \
-      --limit_per_source 900 \
+      --limit_per_source "${SOURCE_LIMIT}" \
       --disable_shuffle \
       --output_file "${CANDIDATE_DATA}"
   fi
-  PYTHONDONTWRITEBYTECODE=1 python - <<PY
+  PYTHONPATH="${ROOT}/model_training/src" \
+  PYTHONDONTWRITEBYTECODE=1 \
+  HF_HUB_OFFLINE=1 \
+  UV_CACHE_DIR=/tmp/uv-cache \
+  uv run python - <<PY
 import json
 import random
 from collections import Counter, defaultdict
 from pathlib import Path
 
+from transformers import AutoTokenizer
+
+from magicoder.prompt_template import QWEN_REVIEW_TRAIN_PROMPT
+
 candidate_path = Path("${CANDIDATE_DATA}")
 train_path = Path("${TRAIN_DATA}")
+max_tokens = int("${MAX_TRAINING_SEQ_LENGTH}")
+exact_per_grade = int("${EXACT_PER_GRADE}")
+weak_interval_items = int("${WEAK_INTERVAL_ITEMS}")
+codejudge_pairs = int("${CODEJUDGE_PAIRS}")
 rows = [json.loads(line) for line in candidate_path.read_text(encoding="utf-8").splitlines() if line.strip()]
-by_source = defaultdict(list)
-for row in rows:
-    by_source[row.get("source")].append(row)
-
 rng = random.Random(20260421)
 
-def take(source, count):
-    items = list(by_source.get(source, []))
-    rng.shuffle(items)
-    return items[:count]
+tokenizer = AutoTokenizer.from_pretrained("${MODEL_PATH}", trust_remote_code=True)
+
+def normalize_response(row):
+    response = row.get("response")
+    if isinstance(response, list) and response:
+        return str(response[0]).strip() + "\n"
+    if response:
+        return str(response).strip() + "\n"
+    return ""
+
+def token_length(row):
+    prompt = QWEN_REVIEW_TRAIN_PROMPT.format(instruction=row.get("instruction", ""), response="")
+    return len(tokenizer.encode(prompt, add_special_tokens=True)) + len(tokenizer.encode(normalize_response(row), add_special_tokens=False)) + 1
+
+for row in rows:
+    row["token_length"] = token_length(row)
+
+fit_rows = [row for row in rows if row["token_length"] <= max_tokens]
+too_long_rows = [row for row in rows if row["token_length"] > max_tokens]
+by_source = defaultdict(list)
+for row in fit_rows:
+    by_source[row.get("source")].append(row)
 
 selected = []
-selected.extend(take("axiom", 700))
-selected.extend(take("codecritic", 500))
-selected.extend(take("code_diting", 80))
+
+exact_by_grade = {grade: [] for grade in range(6)}
+for row in fit_rows:
+    if row.get("source") not in {"axiom", "codecritic"}:
+        continue
+    grade = row.get("target_axiom_grade")
+    if isinstance(grade, float) and grade.is_integer():
+        grade = int(grade)
+    if isinstance(grade, int) and grade in exact_by_grade:
+        exact_by_grade[grade].append(row)
+
+for grade, items in exact_by_grade.items():
+    axiom_items = [row for row in items if row.get("source") == "axiom"]
+    codecritic_items = [row for row in items if row.get("source") == "codecritic"]
+    rng.shuffle(axiom_items)
+    rng.shuffle(codecritic_items)
+    target_axiom = exact_per_grade // 2
+    target_codecritic = exact_per_grade - target_axiom
+    chosen = axiom_items[:target_axiom] + codecritic_items[:target_codecritic]
+    if len(chosen) < exact_per_grade:
+        chosen_keys = {id(row) for row in chosen}
+        leftovers = [row for row in items if id(row) not in chosen_keys]
+        rng.shuffle(leftovers)
+        chosen.extend(leftovers[: exact_per_grade - len(chosen)])
+    selected.extend(chosen[:exact_per_grade])
+
+diting_rows = list(by_source.get("code_diting", []))
+rng.shuffle(diting_rows)
+selected.extend(diting_rows[:weak_interval_items])
 
 codejudge_rows = by_source.get("codejudgebench", [])
 pair_groups = defaultdict(dict)
@@ -101,14 +158,14 @@ for row in codejudge_rows:
         pair_groups[pair_id][role] = row
 pairs = [pair for pair in pair_groups.values() if "pos" in pair and "neg" in pair]
 rng.shuffle(pairs)
-for pair in pairs[:40]:
+for pair in pairs[:codejudge_pairs]:
     selected.extend([pair["pos"], pair["neg"]])
 
 source_weights = {
-    "axiom": (1.0, 1.0),
-    "codecritic": (0.75, 0.45),
-    "code_diting": (0.12, 0.0),
-    "codejudgebench": (0.08, 0.0),
+    "axiom": (1.0, 0.12),
+    "codecritic": (0.85, 0.08),
+    "code_diting": (0.10, 0.0),
+    "codejudgebench": (0.06, 0.0),
 }
 for row in selected:
     value_weight, lm_weight = source_weights.get(row.get("source"), (0.1, 0.0))
@@ -134,12 +191,19 @@ train_path.parent.mkdir(parents=True, exist_ok=True)
 train_path.write_text("".join(json.dumps(row, ensure_ascii=False) + "\n" for row in ordered), encoding="utf-8")
 summary = {
     "candidate_items": len(rows),
+    "fit_items": len(fit_rows),
+    "too_long_items": len(too_long_rows),
+    "fit_sources": dict(Counter(row.get("source") for row in fit_rows)),
+    "fit_target_grades": dict(Counter(str(row.get("target_axiom_grade")) for row in fit_rows if row.get("source") in {"axiom", "codecritic"})),
     "output_items": len(ordered),
     "sources": dict(Counter(row.get("source") for row in ordered)),
+    "target_grades": dict(Counter(str(row.get("target_axiom_grade")) for row in ordered if row.get("source") in {"axiom", "codecritic"})),
     "label_types": dict(Counter(row.get("label_type") for row in ordered)),
     "train_lm": sum(1 for row in ordered if row.get("train_lm")),
     "value_only": sum(1 for row in ordered if not row.get("train_lm")),
     "pair_items": sum(1 for row in ordered if row.get("pair_id")),
+    "max_training_seq_length": max_tokens,
+    "exact_per_grade_target": exact_per_grade,
     "value_weight_by_source": {source: source_weights[source][0] for source in source_weights},
     "lm_weight_by_source": {source: source_weights[source][1] for source in source_weights},
 }
@@ -176,7 +240,7 @@ train_model() {
     --model_name_or_path "${MODEL_PATH}" \
     --datafile_paths "../review_mcts_train_data/$(basename "${TRAIN_DATA}")" \
     --output_dir "${OUTPUT_MODEL}" \
-    --max_steps 200 \
+    --max_steps "${MAX_STEPS}" \
     --num_train_epochs 1 \
     --per_device_train_batch_size 1 \
     --gradient_accumulation_steps 8 \
