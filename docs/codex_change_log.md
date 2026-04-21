@@ -4,6 +4,7 @@ This file records Codex-made project changes so work can be resumed safely acros
 
 ## 2026-04-21
 
+- Added `docs/group_meeting_slides_20260422/`, an html-ppt based slide deck for the group meeting report with speaker notes and keyboard/presenter-mode support.
 - Added `docs/group_meeting_training_report_20260422.md`, a group-meeting report outline focused on model-training progress, effective technical choices, current difficulties, evaluation design, and questions for discussion.
 - Added a compact `review_prompt_mode=short` training prompt and revised the principle-generalization workflow to use batch size 1 with longer 1152-token context while disabling pairwise ranking for this absolute-score stabilization stage.
 - Added `run_principle_generalization_eval.sh` for a distinct principle-generalization experiment: AXIOM/CodeCritic dominate the training mix, Code-DiTing and CodeJudgeBench are low-weight auxiliary labels, and outputs use a fresh run/checkpoint namespace to avoid reusing old loss-alignment results.
