@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT="/data1/xianzhiwei/mcts-code-review"
-RUN_NAME="axiom_report_eval_v2_20260421"
+RUN_NAME="axiom_report_eval_v3_20260421"
 BASE_MODEL_PATH="/data1/xianzhiwei/model/huggingface/hub/models--Qwen--Qwen3.5-9B/snapshots/c202236235762e1c871ad0ccb60c8ee5ba337b9a"
 REPORT_MODEL_PATH="${ROOT}/model_training/src/output/review-lora-report-static-mcts-valueonly-480step"
 AXIOM_DIR="${ROOT}/datasets/axiom-llm-judge/axiombench"
@@ -47,8 +47,8 @@ from pathlib import Path
 root = Path("/data1/xianzhiwei/mcts-code-review")
 axiom_dir = root / "datasets/axiom-llm-judge/axiombench"
 train_data = root / "model_training/review_mcts_train_data/report_static_mcts_valueonly_20260420.jsonl"
-out_file = root / "data_collection/review_mcts_runs/axiom_report_eval_v2_20260421/axiom_heldout_balanced_60.jsonl"
-indices_file = root / "data_collection/review_mcts_runs/axiom_report_eval_v2_20260421/axiom_heldout_indices.json"
+out_file = root / "data_collection/review_mcts_runs/axiom_report_eval_v3_20260421/axiom_heldout_balanced_30.jsonl"
+indices_file = root / "data_collection/review_mcts_runs/axiom_report_eval_v3_20260421/axiom_heldout_indices.json"
 
 used = set()
 if train_data.exists():
@@ -75,7 +75,7 @@ selected = []
 for grade in range(6):
     candidates = by_grade[grade]
     rng.shuffle(candidates)
-    selected.extend(candidates[:10])
+    selected.extend(candidates[:5])
 rng.shuffle(selected)
 
 out_file.parent.mkdir(parents=True, exist_ok=True)
@@ -105,6 +105,8 @@ eval_one() {
   local top_p="$8"
   local max_rethinks="$9"
   local seed="${10}"
+  local skip_value="${11}"
+  local final_retries="${12}"
   local eval_dir="${EVAL_ROOT}/${tag}"
   local log_file="${LOG_DIR}/eval_${tag}.log"
   mkdir -p "${eval_dir}"
@@ -112,6 +114,10 @@ eval_one() {
     set -euo pipefail
     cd "${ROOT}/model_training/src"
     echo "[stage:eval_${tag}] start=$(date -Is) cuda=${cuda_device} seed=${seed}"
+    SKIP_VALUE_ARGS=()
+    if [[ "${skip_value}" == "skip_value" ]]; then
+      SKIP_VALUE_ARGS=(--skip_value_scoring)
+    fi
     CUDA_VISIBLE_DEVICES="${cuda_device}" \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True \
@@ -123,6 +129,7 @@ eval_one() {
       --policy_model_path "${policy_path}" \
       --value_model_path "${value_path}" \
       --share_policy_value_model \
+      "${SKIP_VALUE_ARGS[@]}" \
       --input_record "${EVAL_FILE}" \
       --record_indices_file "${INDICES_FILE}" \
       --output_dir "${eval_dir}" \
@@ -140,7 +147,7 @@ eval_one() {
       --final_temperature 0 \
       --rethink_threshold -0.2 \
       --max_rethinks "${max_rethinks}" \
-      --max_final_retries 0
+      --max_final_retries "${final_retries}"
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONPATH="${ROOT}/model_training/src:${ROOT}/data_collection" \
     HF_HUB_OFFLINE=1 \
@@ -158,7 +165,7 @@ write_comparison() {
 import json
 from pathlib import Path
 
-root = Path("/data1/xianzhiwei/mcts-code-review/model_training/src/output/review-eval-axiom_report_eval_v2_20260421")
+root = Path("/data1/xianzhiwei/mcts-code-review/model_training/src/output/review-eval-axiom_report_eval_v3_20260421")
 metrics = [
     "valid_rate",
     "grade_mae",
@@ -182,16 +189,16 @@ PY
 main() {
   prepare_eval_set
   CURRENT_STAGE="direct_evals"
-  eval_one "base_direct" 0 "${BASE_MODEL_PATH}" "${BASE_MODEL_PATH}" 1 1 0 1.0 0 202604213
+  eval_one "base_direct" 0 "${BASE_MODEL_PATH}" "${BASE_MODEL_PATH}" 1 1 0 1.0 0 202604213 skip_value 2
   pid_base=$!
-  eval_one "trained_direct" 1 "${REPORT_MODEL_PATH}" "${REPORT_MODEL_PATH}" 1 1 0 1.0 0 202604214
+  eval_one "trained_direct" 1 "${REPORT_MODEL_PATH}" "${REPORT_MODEL_PATH}" 1 1 0 1.0 0 202604214 skip_value 2
   pid_trained=$!
   echo "[stage:${CURRENT_STAGE}] waiting base pid=${pid_base}, trained pid=${pid_trained}"
   wait "${pid_base}"
   wait "${pid_trained}"
 
   CURRENT_STAGE="value_guided_eval"
-  eval_one "trained_value_guided_mean" 0 "${REPORT_MODEL_PATH}" "${REPORT_MODEL_PATH}" 3 2 0.7 0.95 1 202604215
+  eval_one "trained_value_guided_mean" 0 "${REPORT_MODEL_PATH}" "${REPORT_MODEL_PATH}" 3 2 0.7 0.95 1 202604215 value 0
   pid_mcts=$!
   echo "[stage:${CURRENT_STAGE}] waiting mcts pid=${pid_mcts}"
   wait "${pid_mcts}"

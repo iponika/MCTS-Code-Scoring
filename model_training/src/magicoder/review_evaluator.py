@@ -216,6 +216,18 @@ def value_spread(candidates: list[dict[str, Any]], score_key: str) -> float:
     return max(values) - min(values)
 
 
+def neutral_value_score() -> dict[str, float | int]:
+    return {
+        "prompt_tokens": 0,
+        "total_tokens": 0,
+        "last_value": 0.0,
+        "response_mean_value": 0.0,
+        "response_min_value": 0.0,
+        "response_conservative_value": 0.0,
+        "response_max_value": 0.0,
+    }
+
+
 def evaluate_dimension(
     sample: dict[str, Any],
     dimension: str,
@@ -245,7 +257,7 @@ def evaluate_dimension(
                     top_p=args.top_p,
                     stop=stop,
                 )
-                value_score = score_response(value_model, tokenizer, prompt, continuation)
+                value_score = score_response(value_model, tokenizer, prompt, continuation) if value_model is not None else neutral_value_score()
             candidates.append(
                 {
                     "candidate_index": candidate_index,
@@ -311,7 +323,7 @@ def evaluate_dimension(
                 top_p=args.top_p,
                 stop="</review>",
             )
-            retry_value_score = score_response(value_model, tokenizer, retry_prompt, continuation)
+            retry_value_score = score_response(value_model, tokenizer, retry_prompt, continuation) if value_model is not None else neutral_value_score()
         partial_response += continuation.strip() + "\n"
         final_review_parse = parse_final_review(partial_response)
         final_retries.append(
@@ -324,7 +336,7 @@ def evaluate_dimension(
         )
 
     final_prompt = prompt_for_dimension(sample, dimension, "", force_final=True)
-    final_value_score = score_response(value_model, tokenizer, final_prompt, partial_response)
+    final_value_score = score_response(value_model, tokenizer, final_prompt, partial_response) if value_model is not None else neutral_value_score()
     reference_score = sample.get("axiom_target_score")
     reference_grade = sample.get("axiom_target_grade")
     parsed_score = parsed_review_score(final_review_parse)
@@ -388,6 +400,7 @@ def main() -> None:
         action="store_true",
         help="Load one value-head model and use its pretrained_model for policy generation.",
     )
+    parser.add_argument("--skip_value_scoring", action="store_true", help="Do not load/use a value model; useful for direct-generation baselines.")
     parser.add_argument("--input_record", required=True, help="Review MCTS sample JSON/JSONL or raw CodeCriticBench JSON/JSONL.")
     parser.add_argument("--record_index", type=int, default=0)
     parser.add_argument("--output_file")
@@ -423,7 +436,10 @@ def main() -> None:
     tokenizer = AutoTokenizer.from_pretrained(policy_model_path, use_fast=True)
     if tokenizer.pad_token_id is None:
         tokenizer.pad_token_id = tokenizer.eos_token_id
-    if args.share_policy_value_model or value_model_path == policy_model_path:
+    if args.skip_value_scoring:
+        policy_model = load_policy(policy_model_path, args.device, args.dtype)
+        value_model = None
+    elif args.share_policy_value_model or value_model_path == policy_model_path:
         value_model = load_value_model(value_model_path, args.device, args.dtype)
         policy_model = value_model.pretrained_model
         policy_model.eval()
