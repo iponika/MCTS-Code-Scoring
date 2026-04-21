@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1320" height="760" viewBox="0 0 1320 760">
+<rect width="1320" height="760" fill="#FFFDF8"/>
+<text x="60" y="60" font-size="30" font-weight="700" fill="#1F1F1F">Figure 1. Main Metrics</text>
+<text x="60" y="92" font-size="16" fill="#666666">纵轴统一为 0-1 或 0-1.6；MAE 越低越好，其余指标越高越好。</text>
+<rect x="960" y="38" width="16" height="16" rx="3" fill="#5B8FF9"/>
+<text x="984" y="51" font-size="15" fill="#1F1F1F">Base Direct</text>
+<rect x="960" y="66" width="16" height="16" rx="3" fill="#61DDAA"/>
+<text x="984" y="79" font-size="15" fill="#1F1F1F">Trained Direct</text>
+<rect x="960" y="94" width="16" height="16" rx="3" fill="#F6BD16"/>
+<text x="984" y="107" font-size="15" fill="#1F1F1F">Trained Value-Guided MCTS</text>
+<line x1="90" y1="140.0" x2="1280" y2="140.0" stroke="#D9D3C7" stroke-width="1"/>
+<text x="78" y="145.0" font-size="14" text-anchor="end" fill="#666666">1.6</text>
+<line x1="90" y1="265.0" x2="1280" y2="265.0" stroke="#D9D3C7" stroke-width="1"/>
+<text x="78" y="270.0" font-size="14" text-anchor="end" fill="#666666">1.2</text>
+<line x1="90" y1="390.0" x2="1280" y2="390.0" stroke="#D9D3C7" stroke-width="1"/>
+<text x="78" y="395.0" font-size="14" text-anchor="end" fill="#666666">0.8</text>
+<line x1="90" y1="515.0" x2="1280" y2="515.0" stroke="#D9D3C7" stroke-width="1"/>
+<text x="78" y="520.0" font-size="14" text-anchor="end" fill="#666666">0.4</text>
+<line x1="90" y1="640.0" x2="1280" y2="640.0" stroke="#D9D3C7" stroke-width="1"/>
+<text x="78" y="645.0" font-size="14" text-anchor="end" fill="#666666">0.0</text>
+<line x1="90" y1="140" x2="90" y2="640" stroke="#353535" stroke-width="2"/>
+<line x1="90" y1="640" x2="1280" y2="640" stroke="#353535" stroke-width="2"/>
+<text x="235.0" y="705" font-size="16" text-anchor="middle" fill="#1F1F1F">MAE</text>
+<text x="235.0" y="730" font-size="12" text-anchor="middle" fill="#666666">越低越好</text>
+<rect x="130" y="186.9" width="58" height="453.1" rx="6" fill="#5B8FF9"/>
+<text x="159.0" y="178.9" font-size="13" text-anchor="middle" fill="#1F1F1F">1.450</text>
+<rect x="200" y="220.6" width="58" height="419.4" rx="6" fill="#61DDAA"/>
+<text x="229.0" y="212.6" font-size="13" text-anchor="middle" fill="#1F1F1F">1.342</text>
+<rect x="270" y="228.8" width="58" height="411.2" rx="6" fill="#F6BD16"/>
+<text x="299.0" y="220.8" font-size="13" text-anchor="middle" fill="#1F1F1F">1.316</text>
+<text x="515.0" y="705" font-size="16" text-anchor="middle" fill="#1F1F1F">Boundary Acc</text>
+<text x="515.0" y="730" font-size="12" text-anchor="middle" fill="#666666">越高越好</text>
+<rect x="410" y="397.8" width="58" height="242.2" rx="6" fill="#5B8FF9"/>
+<text x="439.0" y="389.8" font-size="13" text-anchor="middle" fill="#1F1F1F">0.775</text>
+<rect x="480" y="393.3" width="58" height="246.7" rx="6" fill="#61DDAA"/>
+<text x="509.0" y="385.3" font-size="13" text-anchor="middle" fill="#1F1F1F">0.789</text>
+<rect x="550" y="409.7" width="58" height="230.3" rx="6" fill="#F6BD16"/>
+<text x="579.0" y="401.7" font-size="13" text-anchor="middle" fill="#1F1F1F">0.737</text>
+<text x="795.0" y="705" font-size="16" text-anchor="middle" fill="#1F1F1F">Valid Rate</text>
+<text x="795.0" y="730" font-size="12" text-anchor="middle" fill="#666666">越高越好</text>
+<rect x="690" y="327.5" width="58" height="312.5" rx="6" fill="#5B8FF9"/>
+<text x="719.0" y="319.5" font-size="13" text-anchor="middle" fill="#1F1F1F">1.000</text>
+<rect x="760" y="343.1" width="58" height="296.9" rx="6" fill="#61DDAA"/>
+<text x="789.0" y="335.1" font-size="13" text-anchor="middle" fill="#1F1F1F">0.950</text>
+<rect x="830" y="343.1" width="58" height="296.9" rx="6" fill="#F6BD16"/>
+<text x="859.0" y="335.1" font-size="13" text-anchor="middle" fill="#1F1F1F">0.950</text>
+</svg>
