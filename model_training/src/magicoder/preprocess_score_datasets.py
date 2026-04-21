@@ -122,6 +122,19 @@ def build_instruction(task: str, code: str, *, language: str = "unknown", extra:
 
 def review_response_for_grade(grade: int, *, source: str, label_type: str) -> str:
     grade = clamp_axiom_grade(grade)
+    functional_text = (
+        "The implementation is treated as functionally correct under the AXIOM rubric."
+        if axiom_functionally_correct(grade)
+        else "The implementation is treated as functionally defective under the AXIOM rubric."
+    )
+    effort_text = {
+        5: "No repair effort is expected before deployment.",
+        4: "Only minor quality cleanup is expected after functional acceptance.",
+        3: "Functionality is accepted, but larger refactoring is expected before deployment.",
+        2: "A localized functional fix is expected to make the implementation acceptable.",
+        1: "Major functional repair is expected before the implementation can be accepted.",
+        0: "The implementation is considered mismatched or rewrite-level incorrect.",
+    }[grade]
     payload = {
         "axiom_grade": grade,
         "score": axiom_scalar_score(grade),
@@ -130,8 +143,8 @@ def review_response_for_grade(grade: int, *, source: str, label_type: str) -> st
         "repair_effort": REPAIR_EFFORT_BY_GRADE[grade],
         "summary": AXIOM_GRADE_DESCRIPTIONS[grade],
         "evidence": [
-            f"Supervision source={source}; label_type={label_type}.",
-            "The grade follows the AXIOM refinement-effort semantics.",
+            functional_text,
+            effort_text,
         ],
     }
     return "<review>\n" + json.dumps(payload, ensure_ascii=False) + "\n</review>"
