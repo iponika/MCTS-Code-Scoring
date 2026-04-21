@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT="${ROOT:-/data1/xianzhiwei/mcts-code-review}"
-RUN_NAME="${RUN_NAME:-principle_generalization_20260421}"
+RUN_NAME="${RUN_NAME:-principle_generalization_compact_20260421}"
 MODEL_PATH="${MODEL_PATH:-/data1/xianzhiwei/model/huggingface/hub/models--Qwen--Qwen3.5-9B/snapshots/c202236235762e1c871ad0ccb60c8ee5ba337b9a}"
 CROSS_EVAL_RUN="${CROSS_EVAL_RUN:-cross_dataset_review_eval_20260421}"
 RUN_DIR="${ROOT}/data_collection/review_mcts_runs/${RUN_NAME}"
@@ -118,6 +118,31 @@ for row in selected:
     if row.get("source") in {"code_diting", "codejudgebench"}:
         row["train_lm"] = False
         row["lm_loss_weight"] = 0.0
+
+def truncate_text(text, max_chars):
+    text = str(text or "")
+    if len(text) <= max_chars:
+        return text
+    return text[:max_chars].rstrip() + "\n... [truncated for training]"
+
+def compact_instruction(instruction):
+    marker = "Task description:\n"
+    code_marker = "\n\nCandidate code:\n"
+    if marker not in instruction or code_marker not in instruction:
+        return truncate_text(instruction, 3200)
+    prefix, rest = instruction.split(marker, 1)
+    task, code_section = rest.split(code_marker, 1)
+    return (
+        prefix
+        + marker
+        + truncate_text(task, 1000)
+        + code_marker
+        + truncate_text(code_section, 1800)
+    )
+
+for row in selected:
+    row["instruction"] = compact_instruction(row.get("instruction", ""))
+    row["compacted_for_principle_generalization"] = True
 
 # Keep CodeJudge pairs adjacent for batch-local pairwise loss. Exact and interval items are shuffled within their block.
 exact_like = [row for row in selected if row.get("source") in {"axiom", "codecritic"}]
