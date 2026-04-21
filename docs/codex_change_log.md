@@ -2,6 +2,11 @@
 
 This file records Codex-made project changes so work can be resumed safely across forks and sessions. Each future code or workflow change should update this log and be followed by a git commit.
 
+## 2026-04-21
+
+- Added `response_conservative_value` as a value-guided candidate selection score, defined as `0.7 * response_mean_value + 0.3 * response_min_value`, to penalize low-confidence spans without relying only on the final token value.
+- Added `run_value_score_key_ablation.sh` to compare `response_mean_value` and `response_conservative_value` value-guided MCTS selection against the existing report-pilot checkpoint on the held-out CodeCritic indices.
+
 ## 2026-04-20
 
 - Added `docs/report_pilot_20260421/` with a report-ready Chinese summary, a pure-Python SVG chart generator, and two SVG figures for the report pilot training results.

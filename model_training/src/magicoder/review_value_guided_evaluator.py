@@ -17,6 +17,8 @@ from magicoder.review_policy_value_inference import (
     score_response,
 )
 
+VALUE_SCORE_KEYS = ["last_value", "response_mean_value", "response_min_value", "response_conservative_value"]
+
 
 def build_prompt(instruction: str, partial_response: str) -> str:
     return QWEN_REVIEW_STEP_PROMPT.format(instruction=instruction, response=partial_response)
@@ -40,7 +42,7 @@ def main() -> None:
     parser.add_argument("--max_new_tokens", type=int, default=256)
     parser.add_argument("--temperature", type=float, default=0.7)
     parser.add_argument("--top_p", type=float, default=0.95)
-    parser.add_argument("--score_key", choices=["last_value", "response_mean_value", "response_min_value"], default="last_value")
+    parser.add_argument("--score_key", choices=VALUE_SCORE_KEYS, default="last_value")
     args = parser.parse_args()
 
     item = load_jsonl_item(args.datafile_path, args.item_index)

@@ -8,6 +8,7 @@ from typing import Any
 from transformers import AutoTokenizer
 
 from magicoder.review_evaluator import (
+    VALUE_SCORE_KEYS,
     dimensions_for_sample,
     evaluate_dimension,
     fill_sample_metadata,
@@ -55,7 +56,7 @@ def main() -> None:
     parser.add_argument("--final_max_new_tokens", type=int, default=0)
     parser.add_argument("--temperature", type=float, default=0.7)
     parser.add_argument("--top_p", type=float, default=0.95)
-    parser.add_argument("--score_key", choices=["last_value", "response_mean_value", "response_min_value"], default="last_value")
+    parser.add_argument("--score_key", choices=VALUE_SCORE_KEYS, default="last_value")
     parser.add_argument("--rethink_threshold", type=float, default=-0.2)
     parser.add_argument("--rethink_spread_threshold", type=float, default=0.0)
     parser.add_argument("--max_rethinks", type=int, default=1)
