@@ -14,6 +14,7 @@ CROSS_EVAL_ROOT="${ROOT}/model_training/src/output/review-eval-${CROSS_EVAL_RUN}
 MANIFEST="${ROOT}/data_collection/review_mcts_runs/${CROSS_EVAL_RUN}/manifests/all.jsonl"
 INDICES="${ROOT}/data_collection/review_mcts_runs/${CROSS_EVAL_RUN}/manifests/all_indices.json"
 LIMIT_PER_SOURCE="${LIMIT_PER_SOURCE:-400}"
+MAX_TRAINING_SEQ_LENGTH="${MAX_TRAINING_SEQ_LENGTH:-640}"
 NTFY_URL="${NTFY_URL:-https://ntfy.sh/iponika_mcts}"
 
 mkdir -p "${RUN_DIR}" "${LOG_DIR}" "${EVAL_ROOT}"
@@ -121,7 +122,7 @@ train_model() {
     --num_train_epochs 1 \
     --per_device_train_batch_size 2 \
     --gradient_accumulation_steps 4 \
-    --max_training_seq_length 1152 \
+    --max_training_seq_length "${MAX_TRAINING_SEQ_LENGTH}" \
     --bf16 True \
     --logging_steps 20 \
     --save_strategy steps \
