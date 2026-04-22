@@ -2,6 +2,10 @@
 
 This file records Codex-made project changes so work can be resumed safely across forks and sessions. Each future code or workflow change should update this log and be followed by a git commit.
 
+## 2026-04-22
+
+- Added section 4.4 to the group-meeting training report documenting the clean-balanced cross-dataset scoring experiment, including motivation, data construction, sample counts, metrics, and limitations for non-project readers.
+
 ## 2026-04-21
 
 - Revised the principle-generalization training workflow after the short-prompt negative result: static score dataset responses no longer teach source/label evidence strings, the workflow token-filters before sampling, balances exact AXIOM grades 0-5 after filtering, lowers LM imitation weights, and defaults to a fresh 600-step balanced-clean v2 overnight run.
