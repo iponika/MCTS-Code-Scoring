@@ -3,7 +3,14 @@ set -euo pipefail
 
 ROOT="${ROOT:-/data1/xianzhiwei/mcts-code-review}"
 RUN_NAME="${RUN_NAME:-principle_generalization_balanced_clean_v2_20260422}"
-MODEL_PATH="${MODEL_PATH:-/data1/xianzhiwei/model/huggingface/hub/models--Qwen--Qwen3.5-9B/snapshots/c202236235762e1c871ad0ccb60c8ee5ba337b9a}"
+MODEL_KEY="${MODEL_KEY:-Qwen/Qwen3.5-9B}"
+if [[ -z "${MODEL_PATH:-}" ]]; then
+  if [[ "${MODEL_KEY}" == "Qwen/Qwen3.5-9B" ]]; then
+    MODEL_PATH="/data1/xianzhiwei/model/huggingface/hub/models--Qwen--Qwen3.5-9B/snapshots/c202236235762e1c871ad0ccb60c8ee5ba337b9a"
+  else
+    MODEL_PATH="${MODEL_KEY}"
+  fi
+fi
 CROSS_EVAL_RUN="${CROSS_EVAL_RUN:-cross_dataset_review_eval_20260421}"
 RUN_DIR="${ROOT}/data_collection/review_mcts_runs/${RUN_NAME}"
 LOG_DIR="${RUN_DIR}/logs"
@@ -236,7 +243,7 @@ train_model() {
   UV_CACHE_DIR=/tmp/uv-cache \
   uv run python -m magicoder.train_multi \
     --task review \
-    --model_key Qwen/Qwen3.5-9B \
+    --model_key "${MODEL_KEY}" \
     --model_name_or_path "${MODEL_PATH}" \
     --datafile_paths "../review_mcts_train_data/$(basename "${TRAIN_DATA}")" \
     --output_dir "${OUTPUT_MODEL}" \
