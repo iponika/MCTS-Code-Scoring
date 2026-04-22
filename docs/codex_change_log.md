@@ -4,6 +4,7 @@ This file records Codex-made project changes so work can be resumed safely acros
 
 ## 2026-04-22
 
+- Updated the group meeting HTML slides to match the latest report wording, and changed sections 3-6 from multi-column cards to vertically stacked report blocks for denser group-sharing readability.
 - Added section 4.4 to the group-meeting training report documenting the clean-balanced cross-dataset scoring experiment, including motivation, data construction, sample counts, metrics, and limitations for non-project readers.
 
 ## 2026-04-21
