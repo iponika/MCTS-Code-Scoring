@@ -27,6 +27,7 @@ EXACT_PER_GRADE="${EXACT_PER_GRADE:-120}"
 WEAK_INTERVAL_ITEMS="${WEAK_INTERVAL_ITEMS:-60}"
 CODEJUDGE_PAIRS="${CODEJUDGE_PAIRS:-30}"
 DROP_AXIOM_GRADE_ZERO="${DROP_AXIOM_GRADE_ZERO:-1}"
+AXIOM_EXACT_FRACTION="${AXIOM_EXACT_FRACTION:-0.5}"
 OUTPUT_MODEL="${ROOT}/model_training/src/output/review-lora-${RUN_NAME}-${MAX_STEPS}step"
 NTFY_URL="${NTFY_URL:-https://ntfy.sh/iponika_mcts}"
 
@@ -100,6 +101,7 @@ max_tokens = int("${MAX_TRAINING_SEQ_LENGTH}")
 exact_per_grade = int("${EXACT_PER_GRADE}")
 weak_interval_items = int("${WEAK_INTERVAL_ITEMS}")
 codejudge_pairs = int("${CODEJUDGE_PAIRS}")
+axiom_exact_fraction = float("${AXIOM_EXACT_FRACTION}")
 candidate_rows = [json.loads(line) for line in candidate_path.read_text(encoding="utf-8").splitlines() if line.strip()]
 rng = random.Random(20260421)
 drop_axiom_grade_zero = "${DROP_AXIOM_GRADE_ZERO}".strip().lower() not in {"0", "false", "no", "off"}
@@ -162,7 +164,8 @@ for grade, items in exact_by_grade.items():
     codecritic_items = [row for row in items if row.get("source") == "codecritic"]
     rng.shuffle(axiom_items)
     rng.shuffle(codecritic_items)
-    target_axiom = exact_per_grade // 2
+    target_axiom = round(exact_per_grade * axiom_exact_fraction)
+    target_axiom = max(0, min(exact_per_grade, target_axiom))
     target_codecritic = exact_per_grade - target_axiom
     chosen = axiom_items[:target_axiom] + codecritic_items[:target_codecritic]
     if len(chosen) < exact_per_grade:
@@ -236,6 +239,7 @@ summary = {
     "pairwise_batch_aligned": bool(not codejudge or (len(prefix) % 2 == 0)),
     "max_training_seq_length": max_tokens,
     "exact_per_grade_target": exact_per_grade,
+    "axiom_exact_fraction": axiom_exact_fraction,
     "value_weight_by_source": {source: source_weights[source][0] for source in source_weights},
     "lm_weight_by_source": {source: source_weights[source][1] for source in source_weights},
 }

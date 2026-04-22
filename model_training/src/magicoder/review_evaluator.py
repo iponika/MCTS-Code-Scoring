@@ -34,6 +34,7 @@ QWEN_REVIEW_FINAL_ONLY_PROMPT = """You are an exceptionally intelligent code sco
 Score the candidate code using the AXIOM 0-5 ordinal code-quality scale.
 Textual critique is only supporting evidence; the primary output is a stable scalar grade.
 Functionality is the primary boundary: grades 3-5 are functionally correct, grades 0-2 are not.
+Calibration rule: do not assign grades 0-2 merely because an issue is suspected or because no tests are available. Low grades require concrete visible evidence such as a syntax/runtime error, missing required I/O, unrelated or empty code, a direct contradiction of the task, or a simple counterexample grounded in the prompt/tests. If the implementation is complete and plausibly functional but you cannot prove a functional defect, keep the grade in 3-5 and use repair_effort to express quality/refactoring concerns.
 
 {instruction}
 

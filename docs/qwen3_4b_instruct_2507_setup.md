@@ -62,6 +62,7 @@ EXACT_PER_GRADE=180
 WEAK_INTERVAL_ITEMS=90
 CODEJUDGE_PAIRS=45
 DROP_AXIOM_GRADE_ZERO=1
+AXIOM_EXACT_FRACTION=0.7
 ```
 
-主流程使用完整 `QWEN_REVIEW_STEP_PROMPT`，不再使用短训练 prompt；`CodeJudgeBench` 正负样本对保持相邻，并启用 batch-local pairwise value ranking。AXIOM 数据源默认剔除 0 分样本，因为这部分样本经数据集开发者反馈质量较离谱；CodeCritic 映射出的 0 分样本仍保留。若 3072 token OOM，优先确认是否必须回退到 2048，而不是重新引入短 prompt 或截断 instruction。
+主流程使用完整 `QWEN_REVIEW_STEP_PROMPT`，不再使用短训练 prompt；`CodeJudgeBench` 正负样本对保持相邻，并启用 batch-local pairwise value ranking。AXIOM 数据源默认剔除 0 分样本，因为这部分样本经数据集开发者反馈质量较离谱；CodeCritic 映射出的 0 分样本仍保留。4B workflow 默认让每个精确分数档尽量使用 70% AXIOM / 30% CodeCritic，以优先提升 AXIOM 泛化。若 3072 token OOM，优先确认是否必须回退到 2048，而不是重新引入短 prompt 或截断 instruction。
