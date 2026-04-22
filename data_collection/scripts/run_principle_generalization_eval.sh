@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT="${ROOT:-/data1/xianzhiwei/mcts-code-review}"
-RUN_NAME="${RUN_NAME:-principle_generalization_full_context_20260422}"
+RUN_NAME="${RUN_NAME:-principle_generalization_full_context_no_axiom0_20260422}"
 MODEL_KEY="${MODEL_KEY:-Qwen/Qwen3.5-9B}"
 if [[ -z "${MODEL_PATH:-}" ]]; then
   if [[ "${MODEL_KEY}" == "Qwen/Qwen3.5-9B" ]]; then
@@ -26,6 +26,7 @@ MAX_STEPS="${MAX_STEPS:-600}"
 EXACT_PER_GRADE="${EXACT_PER_GRADE:-120}"
 WEAK_INTERVAL_ITEMS="${WEAK_INTERVAL_ITEMS:-60}"
 CODEJUDGE_PAIRS="${CODEJUDGE_PAIRS:-30}"
+DROP_AXIOM_GRADE_ZERO="${DROP_AXIOM_GRADE_ZERO:-1}"
 OUTPUT_MODEL="${ROOT}/model_training/src/output/review-lora-${RUN_NAME}-${MAX_STEPS}step"
 NTFY_URL="${NTFY_URL:-https://ntfy.sh/iponika_mcts}"
 
@@ -99,8 +100,27 @@ max_tokens = int("${MAX_TRAINING_SEQ_LENGTH}")
 exact_per_grade = int("${EXACT_PER_GRADE}")
 weak_interval_items = int("${WEAK_INTERVAL_ITEMS}")
 codejudge_pairs = int("${CODEJUDGE_PAIRS}")
-rows = [json.loads(line) for line in candidate_path.read_text(encoding="utf-8").splitlines() if line.strip()]
+candidate_rows = [json.loads(line) for line in candidate_path.read_text(encoding="utf-8").splitlines() if line.strip()]
 rng = random.Random(20260421)
+drop_axiom_grade_zero = "${DROP_AXIOM_GRADE_ZERO}".strip().lower() not in {"0", "false", "no", "off"}
+
+def normalized_int_grade(value):
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float) and value.is_integer():
+        return int(value)
+    return None
+
+rows = []
+dropped_axiom_grade_zero_rows = []
+for row in candidate_rows:
+    grade = normalized_int_grade(row.get("target_axiom_grade"))
+    if drop_axiom_grade_zero and row.get("source") == "axiom" and grade == 0:
+        dropped_axiom_grade_zero_rows.append(row)
+        continue
+    rows.append(row)
 
 tokenizer = AutoTokenizer.from_pretrained("${MODEL_PATH}", trust_remote_code=True)
 
@@ -199,6 +219,9 @@ train_path.parent.mkdir(parents=True, exist_ok=True)
 train_path.write_text("".join(json.dumps(row, ensure_ascii=False) + "\n" for row in ordered), encoding="utf-8")
 summary = {
     "candidate_items": len(rows),
+    "candidate_items_before_axiom_zero_filter": len(candidate_rows),
+    "drop_axiom_grade_zero": drop_axiom_grade_zero,
+    "dropped_axiom_grade_zero_items": len(dropped_axiom_grade_zero_rows),
     "fit_items": len(fit_rows),
     "too_long_items": len(too_long_rows),
     "fit_sources": dict(Counter(row.get("source") for row in fit_rows)),

@@ -4,6 +4,7 @@ This file records Codex-made project changes so work can be resumed safely acros
 
 ## 2026-04-22
 
+- Updated principle-generalization training data construction to drop AXIOM source grade-0 samples by default, while preserving CodeCritic grade-0 examples and making the behavior switchable via `DROP_AXIOM_GRADE_ZERO`.
 - Removed the prior memory-saving short review training prompt path from the main principle-generalization workflow, restored full review-step prompts, re-enabled batch-local pairwise value ranking, and raised the Qwen3-4B workflow context default to 3072 tokens.
 - Made principle-generalization data ordering explicitly align CodeJudgeBench pairs on batch-size-2 boundaries so pairwise value ranking remains active even in small smoke runs.
 - Added a timeout to principle-generalization ntfy notifications so completed tmux jobs cannot hang indefinitely when the notification endpoint is unreachable.

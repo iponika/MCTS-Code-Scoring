@@ -47,7 +47,7 @@ export no_proxy=127.0.0.1,localhost
 小模型版 full-context workflow：
 
 ```bash
-tmux new-session -d -s principle_generalization_qwen3_4b_full_context_20260422 \
+tmux new-session -d -s principle_generalization_qwen3_4b_full_context_no_axiom0_20260422 \
   /data1/xianzhiwei/mcts-code-review/data_collection/scripts/run_principle_generalization_qwen3_4b.sh
 ```
 
@@ -61,6 +61,7 @@ MAX_STEPS=600
 EXACT_PER_GRADE=180
 WEAK_INTERVAL_ITEMS=90
 CODEJUDGE_PAIRS=45
+DROP_AXIOM_GRADE_ZERO=1
 ```
 
-主流程使用完整 `QWEN_REVIEW_STEP_PROMPT`，不再使用短训练 prompt；`CodeJudgeBench` 正负样本对保持相邻，并启用 batch-local pairwise value ranking。若 3072 token OOM，优先确认是否必须回退到 2048，而不是重新引入短 prompt 或截断 instruction。
+主流程使用完整 `QWEN_REVIEW_STEP_PROMPT`，不再使用短训练 prompt；`CodeJudgeBench` 正负样本对保持相邻，并启用 batch-local pairwise value ranking。AXIOM 数据源默认剔除 0 分样本，因为这部分样本经数据集开发者反馈质量较离谱；CodeCritic 映射出的 0 分样本仍保留。若 3072 token OOM，优先确认是否必须回退到 2048，而不是重新引入短 prompt 或截断 instruction。
