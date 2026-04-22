@@ -4,6 +4,9 @@ This file records Codex-made project changes so work can be resumed safely acros
 
 ## 2026-04-22
 
+- Added Qwen3-4B-Instruct-2507 as a supported small model for review training, including a 4B-specific principle-generalization workflow, a vLLM serve helper, and setup documentation.
+- Hardened the Qwen3-4B vLLM serve helper to use `VLLM_HOST` instead of the generic `HOST` environment variable, avoiding conda host-triplet collisions during service startup.
+- Documented the required localhost `NO_PROXY` override for vLLM API smoke tests when the shell has an `http_proxy` configured.
 - Adjusted the group meeting slide layout after user review: removed the less important implementation-path block from slide 2, expanded slides 2/3/4/5 into larger, more readable layouts, and increased experiment-table font sizes.
 - Updated the group meeting HTML slides to match the latest report wording, and changed sections 3-6 from multi-column cards to vertically stacked report blocks for denser group-sharing readability.
 - Added section 4.4 to the group-meeting training report documenting the clean-balanced cross-dataset scoring experiment, including motivation, data construction, sample counts, metrics, and limitations for non-project readers.
