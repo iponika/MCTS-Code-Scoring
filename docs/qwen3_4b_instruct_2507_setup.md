@@ -2,7 +2,7 @@
 
 ## 选择理由
 
-默认小模型切换为 `Qwen/Qwen3-4B-Instruct-2507`。它是 2025 年发布的 Qwen3 4B instruct 刷新版，参数量约 4B，适合两张 4090 上降低显存压力。
+默认小模型切换为 `Qwen/Qwen3-4B-Instruct-2507`。它是 2025 年发布的 Qwen3 4B instruct 刷新版，参数量约 4B，用于替代 9B 训练时的显存权宜策略，让主流程可以保留完整 review prompt 和 pairwise value ranking。
 
 需要注意：该模型是 non-thinking instruct 模型，不会原生输出 `<think></think>`。因此它更适合当前以 `<review>` 标量评分为主的训练和 value-guided rerank；如果后续要继续把“原生深度思考片段”作为 MCTS 节点，应另行评估 thinking 版本。
 
@@ -44,10 +44,10 @@ export no_proxy=127.0.0.1,localhost
 
 ## 训练/评测 workflow
 
-小模型版 clean-balanced workflow：
+小模型版 full-context workflow：
 
 ```bash
-tmux new-session -d -s principle_generalization_qwen3_4b_2507_20260422 \
+tmux new-session -d -s principle_generalization_qwen3_4b_full_context_20260422 \
   /data1/xianzhiwei/mcts-code-review/data_collection/scripts/run_principle_generalization_qwen3_4b.sh
 ```
 
@@ -56,11 +56,11 @@ tmux new-session -d -s principle_generalization_qwen3_4b_2507_20260422 \
 ```bash
 MODEL_KEY=Qwen/Qwen3-4B-Instruct-2507
 MODEL_PATH=Qwen/Qwen3-4B-Instruct-2507
-MAX_TRAINING_SEQ_LENGTH=2048
+MAX_TRAINING_SEQ_LENGTH=3072
 MAX_STEPS=600
 EXACT_PER_GRADE=180
 WEAK_INTERVAL_ITEMS=90
 CODEJUDGE_PAIRS=45
 ```
 
-如果 2048 token 仍有余量，可以逐步提高 `MAX_TRAINING_SEQ_LENGTH`；如果训练 OOM，优先降到 1536，再降 batch/上下文，不要先改数据清洗和重平衡策略。
+主流程使用完整 `QWEN_REVIEW_STEP_PROMPT`，不再使用短训练 prompt；`CodeJudgeBench` 正负样本对保持相邻，并启用 batch-local pairwise value ranking。若 3072 token OOM，优先确认是否必须回退到 2048，而不是重新引入短 prompt 或截断 instruction。

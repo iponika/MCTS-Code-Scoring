@@ -589,20 +589,6 @@ Final review format:
 {response}"""
 
 
-QWEN_REVIEW_TRAIN_PROMPT = """You are a code scoring model.
-@@ Instruction
-Assign an AXIOM 0-5 code score. Functionality is the main boundary: 3-5 means functionally correct; 0-2 means functionally defective.
-Use these meanings: 5 production-ready; 4 correct with minor quality tweaks; 3 correct but major quality refactor; 2 defective but minor fix; 1 defective and major repair; 0 mismatched or rewrite.
-Return exactly one <review> JSON block with: axiom_grade, score, verdict, functional_correctness, repair_effort, summary, evidence.
-
-{instruction}
-
-@@ Response
-{response}"""
-
-
-
-
 DSC_PROMPT = """You are an exceptionally intelligent coding assistant that consistently delivers accurate and reliable responses to user instructions. 
 @@ Instruction
 {instruction}

@@ -4,6 +4,8 @@ This file records Codex-made project changes so work can be resumed safely acros
 
 ## 2026-04-22
 
+- Removed the prior memory-saving short review training prompt path from the main principle-generalization workflow, restored full review-step prompts, re-enabled batch-local pairwise value ranking, and raised the Qwen3-4B workflow context default to 3072 tokens.
+- Made principle-generalization data ordering explicitly align CodeJudgeBench pairs on batch-size-2 boundaries so pairwise value ranking remains active even in small smoke runs.
 - Added a timeout to principle-generalization ntfy notifications so completed tmux jobs cannot hang indefinitely when the notification endpoint is unreachable.
 - Added Qwen3-4B-Instruct-2507 as a supported small model for review training, including a 4B-specific principle-generalization workflow, a vLLM serve helper, and setup documentation.
 - Hardened the Qwen3-4B vLLM serve helper to use `VLLM_HOST` instead of the generic `HOST` environment variable, avoiding conda host-triplet collisions during service startup.

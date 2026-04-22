@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT="${ROOT:-/data1/xianzhiwei/mcts-code-review}"
-RUN_NAME="${RUN_NAME:-principle_generalization_balanced_clean_v2_20260422}"
+RUN_NAME="${RUN_NAME:-principle_generalization_full_context_20260422}"
 MODEL_KEY="${MODEL_KEY:-Qwen/Qwen3.5-9B}"
 if [[ -z "${MODEL_PATH:-}" ]]; then
   if [[ "${MODEL_KEY}" == "Qwen/Qwen3.5-9B" ]]; then
@@ -20,7 +20,7 @@ EVAL_ROOT="${ROOT}/model_training/src/output/review-eval-${RUN_NAME}"
 CROSS_EVAL_ROOT="${ROOT}/model_training/src/output/review-eval-${CROSS_EVAL_RUN}"
 MANIFEST="${ROOT}/data_collection/review_mcts_runs/${CROSS_EVAL_RUN}/manifests/all.jsonl"
 INDICES="${ROOT}/data_collection/review_mcts_runs/${CROSS_EVAL_RUN}/manifests/all_indices.json"
-MAX_TRAINING_SEQ_LENGTH="${MAX_TRAINING_SEQ_LENGTH:-1152}"
+MAX_TRAINING_SEQ_LENGTH="${MAX_TRAINING_SEQ_LENGTH:-2048}"
 SOURCE_LIMIT="${SOURCE_LIMIT:-2000}"
 MAX_STEPS="${MAX_STEPS:-600}"
 EXACT_PER_GRADE="${EXACT_PER_GRADE:-120}"
@@ -91,7 +91,7 @@ from pathlib import Path
 
 from transformers import AutoTokenizer
 
-from magicoder.prompt_template import QWEN_REVIEW_TRAIN_PROMPT
+from magicoder.prompt_template import QWEN_REVIEW_STEP_PROMPT
 
 candidate_path = Path("${CANDIDATE_DATA}")
 train_path = Path("${TRAIN_DATA}")
@@ -113,7 +113,7 @@ def normalize_response(row):
     return ""
 
 def token_length(row):
-    prompt = QWEN_REVIEW_TRAIN_PROMPT.format(instruction=row.get("instruction", ""), response="")
+    prompt = QWEN_REVIEW_STEP_PROMPT.format(instruction=row.get("instruction", ""), response="")
     return len(tokenizer.encode(prompt, add_special_tokens=True)) + len(tokenizer.encode(normalize_response(row), add_special_tokens=False)) + 1
 
 for row in rows:
@@ -183,16 +183,17 @@ for row in selected:
         row["train_lm"] = False
         row["lm_loss_weight"] = 0.0
 
-for row in selected:
-    row["short_review_prompt_for_principle_generalization"] = True
-
+# Keep CodeJudge pairs adjacent for batch-local pairwise value ranking.
 exact_like = [row for row in selected if row.get("source") in {"axiom", "codecritic"}]
 diting = [row for row in selected if row.get("source") == "code_diting"]
 codejudge = [row for row in selected if row.get("source") == "codejudgebench"]
 rng.shuffle(exact_like)
 rng.shuffle(diting)
-rng.shuffle(codejudge)
-ordered = exact_like + diting + codejudge
+prefix = exact_like + diting
+post_pair_items = []
+if len(prefix) % 2 == 1 and codejudge:
+    post_pair_items.append(prefix.pop())
+ordered = prefix + codejudge + post_pair_items
 
 train_path.parent.mkdir(parents=True, exist_ok=True)
 train_path.write_text("".join(json.dumps(row, ensure_ascii=False) + "\n" for row in ordered), encoding="utf-8")
@@ -209,6 +210,7 @@ summary = {
     "train_lm": sum(1 for row in ordered if row.get("train_lm")),
     "value_only": sum(1 for row in ordered if not row.get("train_lm")),
     "pair_items": sum(1 for row in ordered if row.get("pair_id")),
+    "pairwise_batch_aligned": bool(not codejudge or (len(prefix) % 2 == 0)),
     "max_training_seq_length": max_tokens,
     "exact_per_grade_target": exact_per_grade,
     "value_weight_by_source": {source: source_weights[source][0] for source in source_weights},
@@ -249,8 +251,8 @@ train_model() {
     --output_dir "${OUTPUT_MODEL}" \
     --max_steps "${MAX_STEPS}" \
     --num_train_epochs 1 \
-    --per_device_train_batch_size 1 \
-    --gradient_accumulation_steps 8 \
+    --per_device_train_batch_size 2 \
+    --gradient_accumulation_steps 4 \
     --max_training_seq_length "${MAX_TRAINING_SEQ_LENGTH}" \
     --bf16 True \
     --logging_steps 20 \
@@ -265,9 +267,8 @@ train_model() {
     --peft lora \
     --value_weight 0.04 \
     --boundary_value_weight 0.01 \
-    --pairwise_value_weight 0.0 \
+    --pairwise_value_weight 0.015 \
     --pairwise_margin 0.15 \
-    --review_prompt_mode short \
     --disable_train_shuffle True \
     --train_sampling_strategy sequential \
     --num_proc 1 \
