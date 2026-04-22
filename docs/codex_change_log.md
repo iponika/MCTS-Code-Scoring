@@ -4,6 +4,7 @@ This file records Codex-made project changes so work can be resumed safely acros
 
 ## 2026-04-22
 
+- Added a timeout to principle-generalization ntfy notifications so completed tmux jobs cannot hang indefinitely when the notification endpoint is unreachable.
 - Added Qwen3-4B-Instruct-2507 as a supported small model for review training, including a 4B-specific principle-generalization workflow, a vLLM serve helper, and setup documentation.
 - Hardened the Qwen3-4B vLLM serve helper to use `VLLM_HOST` instead of the generic `HOST` environment variable, avoiding conda host-triplet collisions during service startup.
 - Documented the required localhost `NO_PROXY` override for vLLM API smoke tests when the shell has an `http_proxy` configured.

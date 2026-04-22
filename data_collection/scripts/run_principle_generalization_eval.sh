@@ -39,7 +39,7 @@ notify() {
   local status="$1"
   local message="${RUN_NAME} ${status}: stage=${CURRENT_STAGE}, host=$(hostname), time=$(date -Is), log=${LOG_FILE}, output=${EVAL_ROOT}"
   env -u http_proxy -u https_proxy -u HTTP_PROXY -u HTTPS_PROXY \
-    curl --noproxy '*' -fsS -d "${message}" "${NTFY_URL}" >/dev/null 2>&1 || true
+    curl --noproxy '*' --connect-timeout 5 --max-time 20 -fsS -d "${message}" "${NTFY_URL}" >/dev/null 2>&1 || true
 }
 
 on_exit() {
