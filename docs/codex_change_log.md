@@ -4,6 +4,7 @@ This file records Codex-made project changes so work can be resumed safely acros
 
 ## 2026-04-22
 
+- Added low-grade calibration instructions to review prompts so complete plausible code is not scored 0-2 without concrete defect evidence, and made the Qwen3-4B principle workflow AXIOM-heavy via `AXIOM_EXACT_FRACTION=0.7`.
 - Added a clean AXIOM no-zero evaluation workflow with final-only JSON, longer prompt budgets, and code truncation notices outside code blocks so prompt shortening is not misread as a syntax defect.
 - Added configurable review-evaluator prompt budgets and an option to avoid inserting truncation markers inside candidate code blocks during clean cross-dataset evaluation.
 - Updated principle-generalization training data construction to drop AXIOM source grade-0 samples by default, while preserving CodeCritic grade-0 examples and making the behavior switchable via `DROP_AXIOM_GRADE_ZERO`.
