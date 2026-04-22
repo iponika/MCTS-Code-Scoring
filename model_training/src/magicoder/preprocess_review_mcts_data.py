@@ -81,14 +81,21 @@ def normalize_response_segment(text: str) -> str:
     return f"<step>\n{cleaned}\n</step>"
 
 
-def truncate_for_review(value: object, max_chars: int) -> str:
+def truncate_for_review(value: object, max_chars: int, marker: str = "\n... [truncated]") -> tuple[str, bool]:
     text = str(value or "").strip()
-    if len(text) <= max_chars:
-        return text
-    return text[:max_chars].rstrip() + "\n... [truncated]"
+    if max_chars <= 0 or len(text) <= max_chars:
+        return text, False
+    return text[:max_chars].rstrip() + marker, True
 
 
-def build_instruction(record: dict[str, Any], dimension: str) -> str:
+def build_instruction(
+    record: dict[str, Any],
+    dimension: str,
+    *,
+    max_problem_chars: int = 3500,
+    max_code_chars: int = 3500,
+    mark_code_truncation_inside_block: bool = True,
+) -> str:
     tests = record.get("tests") or []
     if tests:
         tests_text = "\n".join(str(test) for test in tests[:5])
@@ -97,17 +104,39 @@ def build_instruction(record: dict[str, Any], dimension: str) -> str:
     else:
         tests_text = "No tests are available."
     language = str(record.get("language") or record.get("lang") or "python").strip() or "python"
+    problem_text, problem_truncated = truncate_for_review(
+        record.get("problem") or record.get("question") or "",
+        max_problem_chars,
+    )
+    code_marker = "\n... [truncated]" if mark_code_truncation_inside_block else ""
+    code_text, code_truncated = truncate_for_review(
+        record.get("candidate_code") or "",
+        max_code_chars,
+        marker=code_marker,
+    )
+    truncation_notice = ""
+    if code_truncated and not mark_code_truncation_inside_block:
+        truncation_notice = (
+            "\n\nPrompt-budget note: the candidate code was shortened for evaluation input length. "
+            "Do not treat the shortening itself as evidence of a syntax error, missing implementation, "
+            "or truncated user code; score only the visible code and task evidence."
+        )
+    if problem_truncated:
+        truncation_notice += (
+            "\nPrompt-budget note: the task description was shortened; do not treat omitted text as a code defect."
+        )
 
     return (
         f"Target review dimension: {dimension}\n\n"
         "Scoring target: assign the overall AXIOM code grade; use the target dimension as supporting evidence.\n\n"
-        f"Task description:\n{truncate_for_review(record.get('problem') or record.get('question') or '', 3500)}\n\n"
+        f"Task description:\n{problem_text}\n\n"
         "Candidate code:\n"
         f"```{language}\n"
-        f"{truncate_for_review(record.get('candidate_code') or '', 3500)}\n"
+        f"{code_text}\n"
         "```\n\n"
         f"Available tests:\n{tests_text}\n\n"
         "Review only the target dimension. Use concrete evidence from the task, code, and tests."
+        f"{truncation_notice}"
     )
 
 

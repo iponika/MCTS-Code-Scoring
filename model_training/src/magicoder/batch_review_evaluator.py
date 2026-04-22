@@ -60,6 +60,14 @@ def main() -> None:
     parser.add_argument("--score_key", choices=VALUE_SCORE_KEYS, default="response_mean_value")
     parser.add_argument("--seed", type=int)
     parser.add_argument("--final_only_json", action="store_true", help="Generate only one compact final <review> JSON block; no step reasoning.")
+    parser.add_argument("--max_problem_chars", type=int, default=3500, help="Maximum task-description characters included in review prompts. 0 keeps full text.")
+    parser.add_argument("--max_code_chars", type=int, default=3500, help="Maximum candidate-code characters included in review prompts. 0 keeps full text.")
+    parser.add_argument(
+        "--mark_code_truncation_inside_block",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="When truncating candidate code, insert the truncation marker inside the code block. Disable for clean evaluation to avoid treating truncation as a code defect.",
+    )
     parser.add_argument("--format_penalty", type=float, default=1.0, help="Final-candidate value penalty when no AXIOM grade can be parsed.")
     parser.add_argument("--low_grade_no_evidence_penalty", type=float, default=0.4, help="Final-candidate value penalty for grades 0-2 without concrete defect evidence.")
     parser.add_argument("--rethink_threshold", type=float, default=-0.2)

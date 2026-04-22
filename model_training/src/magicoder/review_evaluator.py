@@ -142,8 +142,17 @@ def prompt_for_dimension(
     force_final: bool = False,
     parse_error: dict[str, Any] | None = None,
     final_only: bool = False,
+    max_problem_chars: int = 3500,
+    max_code_chars: int = 3500,
+    mark_code_truncation_inside_block: bool = True,
 ) -> str:
-    instruction = build_instruction(sample, dimension)
+    instruction = build_instruction(
+        sample,
+        dimension,
+        max_problem_chars=max_problem_chars,
+        max_code_chars=max_code_chars,
+        mark_code_truncation_inside_block=mark_code_truncation_inside_block,
+    )
     if final_only:
         if parse_error:
             instruction += (
@@ -322,7 +331,16 @@ def evaluate_dimension(
         force_final = args.final_only_json or step_index == args.max_steps - 1
         max_new_tokens = (args.final_max_new_tokens or args.max_new_tokens) if force_final else args.max_new_tokens
         stop = "</review>" if force_final else ["</step>", "</review>"]
-        prompt = prompt_for_dimension(sample, dimension, partial_response, force_final=force_final, final_only=args.final_only_json)
+        prompt = prompt_for_dimension(
+            sample,
+            dimension,
+            partial_response,
+            force_final=force_final,
+            final_only=args.final_only_json,
+            max_problem_chars=args.max_problem_chars,
+            max_code_chars=args.max_code_chars,
+            mark_code_truncation_inside_block=args.mark_code_truncation_inside_block,
+        )
         candidates = []
         for candidate_index in range(args.num_candidates):
             with torch.no_grad():
@@ -393,6 +411,9 @@ def evaluate_dimension(
             force_final=True,
             parse_error=final_review_parse,
             final_only=args.final_only_json,
+            max_problem_chars=args.max_problem_chars,
+            max_code_chars=args.max_code_chars,
+            mark_code_truncation_inside_block=args.mark_code_truncation_inside_block,
         )
         with torch.no_grad():
             continuation = generate_response(
@@ -416,7 +437,16 @@ def evaluate_dimension(
             }
         )
 
-    final_prompt = prompt_for_dimension(sample, dimension, "", force_final=True, final_only=args.final_only_json)
+    final_prompt = prompt_for_dimension(
+        sample,
+        dimension,
+        "",
+        force_final=True,
+        final_only=args.final_only_json,
+        max_problem_chars=args.max_problem_chars,
+        max_code_chars=args.max_code_chars,
+        mark_code_truncation_inside_block=args.mark_code_truncation_inside_block,
+    )
     final_value_score = score_response(value_model, tokenizer, final_prompt, partial_response) if value_model is not None else neutral_value_score()
     reference_score = sample.get("axiom_target_score")
     reference_grade = sample.get("axiom_target_grade")
@@ -505,6 +535,14 @@ def main() -> None:
     parser.add_argument("--score_key", choices=VALUE_SCORE_KEYS, default="response_mean_value")
     parser.add_argument("--seed", type=int)
     parser.add_argument("--final_only_json", action="store_true", help="Generate only one compact final <review> JSON block; no step reasoning.")
+    parser.add_argument("--max_problem_chars", type=int, default=3500, help="Maximum task-description characters included in review prompts. 0 keeps full text.")
+    parser.add_argument("--max_code_chars", type=int, default=3500, help="Maximum candidate-code characters included in review prompts. 0 keeps full text.")
+    parser.add_argument(
+        "--mark_code_truncation_inside_block",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="When truncating candidate code, insert the truncation marker inside the code block. Disable for clean evaluation to avoid treating truncation as a code defect.",
+    )
     parser.add_argument("--format_penalty", type=float, default=1.0, help="Final-candidate value penalty when no AXIOM grade can be parsed.")
     parser.add_argument("--low_grade_no_evidence_penalty", type=float, default=0.4, help="Final-candidate value penalty for grades 0-2 without concrete defect evidence.")
     parser.add_argument("--rethink_threshold", type=float, default=-0.2)
