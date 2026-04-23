@@ -4,6 +4,7 @@ This file records Codex-made project changes so work can be resumed safely acros
 
 ## 2026-04-22
 
+- Added Qwen3-8B as a supported review model key, plus 8B-specific principle-generalization and vLLM serve helper scripts. The 8B workflow defaults to 4096-token full-context training to reduce long-sample filtering while keeping conservative single-card LoRA training settings for smoke validation.
 - Added low-grade calibration instructions to review prompts so complete plausible code is not scored 0-2 without concrete defect evidence, and made the Qwen3-4B principle workflow AXIOM-heavy via `AXIOM_EXACT_FRACTION=0.7`.
 - Added a clean AXIOM no-zero evaluation workflow with final-only JSON, longer prompt budgets, and code truncation notices outside code blocks so prompt shortening is not misread as a syntax defect.
 - Added configurable review-evaluator prompt budgets and an option to avoid inserting truncation markers inside candidate code blocks during clean cross-dataset evaluation.
