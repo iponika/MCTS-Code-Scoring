@@ -2,8 +2,13 @@
 
 This file records Codex-made project changes so work can be resumed safely across forks and sessions. Each future code or workflow change should update this log and be followed by a git commit.
 
-## 2026-04-22
+## 2026-04-23
 
+- Added `docs/axiom_alignment_strategy_20260423.md`, documenting the current recommendation to treat AXIOM as the scoring anchor, use CodeCriticBench as the main mapped training source, and reserve AXIOM for external alignment checks instead of mixing everything blindly.
+- Added `data_collection/scripts/run_codecritic_axiom_alignment_qwen3_8b_overnight.sh`, a dedicated Qwen3-8B overnight workflow that builds a balanced CodeCritic-only AXIOM-style train set, resumes single-card 4096-token LoRA/value-head training, and then runs AXIOM clean held-out evaluation automatically.
+- Updated `docs/qwen3_8b_setup.md` with the new CodeCritic-to-AXIOM overnight alignment workflow so the 8B path no longer only documents the mixed-source principle script.
+
+## 2026-04-22
 - Added Qwen3-8B as a supported review model key, plus 8B-specific principle-generalization and vLLM serve helper scripts. The 8B workflow defaults to 4096-token full-context training to reduce long-sample filtering while keeping conservative single-card LoRA training settings for smoke validation.
 - Added low-grade calibration instructions to review prompts so complete plausible code is not scored 0-2 without concrete defect evidence, and made the Qwen3-4B principle workflow AXIOM-heavy via `AXIOM_EXACT_FRACTION=0.7`.
 - Added a clean AXIOM no-zero evaluation workflow with final-only JSON, longer prompt budgets, and code truncation notices outside code blocks so prompt shortening is not misread as a syntax defect.
