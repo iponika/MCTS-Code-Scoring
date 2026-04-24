@@ -2,6 +2,15 @@
 
 This file records Codex-made project changes so work can be resumed safely across forks and sessions. Each future code or workflow change should update this log and be followed by a git commit.
 
+## 2026-04-24
+
+- Added a written bootstrap-comparison experiment spec and implementation plan under `docs/superpowers/specs/` and `docs/superpowers/plans/`, defining the fair 4B comparison between `Static-SFT`, `Direct-Bootstrap-SFT`, and `MCTS-Bootstrap-SFT`.
+- Added `data_collection/configs/mcts_code_review_qwen3_4b.yaml` so local-vLLM direct and MCTS generation can target `Qwen/Qwen3-4B-Instruct-2507` without reusing the older 9B review config.
+- Added `data_collection/prepare_codecritic_axiom_seedset.py`, which builds a balanced CodeCritic-only prepared review seed set using final prepared AXIOM grades instead of only raw score buckets.
+- Added `data_collection/direct_bootstrap_review.py`, exporting multi-sample direct review rollouts as pseudo-`react` trees so the existing MCTS preprocessing path can be reused for a non-tree bootstrap baseline.
+- Added `data_collection/prepare_static_review_train_data.py`, converting prepared review samples directly into exact-label `train_multi` JSONL for the static supervision baseline.
+- Added `data_collection/scripts/run_bootstrap_comparison_qwen3_4b.sh`, a unified 4B workflow that prepares shared seed data, generates direct and MCTS bootstrap data, converts all three training sets, trains the three checkpoints, and evaluates them on AXIOM clean held-out with stop flags for smoke runs.
+
 ## 2026-04-23
 
 - Added `docs/axiom_alignment_strategy_20260423.md`, documenting the current recommendation to treat AXIOM as the scoring anchor, use CodeCriticBench as the main mapped training source, and reserve AXIOM for external alignment checks instead of mixing everything blindly.
