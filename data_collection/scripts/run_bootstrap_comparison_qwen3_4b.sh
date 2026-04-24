@@ -25,9 +25,13 @@ MCTS_RAW="${RUN_DIR}/mcts_bootstrap_raw.jsonl"
 MCTS_SAMPLES_DIR="${RUN_DIR}/mcts_samples"
 
 TRAIN_DIR="${ROOT}/model_training/review_mcts_train_data"
+STATIC_TRAIN_RAW="${TRAIN_DIR}/${RUN_NAME}_static_raw.jsonl"
+DIRECT_TRAIN_RAW="${TRAIN_DIR}/${RUN_NAME}_direct_bootstrap_raw.jsonl"
+MCTS_TRAIN_RAW="${TRAIN_DIR}/${RUN_NAME}_mcts_bootstrap_raw.jsonl"
 STATIC_TRAIN="${TRAIN_DIR}/${RUN_NAME}_static.jsonl"
 DIRECT_TRAIN="${TRAIN_DIR}/${RUN_NAME}_direct_bootstrap.jsonl"
 MCTS_TRAIN="${TRAIN_DIR}/${RUN_NAME}_mcts_bootstrap.jsonl"
+BALANCE_META="${RUN_DIR}/train_balance_summary.json"
 
 OUTPUT_ROOT="${ROOT}/model_training/src/output"
 STATIC_MODEL="${OUTPUT_ROOT}/review-lora-${RUN_NAME}-static-${MAX_STEPS}step"
@@ -116,15 +120,15 @@ generate_mcts_bootstrap() {
 
 prepare_static_train() {
   CURRENT_STAGE="prepare_static_train"
-  if [[ -f "${STATIC_TRAIN}" ]]; then
-    echo "[stage:${CURRENT_STAGE}] exists: ${STATIC_TRAIN}"
+  if [[ -f "${STATIC_TRAIN_RAW}" ]]; then
+    echo "[stage:${CURRENT_STAGE}] exists: ${STATIC_TRAIN_RAW}"
     return
   fi
   cd "${ROOT}"
   PYTHONPATH="${ROOT}:${ROOT}/model_training/src:${ROOT}/data_collection" UV_CACHE_DIR=/tmp/uv-cache \
     uv run python data_collection/prepare_static_review_train_data.py \
       --input "${SEED_DATA}" \
-      --output "${STATIC_TRAIN}"
+      --output "${STATIC_TRAIN_RAW}"
 }
 
 prepare_bootstrap_train() {
@@ -143,6 +147,85 @@ prepare_bootstrap_train() {
       --output_file "${output_file}" \
       --policy_min_q "${POLICY_MIN_Q}" \
       --max_value_paths_per_dimension "${MAX_VALUE_PATHS_PER_DIMENSION}"
+}
+
+balance_train_sets() {
+  CURRENT_STAGE="balance_train_sets"
+  if [[ -f "${STATIC_TRAIN}" && -f "${DIRECT_TRAIN}" && -f "${MCTS_TRAIN}" && -f "${BALANCE_META}" ]]; then
+    echo "[stage:${CURRENT_STAGE}] balanced train files already exist"
+    return
+  fi
+  local counts
+  counts="$(
+    python - <<PY
+import json
+from pathlib import Path
+
+def count(path_str: str):
+    path = Path(path_str)
+    items = [json.loads(line) for line in path.read_text(encoding='utf-8').splitlines() if line.strip()]
+    policy = sum(1 for item in items if item.get('train_lm'))
+    value = sum(1 for item in items if not item.get('train_lm'))
+    return {'total': len(items), 'policy': policy, 'value': value}
+
+direct = count("${DIRECT_TRAIN_RAW}")
+mcts = count("${MCTS_TRAIN_RAW}")
+target_policy = min(direct['policy'], mcts['policy'])
+target_value = min(direct['value'], mcts['value'])
+target_total = target_policy + target_value
+payload = {
+    'direct': direct,
+    'mcts': mcts,
+    'target_policy': target_policy,
+    'target_value': target_value,
+    'target_total': target_total,
+}
+print(json.dumps(payload))
+PY
+  )"
+  local target_policy
+  local target_value
+  local target_total
+  target_policy="$(python - <<PY
+import json
+payload=json.loads('''${counts}''')
+print(payload['target_policy'])
+PY
+)"
+  target_value="$(python - <<PY
+import json
+payload=json.loads('''${counts}''')
+print(payload['target_value'])
+PY
+)"
+  target_total="$(python - <<PY
+import json
+payload=json.loads('''${counts}''')
+print(payload['target_total'])
+PY
+)"
+  echo "${counts}" | python -m json.tool > "${BALANCE_META}"
+
+  cd "${ROOT}"
+  PYTHONPATH="${ROOT}" UV_CACHE_DIR=/tmp/uv-cache \
+    uv run python data_collection/rebalance_review_train_data.py \
+      --input "${DIRECT_TRAIN_RAW}" \
+      --output "${DIRECT_TRAIN}" \
+      --target_policy_count "${target_policy}" \
+      --target_value_count "${target_value}" \
+      --target_total_count "${target_total}"
+  PYTHONPATH="${ROOT}" UV_CACHE_DIR=/tmp/uv-cache \
+    uv run python data_collection/rebalance_review_train_data.py \
+      --input "${MCTS_TRAIN_RAW}" \
+      --output "${MCTS_TRAIN}" \
+      --target_policy_count "${target_policy}" \
+      --target_value_count "${target_value}" \
+      --target_total_count "${target_total}"
+  PYTHONPATH="${ROOT}" UV_CACHE_DIR=/tmp/uv-cache \
+    uv run python data_collection/rebalance_review_train_data.py \
+      --input "${STATIC_TRAIN_RAW}" \
+      --output "${STATIC_TRAIN}" \
+      --target_total_count "${target_total}"
 }
 
 train_one() {
@@ -258,8 +341,9 @@ main() {
   generate_direct_bootstrap
   generate_mcts_bootstrap
   prepare_static_train
-  prepare_bootstrap_train "direct" "${DIRECT_RAW}" "${DIRECT_TRAIN}"
-  prepare_bootstrap_train "mcts" "${MCTS_RAW}" "${MCTS_TRAIN}"
+  prepare_bootstrap_train "direct" "${DIRECT_RAW}" "${DIRECT_TRAIN_RAW}"
+  prepare_bootstrap_train "mcts" "${MCTS_RAW}" "${MCTS_TRAIN_RAW}"
+  balance_train_sets
 
   if [[ "${STOP_AFTER_DATA:-0}" == "1" ]]; then
     CURRENT_STAGE="finished"

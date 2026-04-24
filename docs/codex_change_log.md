@@ -10,6 +10,7 @@ This file records Codex-made project changes so work can be resumed safely acros
 - Added `data_collection/direct_bootstrap_review.py`, exporting multi-sample direct review rollouts as pseudo-`react` trees so the existing MCTS preprocessing path can be reused for a non-tree bootstrap baseline.
 - Added `data_collection/prepare_static_review_train_data.py`, converting prepared review samples directly into exact-label `train_multi` JSONL for the static supervision baseline.
 - Added `data_collection/scripts/run_bootstrap_comparison_qwen3_4b.sh`, a unified 4B workflow that prepares shared seed data, generates direct and MCTS bootstrap data, converts all three training sets, trains the three checkpoints, and evaluates them on AXIOM clean held-out with stop flags for smoke runs.
+- Added `data_collection/rebalance_review_train_data.py` and updated the 4B comparison runner so direct-bootstrap and MCTS-bootstrap training files are explicitly rebalanced to the same policy/value target counts before training; the static baseline is repeated to the same total-example budget.
 
 ## 2026-04-23
 
