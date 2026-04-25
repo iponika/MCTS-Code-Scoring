@@ -23,15 +23,6 @@ from mcts_math.axiom_scoring import (
 
 DEFAULT_DIMENSION_RUBRIC: Dict[str, str] = {
     "Correctness Verification": "Judge whether the code satisfies the task requirements and whether there are concrete logic bugs.",
-    "Time Complexity Optimization": "Judge whether the algorithmic complexity is appropriate and whether obvious performance regressions exist.",
-    "Space Complexity Control": "Judge whether the memory usage is reasonable and whether unnecessary allocations are introduced.",
-    "Code Readability Enhancement": "Judge naming clarity, local reasoning clarity, and whether the code is easy to inspect.",
-    "Robustness Validation": "Judge input validation, boundary handling, exceptional cases, and failure modes.",
-    "Algorithm Optimization": "Judge whether the algorithmic design is suitable, not just whether the current code runs.",
-    "Comprehensive Testing": "Judge whether the solution is sufficiently exercised by tests and edge cases.",
-    "Output Format Compliance": "Judge whether the returned value and observable behavior match the requested format.",
-    "Code Style Consistency": "Judge whether naming, formatting, and conventions are consistent with Python norms.",
-    "Maintainability": "Judge whether the code structure is easy to extend, debug, and modify safely.",
 }
 
 
@@ -504,7 +495,7 @@ def compute_review_reward(target_dimension: str, final_answer: str, sample: Dict
     expected_verdict = axiom_verdict(target_grade)
     grade_distance = abs(predicted_grade - target_grade)
     score_alignment = grade_alignment(predicted_grade, target_grade)
-    dimension_alignment = 1.0 if predicted_dimension == target_dimension else 0.0
+    dimension_alignment = 1.0 if not predicted_dimension or predicted_dimension == target_dimension else 0.0
     verdict_alignment = _verdict_distance(expected_verdict, predicted_verdict)
     functionality_alignment = 1.0 if axiom_functionally_correct(predicted_grade) == axiom_functionally_correct(target_grade) else 0.0
 
@@ -624,16 +615,19 @@ def prepare_codecriticbench_sample(raw_sample: Dict[str, Any], dataset_index: in
     all_assertions = public_assertions + private_assertions
     candidate_code = raw_sample["answer"]
 
-    reference_scores = {
+    raw_reference_scores = {
         dimension: score
         for dimension, score in zip(raw_sample["checklist_dimensions"], raw_sample["checklist_scores"])
     }
+    correctness_score = float(raw_reference_scores.get("Correctness Verification", raw_sample.get("score") or 0))
+    reference_scores = {"Correctness Verification": correctness_score}
     dimension_rubrics = {}
     for dimension, checklist in zip(raw_sample["checklist_dimensions"], raw_sample["checklists"]):
+        if dimension != "Correctness Verification":
+            continue
         default_rubric = DEFAULT_DIMENSION_RUBRIC.get(dimension, "")
         dimension_rubrics[dimension] = f"{default_rubric}\nReference checklist item: {checklist}".strip()
-    if "Correctness Verification" not in reference_scores:
-        reference_scores["Correctness Verification"] = float(raw_sample.get("score") or 0)
+    if "Correctness Verification" not in dimension_rubrics:
         dimension_rubrics["Correctness Verification"] = DEFAULT_DIMENSION_RUBRIC["Correctness Verification"]
 
     sample = {
@@ -673,9 +667,17 @@ def prepare_prebuilt_review_sample(raw_sample: Dict[str, Any], dataset_index: in
     sample.setdefault("subset", "prepared")
     sample.setdefault("tests", [])
     sample.setdefault("tests_for_prompt", format_public_tests({"tests": sample["tests"]}))
-    sample.setdefault("reference_scores", {"Correctness Verification": float(sample.get("overall_score", 0) or 0)})
-    sample.setdefault("dimension_rubrics", {"Correctness Verification": DEFAULT_DIMENSION_RUBRIC["Correctness Verification"]})
-    sample.setdefault("dimension_target_scores", dict(sample["reference_scores"]))
+    existing_reference_scores = sample.get("reference_scores") if isinstance(sample.get("reference_scores"), dict) else {}
+    correctness_score = float(existing_reference_scores.get("Correctness Verification", sample.get("overall_score", 0) or 0))
+    sample["reference_scores"] = {"Correctness Verification": correctness_score}
+    existing_rubrics = sample.get("dimension_rubrics") if isinstance(sample.get("dimension_rubrics"), dict) else {}
+    sample["dimension_rubrics"] = {
+        "Correctness Verification": existing_rubrics.get(
+            "Correctness Verification",
+            DEFAULT_DIMENSION_RUBRIC["Correctness Verification"],
+        )
+    }
+    sample["dimension_target_scores"] = dict(sample["reference_scores"])
     sample.setdefault("objective", {"public_test_pass_rate": 0.0, "private_test_pass_rate": 0.0, "full_test_pass_rate": 0.0})
     sample.setdefault("overall_score", axiom_scalar_score(sample.get("axiom_target_grade", 0)) / 10.0)
     sample.setdefault("correctness_label", "Correct" if int(sample.get("axiom_target_grade", 0)) >= 3 else "Error")

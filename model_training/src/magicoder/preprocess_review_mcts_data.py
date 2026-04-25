@@ -127,15 +127,14 @@ def build_instruction(
         )
 
     return (
-        f"Target review dimension: {dimension}\n\n"
-        "Scoring target: assign the overall AXIOM code grade; use the target dimension as supporting evidence.\n\n"
+        "Scoring target: assess candidate code correctness and assign the overall AXIOM code grade.\n\n"
         f"Task description:\n{problem_text}\n\n"
         "Candidate code:\n"
         f"```{language}\n"
         f"{code_text}\n"
         "```\n\n"
         f"Available tests:\n{tests_text}\n\n"
-        "Review only the target dimension. Use concrete evidence from the task, code, and tests."
+        "Assess functional correctness using concrete evidence from the task, code, and tests."
         f"{truncation_notice}"
     )
 
@@ -265,7 +264,6 @@ def build_verifier_correction_response(details: dict[str, Any], dimension: str, 
         "</step>"
     )
     payload = {
-        "dimension": dimension,
         "axiom_grade": target_grade,
         "score": axiom_scalar_score(target_grade),
         "verdict": axiom_verdict(target_grade),

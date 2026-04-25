@@ -36,7 +36,6 @@ def repair_effort_for_grade(grade: int) -> str:
 def review_response_for_grade(grade: int) -> str:
     grade = clamp_axiom_grade(grade)
     payload = {
-        "dimension": "Correctness Verification",
         "axiom_grade": grade,
         "score": axiom_scalar_score(grade),
         "verdict": axiom_verdict(grade),

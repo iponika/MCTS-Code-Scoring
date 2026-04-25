@@ -53,12 +53,7 @@ Here is your question: {question}
 QWEN_REVIEW_PROMPT = """You are an exceptionally intelligent code reviewer.
 @@ Instruction
 You are scoring candidate code. Textual critique is only supporting evidence for the scalar score.
-Use the target review dimension to focus the evidence, but the final score must be the overall AXIOM code-quality grade.
-
-Dimension: {dimension}
-
-Review rubric:
-{rubric}
+Assess functional correctness and assign the overall AXIOM code-quality grade.
 
 Task description:
 {question}
@@ -77,7 +72,7 @@ Previous review steps:
 AXIOM grade semantics: 5=production-ready; 4=functionally correct with minor quality tweaks; 3=functionally correct but major quality refactor needed; 2=functionally defective but minor fix; 1=functionally defective and major repair; 0=fundamentally flawed or mismatched. Functionality is the primary boundary: grades 3-5 are functionally correct, grades 0-2 are not.
 
 Rules:
-1. Keep all reasoning focused on the assigned dimension only.
+1. Keep all reasoning focused on functional correctness and AXIOM repair effort.
 2. {mode_instruction}
 3. Do not output code fixes.
 4. Calibrate against the AXIOM grade semantics. Grades 0-2 require a concrete functional defect. If you cannot state a verifiable defect, keep functional_correctness=true and choose 3-5 based on repair effort.
@@ -96,7 +91,7 @@ Rules:
 
 Structured final review format:
 <review>
-{{"dimension": "{dimension}", "axiom_grade": <0-5 integer>, "score": <0-100 number>, "verdict": "accept|minor_issue|major_issue", "functional_correctness": true, "repair_effort": "none|minor_quality|major_quality|minor_functional|major_functional|rewrite", "evidence_type": "provided_test_failure|deduced_counterexample|static_logic_contradiction|uncertain", "summary": "...", "evidence": ["...", "..."]}}
+{{"axiom_grade": <0-5 integer>, "score": <0-100 number>, "verdict": "accept|minor_issue|major_issue", "functional_correctness": true, "repair_effort": "none|minor_quality|major_quality|minor_functional|major_functional|rewrite", "evidence_type": "provided_test_failure|deduced_counterexample|static_logic_contradiction|uncertain", "summary": "...", "evidence": ["...", "..."]}}
 </review>
 
 @@ Response
