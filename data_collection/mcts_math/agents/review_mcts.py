@@ -7,7 +7,7 @@ from pydantic import field_validator
 
 from mcts_math.constants import NO_VALID_CHILD, TOO_MANY_STEPS, WARNING_COLOR
 from mcts_math.nodes import MCTSNode
-from mcts_math.review_utils import compute_review_reward
+from mcts_math.review_utils import compute_review_reward, review_semantic_signature
 from termcolor import colored
 
 from .mcts import MCTS
@@ -159,6 +159,18 @@ class ReviewMCTS(MCTS):
             "</step>"
         )
 
+    def _has_duplicate_review_child(self, node: Type[MCTSNode], final_answer: str) -> bool:
+        signature = review_semantic_signature(final_answer)
+        if signature is None:
+            return False
+        for child in node.children:
+            child_final = child.state.get("final_answer")
+            if not child_final:
+                continue
+            if review_semantic_signature(str(child_final)) == signature:
+                return True
+        return False
+
     def create_prompt(self, is_value_only: bool = False) -> List[str]:
         if is_value_only and not self.config.need_value_func:
             return []
@@ -202,6 +214,14 @@ class ReviewMCTS(MCTS):
         prior_prob: float,
         idx: int,
     ) -> None:
+        is_final_review = (
+            parser_result is not None
+            and bool(parser_result["final_answer"])
+            and (self._should_force_final_review(node) or node.state.get("linear_rollout"))
+        )
+        if is_final_review and self._has_duplicate_review_child(node, parser_result["final_answer"]):
+            return
+
         new_node = self.create_node(parent=node)
         new_node.tag = f"{node.tag}.{idx}"
         new_node.depth = node.depth + 1

@@ -408,6 +408,34 @@ def path_to_training_item(
     return item
 
 
+def review_semantic_signature_from_details(details: dict[str, Any], final_answer: str = "") -> tuple[Any, ...] | None:
+    parsed = details.get("parsed") if isinstance(details.get("parsed"), dict) else {}
+    if not parsed and final_answer:
+        try:
+            payload = final_answer.strip()
+            if payload.startswith("<review>"):
+                payload = payload[len("<review>"):].lstrip()
+            if payload.endswith("</review>"):
+                payload = payload[: -len("</review>")].rstrip()
+            if "{" in payload and "}" in payload:
+                payload = payload[payload.find("{") : payload.rfind("}") + 1]
+            parsed = json.loads(payload)
+        except json.JSONDecodeError:
+            parsed = {}
+    grade = details.get("predicted_axiom_grade")
+    if grade is None:
+        grade = parse_axiom_grade(parsed)
+    if grade is None:
+        return None
+    return (
+        clamp_axiom_grade(grade),
+        str(parsed.get("verdict", "")).strip().lower(),
+        bool(parsed.get("functional_correctness")),
+        str(parsed.get("repair_effort", "")).strip().lower(),
+        str(parsed.get("evidence_type", "")).strip().lower(),
+    )
+
+
 def collect_terminal_tags(record: dict[str, Any]) -> list[str]:
     tags = []
     for tag, node in record.get("react", {}).items():
@@ -452,13 +480,15 @@ def convert_records(
     items: list[dict[str, Any]] = []
     stats = defaultdict(int)
     seen: set[tuple[Any, str]] = set()
+    seen_review_signatures: set[tuple[Any, ...]] = set()
     verifier_corrections = 0
 
     for record in records:
         stats["records"] += 1
         best = best_tags(record)
         per_dimension_counts: dict[str, int] = defaultdict(int)
-        for tag in collect_terminal_tags(record):
+        terminal_tags = sorted(collect_terminal_tags(record), key=lambda item_tag: item_tag not in best)
+        for tag in terminal_tags:
             node = record["react"][tag]
             dimension = node.get("target_dimension") or ""
             if max_value_paths_per_dimension > 0 and per_dimension_counts[dimension] >= max_value_paths_per_dimension:
@@ -466,6 +496,21 @@ def convert_records(
             q_value = float(node.get("q_value", IGNORED_INDEX))
             error = terminal_error(node)
             details = terminal_reward_details(node)
+            semantic_signature = review_semantic_signature_from_details(details, str(node.get("final_answer") or ""))
+            if semantic_signature is not None:
+                parent_tag = tag.rsplit(".", 1)[0] if "." in tag else ""
+                semantic_key = (
+                    record.get("source"),
+                    record.get("subset"),
+                    record.get("dataset_index"),
+                    dimension,
+                    parent_tag,
+                    *semantic_signature,
+                )
+                if semantic_key in seen_review_signatures:
+                    stats["semantic_duplicate_reviews"] += 1
+                    continue
+                seen_review_signatures.add(semantic_key)
             has_verifier_issues = bool(verifier_issue_messages(details))
             train_lm = tag in best and q_value >= policy_min_q and error is None and not has_verifier_issues
             item = path_to_training_item(record, tag, train_lm=train_lm)

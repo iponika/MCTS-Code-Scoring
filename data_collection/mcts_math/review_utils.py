@@ -446,6 +446,22 @@ def parse_review_payload(text: str) -> Dict[str, Any] | None:
         return None
 
 
+def review_semantic_signature(final_answer: str) -> Tuple[Any, ...] | None:
+    parsed = parse_review_payload(final_answer)
+    if parsed is None:
+        return None
+    grade = parse_axiom_grade(parsed)
+    if grade is None:
+        return None
+    return (
+        grade,
+        str(parsed.get("verdict", "")).strip().lower(),
+        bool(parsed.get("functional_correctness")),
+        str(parsed.get("repair_effort", "")).strip().lower(),
+        str(parsed.get("evidence_type", "")).strip().lower(),
+    )
+
+
 def build_dimension_target_scores(sample: Dict[str, Any]) -> Dict[str, float]:
     targets: Dict[str, float] = {}
     pass_rate = sample["objective"]["full_test_pass_rate"]

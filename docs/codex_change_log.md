@@ -4,6 +4,7 @@ This file records Codex-made project changes so work can be resumed safely acros
 
 ## 2026-04-25
 
+- Added semantic review deduplication for MCTS and training export: sibling final reviews with the same AXIOM grade, verdict, correctness flag, repair effort, and evidence type are skipped, and preprocessing removes same-parent semantic duplicates before building training items.
 - Reworked review MCTS termination into bounded exploration plus linear frontier rollout: branching stops at `review_explore_depth`/node budgets, unfinished frontier leaves are then advanced one continuation at a time until a natural `<review>` or max-depth forced final, and non-review expansions no longer backpropagate neutral rewards that dilute q-values.
 - Made review prompts deployment-aligned by hiding dataset tests from the model by default across MCTS generation, direct baselines, bootstrap export, training preprocessing, and value-guided evaluation; tests remain available for offline reward/label computation and can be exposed only with the new `show_tests_in_prompt` diagnostic switch.
 - Switched the default review pipeline to correctness-only scoring: model-visible prompts no longer mention target review dimensions or require a `dimension` JSON field, CodeCritic samples expose only `Correctness Verification` by default, and the main local/API MCTS configs now explore one correctness branch.
