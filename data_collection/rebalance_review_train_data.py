@@ -17,7 +17,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--target_total_count", type=int, default=-1)
     parser.add_argument("--stratify_by_dataset", action="store_true")
     parser.add_argument("--stratify_by_delta_bucket", action="store_true")
-    parser.add_argument("--filter_strong_contradictions", action="store_true")
     parser.add_argument("--seed", type=int, default=20260424)
     return parser.parse_args()
 
@@ -30,18 +29,6 @@ def split_items(items: list[dict]) -> tuple[list[dict], list[dict]]:
     policy = [item for item in items if item.get("train_lm")]
     value_only = [item for item in items if not item.get("train_lm")]
     return policy, value_only
-
-
-def contradiction_reason(item: dict) -> str | None:
-    target = item.get("target_axiom_grade")
-    parsed = item.get("parsed_axiom_grade")
-    if target is None or parsed is None:
-        return None
-    if target >= 4 and parsed <= 2:
-        return "high_target_low_prediction"
-    if target <= 2 and parsed >= 4:
-        return "low_target_high_prediction"
-    return None
 
 
 def delta_bucket(item: dict) -> str:
@@ -153,16 +140,6 @@ def main() -> None:
     args = parse_args()
     rng = random.Random(args.seed)
     items = load_items(args.input)
-    dropped_reasons = Counter()
-    if args.filter_strong_contradictions:
-        kept_items: list[dict] = []
-        for item in items:
-            reason = contradiction_reason(item)
-            if reason is None:
-                kept_items.append(item)
-            else:
-                dropped_reasons[reason] += 1
-        items = kept_items
     policy_items, value_items = split_items(items)
 
     out_policy = stratified_sample_or_repeat(
@@ -211,10 +188,8 @@ def main() -> None:
         "target_policy_count": args.target_policy_count,
         "target_value_count": args.target_value_count,
         "target_total_count": args.target_total_count,
-        "filter_strong_contradictions": args.filter_strong_contradictions,
         "stratify_by_dataset": args.stratify_by_dataset,
         "stratify_by_delta_bucket": args.stratify_by_delta_bucket,
-        "dropped_contradictions": dict(sorted(dropped_reasons.items())),
         "output_total_count": len(selected),
         "output_policy_count": sum(1 for item in selected if item.get("train_lm")),
         "output_value_count": sum(1 for item in selected if not item.get("train_lm")),

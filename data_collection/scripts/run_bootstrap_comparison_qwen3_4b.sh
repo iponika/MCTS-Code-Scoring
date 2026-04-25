@@ -14,7 +14,6 @@ MAX_TRAINING_SEQ_LENGTH="${MAX_TRAINING_SEQ_LENGTH:-1536}"
 MAX_STEPS="${MAX_STEPS:-240}"
 POLICY_MIN_Q="${POLICY_MIN_Q:-0.5}"
 MAX_VALUE_PATHS_PER_DIMENSION="${MAX_VALUE_PATHS_PER_DIMENSION:-0}"
-BOOTSTRAP_FILTER_STRONG_CONTRADICTIONS="${BOOTSTRAP_FILTER_STRONG_CONTRADICTIONS:-1}"
 BOOTSTRAP_STRATIFY_BY_DATASET="${BOOTSTRAP_STRATIFY_BY_DATASET:-1}"
 BOOTSTRAP_STRATIFY_BY_DELTA_BUCKET="${BOOTSTRAP_STRATIFY_BY_DELTA_BUCKET:-1}"
 NTFY_URL="${NTFY_URL:-https://ntfy.sh/iponika_mcts}"
@@ -213,10 +212,6 @@ PY
   direct_balance_args=()
   mcts_balance_args=()
   static_balance_args=()
-  if [[ "${BOOTSTRAP_FILTER_STRONG_CONTRADICTIONS}" == "1" ]]; then
-    direct_balance_args+=(--filter_strong_contradictions)
-    mcts_balance_args+=(--filter_strong_contradictions)
-  fi
   if [[ "${BOOTSTRAP_STRATIFY_BY_DATASET}" == "1" ]]; then
     direct_balance_args+=(--stratify_by_dataset)
     mcts_balance_args+=(--stratify_by_dataset)

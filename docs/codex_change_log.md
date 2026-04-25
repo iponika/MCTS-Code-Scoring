@@ -4,10 +4,9 @@ This file records Codex-made project changes so work can be resumed safely acros
 
 ## 2026-04-25
 
-- Added a bootstrap-rebalance design note and implementation plan under `docs/superpowers/specs/` and `docs/superpowers/plans/` for the next fair `Direct-Bootstrap` vs `MCTS-Bootstrap` rerun.
-- Tightened `data_collection/rebalance_review_train_data.py` with optional AXIOM contradiction filtering, delta-bucket summaries, and stratified round-robin sampling across `dataset_index` and score-delta buckets.
-- Updated `data_collection/scripts/run_bootstrap_comparison_qwen3_4b.sh` to expose the new rebalance toggles and apply contradiction filtering plus stratified sampling to bootstrap exports before training.
-- Verified the new rebalance logic offline on the previous formal raw exports: strong `high target -> low prediction` and `low target -> high prediction` contradictions are removed from the final balanced bootstrap train sets before retraining.
+- Removed the forced AXIOM contradiction filtering added in the prior bootstrap-rebalance pass. The project will debug and fix q-value/reward labeling directly instead of dropping high/low disagreement samples externally.
+- Kept the non-filtering rebalance diagnostics: `data_collection/rebalance_review_train_data.py` can still report score-delta buckets and stratify sampling by `dataset_index` or delta bucket, but it no longer deletes samples based on target/predicted grade disagreement.
+- Updated `data_collection/scripts/run_bootstrap_comparison_qwen3_4b.sh` so bootstrap comparison runs no longer pass any forced contradiction-filtering flag.
 
 ## 2026-04-24
 
