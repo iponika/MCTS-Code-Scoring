@@ -4,6 +4,7 @@ This file records Codex-made project changes so work can be resumed safely acros
 
 ## 2026-04-25
 
+- Tightened objective review reward labeling: `compute_review_reward` now records AXIOM grade distance and caps rewards for predictions at least two AXIOM levels away from the target, so same-boundary but severely over/under-scored reviews no longer receive high q-values.
 - Added `tools/mcts_tree_viewer.html`, a standalone browser viewer for MCTS review sample JSON/JSONL files. It renders the `react` tree, colors nodes by `q_value`, labels review leaves with parsed AXIOM grades, and opens node text/reward details on click.
 - Removed the forced AXIOM contradiction filtering added in the prior bootstrap-rebalance pass. The project will debug and fix q-value/reward labeling directly instead of dropping high/low disagreement samples externally.
 - Kept the non-filtering rebalance diagnostics: `data_collection/rebalance_review_train_data.py` can still report score-delta buckets and stratify sampling by `dataset_index` or delta bucket, but it no longer deletes samples based on target/predicted grade disagreement.

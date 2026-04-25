@@ -502,6 +502,7 @@ def compute_review_reward(target_dimension: str, final_answer: str, sample: Dict
     target_grade = int(sample.get("axiom_target_grade", build_axiom_target_grade(sample)))
     target_score = axiom_scalar_score(target_grade)
     expected_verdict = axiom_verdict(target_grade)
+    grade_distance = abs(predicted_grade - target_grade)
     score_alignment = grade_alignment(predicted_grade, target_grade)
     dimension_alignment = 1.0 if predicted_dimension == target_dimension else 0.0
     verdict_alignment = _verdict_distance(expected_verdict, predicted_verdict)
@@ -563,6 +564,10 @@ def compute_review_reward(target_dimension: str, final_answer: str, sample: Dict
     if axiom_functionally_correct(predicted_grade) != axiom_functionally_correct(target_grade):
         reward_caps.append(("axiom_functionality_boundary_mismatch", 0.35))
 
+    if grade_distance >= 2:
+        ordinal_cap = max(0.10, 0.45 - 0.15 * (grade_distance - 2))
+        reward_caps.append((f"axiom_ordinal_grade_distance_{grade_distance}", ordinal_cap))
+
     if reward_caps:
         reward_01 = min(reward_01, *(cap for _, cap in reward_caps))
 
@@ -574,6 +579,7 @@ def compute_review_reward(target_dimension: str, final_answer: str, sample: Dict
         "predicted_axiom_grade": predicted_grade,
         "target_score": target_score,
         "predicted_score": predicted_score,
+        "grade_distance": grade_distance,
         "score_scale": "axiom_0_5_scalar_0_100",
         "score_semantics": AXIOM_SCALE_TEXT,
         "expected_verdict": expected_verdict,
