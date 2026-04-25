@@ -14,6 +14,9 @@ MAX_TRAINING_SEQ_LENGTH="${MAX_TRAINING_SEQ_LENGTH:-1536}"
 MAX_STEPS="${MAX_STEPS:-240}"
 POLICY_MIN_Q="${POLICY_MIN_Q:-0.5}"
 MAX_VALUE_PATHS_PER_DIMENSION="${MAX_VALUE_PATHS_PER_DIMENSION:-0}"
+BOOTSTRAP_FILTER_STRONG_CONTRADICTIONS="${BOOTSTRAP_FILTER_STRONG_CONTRADICTIONS:-1}"
+BOOTSTRAP_STRATIFY_BY_DATASET="${BOOTSTRAP_STRATIFY_BY_DATASET:-1}"
+BOOTSTRAP_STRATIFY_BY_DELTA_BUCKET="${BOOTSTRAP_STRATIFY_BY_DELTA_BUCKET:-1}"
 NTFY_URL="${NTFY_URL:-https://ntfy.sh/iponika_mcts}"
 
 RUN_DIR="${ROOT}/data_collection/review_mcts_runs/${RUN_NAME}"
@@ -207,25 +210,44 @@ PY
   echo "${counts}" | python -m json.tool > "${BALANCE_META}"
 
   cd "${ROOT}"
+  direct_balance_args=()
+  mcts_balance_args=()
+  static_balance_args=()
+  if [[ "${BOOTSTRAP_FILTER_STRONG_CONTRADICTIONS}" == "1" ]]; then
+    direct_balance_args+=(--filter_strong_contradictions)
+    mcts_balance_args+=(--filter_strong_contradictions)
+  fi
+  if [[ "${BOOTSTRAP_STRATIFY_BY_DATASET}" == "1" ]]; then
+    direct_balance_args+=(--stratify_by_dataset)
+    mcts_balance_args+=(--stratify_by_dataset)
+    static_balance_args+=(--stratify_by_dataset)
+  fi
+  if [[ "${BOOTSTRAP_STRATIFY_BY_DELTA_BUCKET}" == "1" ]]; then
+    direct_balance_args+=(--stratify_by_delta_bucket)
+    mcts_balance_args+=(--stratify_by_delta_bucket)
+  fi
   PYTHONPATH="${ROOT}" UV_CACHE_DIR=/tmp/uv-cache \
     uv run python data_collection/rebalance_review_train_data.py \
       --input "${DIRECT_TRAIN_RAW}" \
       --output "${DIRECT_TRAIN}" \
       --target_policy_count "${target_policy}" \
       --target_value_count "${target_value}" \
-      --target_total_count "${target_total}"
+      --target_total_count "${target_total}" \
+      "${direct_balance_args[@]}"
   PYTHONPATH="${ROOT}" UV_CACHE_DIR=/tmp/uv-cache \
     uv run python data_collection/rebalance_review_train_data.py \
       --input "${MCTS_TRAIN_RAW}" \
       --output "${MCTS_TRAIN}" \
       --target_policy_count "${target_policy}" \
       --target_value_count "${target_value}" \
-      --target_total_count "${target_total}"
+      --target_total_count "${target_total}" \
+      "${mcts_balance_args[@]}"
   PYTHONPATH="${ROOT}" UV_CACHE_DIR=/tmp/uv-cache \
     uv run python data_collection/rebalance_review_train_data.py \
       --input "${STATIC_TRAIN_RAW}" \
       --output "${STATIC_TRAIN}" \
-      --target_total_count "${target_total}"
+      --target_total_count "${target_total}" \
+      "${static_balance_args[@]}"
 }
 
 train_one() {
