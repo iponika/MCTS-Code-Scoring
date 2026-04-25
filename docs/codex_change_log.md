@@ -4,6 +4,7 @@ This file records Codex-made project changes so work can be resumed safely acros
 
 ## 2026-04-25
 
+- Added `tools/mcts_tree_viewer.html`, a standalone browser viewer for MCTS review sample JSON/JSONL files. It renders the `react` tree, colors nodes by `q_value`, labels review leaves with parsed AXIOM grades, and opens node text/reward details on click.
 - Removed the forced AXIOM contradiction filtering added in the prior bootstrap-rebalance pass. The project will debug and fix q-value/reward labeling directly instead of dropping high/low disagreement samples externally.
 - Kept the non-filtering rebalance diagnostics: `data_collection/rebalance_review_train_data.py` can still report score-delta buckets and stratify sampling by `dataset_index` or delta bucket, but it no longer deletes samples based on target/predicted grade disagreement.
 - Updated `data_collection/scripts/run_bootstrap_comparison_qwen3_4b.sh` so bootstrap comparison runs no longer pass any forced contradiction-filtering flag.
