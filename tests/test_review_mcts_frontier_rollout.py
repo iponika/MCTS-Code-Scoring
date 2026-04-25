@@ -110,6 +110,48 @@ class ReviewMCTSFrontierRolloutTest(unittest.TestCase):
         self.assertEqual(review_node.state["final_answer"], review)
         self.assertGreater(review_node.q_value(), 0)
 
+    def test_duplicate_semantic_review_siblings_are_skipped(self) -> None:
+        solver = make_solver()
+        dimension_node = solver.root.children[0]
+        solver.create_child(
+            "<step>\nCheck the return expression.\n</step>",
+            {"action": "Check the return expression.", "action_input": "", "final_answer": ""},
+            dimension_node,
+            prior_prob=1.0,
+            idx=0,
+        )
+        self.assertTrue(solver.prepare_final_review_nodes())
+        frontier = solver.current_nodes[0]
+
+        first_review = (
+            '{"axiom_grade":5,"score":100,"verdict":"accept",'
+            '"functional_correctness":true,"repair_effort":"none",'
+            '"evidence_type":"uncertain","summary":"No defect is visible.",'
+            '"evidence":["The implementation directly returns x + 1."]}'
+        )
+        duplicate_review = (
+            '{"axiom_grade":5,"score":95,"verdict":"accept",'
+            '"functional_correctness":true,"repair_effort":"none",'
+            '"evidence_type":"uncertain","summary":"Equivalent review wording.",'
+            '"evidence":["The return expression matches the requirement."]}'
+        )
+        solver.create_child(
+            f"<review>\n{first_review}\n</review>",
+            {"action": "", "action_input": "", "final_answer": first_review},
+            frontier,
+            prior_prob=1.0,
+            idx=0,
+        )
+        solver.create_child(
+            f"<review>\n{duplicate_review}\n</review>",
+            {"action": "", "action_input": "", "final_answer": duplicate_review},
+            frontier,
+            prior_prob=1.0,
+            idx=1,
+        )
+
+        self.assertEqual(len(frontier.children), 1)
+
 
 if __name__ == "__main__":
     unittest.main()
