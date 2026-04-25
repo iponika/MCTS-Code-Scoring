@@ -145,7 +145,11 @@ class ReviewMCTS(MCTS):
                 "dimension_rubric": self.review_sample["dimension_rubrics"][target_dimension],
                 "candidate_code": self.review_sample["candidate_code"],
                 "code_language": self.review_sample.get("code_language", "python"),
-                "tests_for_prompt": self.review_sample["tests_for_prompt"],
+                "tests_for_prompt": (
+                    self.review_sample["tests_for_prompt"]
+                    if getattr(self.config, "show_tests_in_prompt", False)
+                    else "No tests are available to the reviewer."
+                ),
                 "force_final_review": self._should_force_final_review(current_node),
             }
             prompt = self.prompt_wrap(

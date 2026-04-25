@@ -39,7 +39,13 @@ def load_config(path: str) -> Any:
     return OmegaConf.create(OmegaConf.to_yaml(config, resolve=True))
 
 
-def build_prompt(sample: dict[str, Any], dimension: str) -> str:
+def prompt_tests_text(sample: dict[str, Any], config: Any) -> str:
+    if getattr(config, "show_tests_in_prompt", False):
+        return sample["tests_for_prompt"]
+    return "No tests are available to the reviewer."
+
+
+def build_prompt(sample: dict[str, Any], dimension: str, config: Any) -> str:
     rubric = sample["dimension_rubrics"].get(dimension) or DEFAULT_DIMENSION_RUBRIC.get(dimension, "")
     return QWEN_REVIEW_PROMPT.format(
         dimension=dimension,
@@ -47,7 +53,7 @@ def build_prompt(sample: dict[str, Any], dimension: str) -> str:
         question=sample["question"],
         candidate_code=sample["candidate_code"],
         code_language=sample.get("code_language", "python"),
-        tests=sample["tests_for_prompt"],
+        tests=prompt_tests_text(sample, config),
         partial_solution="None",
         mode_instruction=(
             "Output only one structured final review in the exact <review> JSON format below. "
@@ -91,7 +97,7 @@ def main() -> None:
 
     with output_path.open("w", encoding="utf-8") as writer:
         for sample in tqdm(samples, desc="Direct API Review"):
-            prompt = build_prompt(sample, args.dimension)
+            prompt = build_prompt(sample, args.dimension, config)
             api_output = generator([prompt], sampling_params)[0]
             texts = []
             for output in api_output.outputs:
