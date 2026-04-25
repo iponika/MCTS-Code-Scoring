@@ -546,7 +546,10 @@ def compute_review_reward(target_dimension: str, final_answer: str, sample: Dict
         false_claim_cap = 0.70 if evidence_details["true_claim_count"] > 0 else 0.55
         reward_caps.append(("false_executable_evidence_claim", false_claim_cap))
     if unsupported_provided_test_failure:
-        reward_caps.append(("unsupported_provided_test_failure_evidence", 0.15))
+        if predicted_grade < 3 or axiom_functionally_correct(predicted_grade) != axiom_functionally_correct(target_grade):
+            reward_caps.append(("unsupported_provided_test_failure_evidence", 0.15))
+        else:
+            reward_caps.append(("unsupported_provided_test_failure_evidence_correct_boundary", 0.55))
     if unsupported_unused_identifier:
         reward_caps.append(("unsupported_unused_identifier_evidence", 0.25))
 
