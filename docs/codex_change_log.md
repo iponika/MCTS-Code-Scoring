@@ -2,6 +2,13 @@
 
 This file records Codex-made project changes so work can be resumed safely across forks and sessions. Each future code or workflow change should update this log and be followed by a git commit.
 
+## 2026-04-25
+
+- Added a bootstrap-rebalance design note and implementation plan under `docs/superpowers/specs/` and `docs/superpowers/plans/` for the next fair `Direct-Bootstrap` vs `MCTS-Bootstrap` rerun.
+- Tightened `data_collection/rebalance_review_train_data.py` with optional AXIOM contradiction filtering, delta-bucket summaries, and stratified round-robin sampling across `dataset_index` and score-delta buckets.
+- Updated `data_collection/scripts/run_bootstrap_comparison_qwen3_4b.sh` to expose the new rebalance toggles and apply contradiction filtering plus stratified sampling to bootstrap exports before training.
+- Verified the new rebalance logic offline on the previous formal raw exports: strong `high target -> low prediction` and `low target -> high prediction` contradictions are removed from the final balanced bootstrap train sets before retraining.
+
 ## 2026-04-24
 
 - Added a written bootstrap-comparison experiment spec and implementation plan under `docs/superpowers/specs/` and `docs/superpowers/plans/`, defining the fair 4B comparison between `Static-SFT`, `Direct-Bootstrap-SFT`, and `MCTS-Bootstrap-SFT`.
