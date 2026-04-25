@@ -201,6 +201,9 @@ class BaseConfig:
     max_review_dimensions: int = field(
         default=10, metadata={"help": "maximum number of review dimensions expanded under the root"}
     )
+    show_tests_in_prompt: bool = field(
+        default=False, metadata={"help": "expose dataset tests in review prompts for oracle diagnostics"}
+    )
     neutral_visit_reward: float = field(
         default=0.0, metadata={"help": "reward used to mark a non-terminal node as visited in review MCTS"}
     )

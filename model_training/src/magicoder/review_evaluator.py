@@ -135,6 +135,7 @@ def prompt_for_dimension(
     max_problem_chars: int = 3500,
     max_code_chars: int = 3500,
     mark_code_truncation_inside_block: bool = True,
+    show_tests_in_prompt: bool = False,
 ) -> str:
     instruction = build_instruction(
         sample,
@@ -142,6 +143,7 @@ def prompt_for_dimension(
         max_problem_chars=max_problem_chars,
         max_code_chars=max_code_chars,
         mark_code_truncation_inside_block=mark_code_truncation_inside_block,
+        show_tests_in_prompt=show_tests_in_prompt,
     )
     if final_only:
         if parse_error:
@@ -330,6 +332,7 @@ def evaluate_dimension(
             max_problem_chars=args.max_problem_chars,
             max_code_chars=args.max_code_chars,
             mark_code_truncation_inside_block=args.mark_code_truncation_inside_block,
+            show_tests_in_prompt=args.show_tests_in_prompt,
         )
         candidates = []
         for candidate_index in range(args.num_candidates):
@@ -404,6 +407,7 @@ def evaluate_dimension(
             max_problem_chars=args.max_problem_chars,
             max_code_chars=args.max_code_chars,
             mark_code_truncation_inside_block=args.mark_code_truncation_inside_block,
+            show_tests_in_prompt=args.show_tests_in_prompt,
         )
         with torch.no_grad():
             continuation = generate_response(
@@ -436,6 +440,7 @@ def evaluate_dimension(
         max_problem_chars=args.max_problem_chars,
         max_code_chars=args.max_code_chars,
         mark_code_truncation_inside_block=args.mark_code_truncation_inside_block,
+        show_tests_in_prompt=args.show_tests_in_prompt,
     )
     final_value_score = score_response(value_model, tokenizer, final_prompt, partial_response) if value_model is not None else neutral_value_score()
     reference_score = sample.get("axiom_target_score")
@@ -525,6 +530,7 @@ def main() -> None:
     parser.add_argument("--score_key", choices=VALUE_SCORE_KEYS, default="response_mean_value")
     parser.add_argument("--seed", type=int)
     parser.add_argument("--final_only_json", action="store_true", help="Generate only one compact final <review> JSON block; no step reasoning.")
+    parser.add_argument("--show_tests_in_prompt", action="store_true", help="Expose dataset tests to the reviewer prompt for oracle diagnostics. Default hides tests.")
     parser.add_argument("--max_problem_chars", type=int, default=3500, help="Maximum task-description characters included in review prompts. 0 keeps full text.")
     parser.add_argument("--max_code_chars", type=int, default=3500, help="Maximum candidate-code characters included in review prompts. 0 keeps full text.")
     parser.add_argument(

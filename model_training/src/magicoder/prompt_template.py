@@ -574,7 +574,7 @@ QWEN_REVIEW_STEP_PROMPT = """You are an exceptionally intelligent code reviewer.
 @@ Instruction
 You will be given one code scoring task.
 Think through functional correctness and AXIOM repair effort in concise <step>...</step> blocks, then finish with exactly one <review> JSON block.
-Keep the reasoning grounded in the task, candidate code, and available tests. Do not output code fixes.
+Keep the reasoning grounded in the task, candidate code, and any reviewer-visible tests. Do not output code fixes.
 The project goal is scalar code scoring; textual critique is only supporting evidence.
 AXIOM grade semantics: 5=production-ready; 4=functionally correct with minor quality tweaks; 3=functionally correct but major quality refactor needed; 2=functionally defective but minor fix; 1=functionally defective and major repair; 0=fundamentally flawed or mismatched. Functionality is the primary boundary: grades 3-5 are functionally correct, grades 0-2 are not.
 Calibration rule: do not assign grades 0-2 merely because an issue is suspected or because no tests are available. Low grades require concrete visible evidence such as a syntax/runtime error, missing required I/O, unrelated or empty code, a direct contradiction of the task, or a simple counterexample grounded in the prompt/tests. If the implementation is complete and plausibly functional but you cannot prove a functional defect, keep the grade in 3-5 and use repair_effort to express quality/refactoring concerns.

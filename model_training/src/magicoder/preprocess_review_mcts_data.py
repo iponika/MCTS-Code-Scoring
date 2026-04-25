@@ -95,9 +95,12 @@ def build_instruction(
     max_problem_chars: int = 3500,
     max_code_chars: int = 3500,
     mark_code_truncation_inside_block: bool = True,
+    show_tests_in_prompt: bool = False,
 ) -> str:
     tests = record.get("tests") or []
-    if tests:
+    if not show_tests_in_prompt:
+        tests_text = "No tests are available to the reviewer."
+    elif tests:
         tests_text = "\n".join(str(test) for test in tests[:5])
         if len(tests) > 5:
             tests_text += f"\n... ({len(tests) - 5} more assertions omitted)"
@@ -134,7 +137,7 @@ def build_instruction(
         f"{code_text}\n"
         "```\n\n"
         f"Available tests:\n{tests_text}\n\n"
-        "Assess functional correctness using concrete evidence from the task, code, and tests."
+        "Assess functional correctness using concrete evidence from the task, code, and any reviewer-visible tests."
         f"{truncation_notice}"
     )
 
