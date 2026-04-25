@@ -4,6 +4,7 @@ This file records Codex-made project changes so work can be resumed safely acros
 
 ## 2026-04-25
 
+- Reworked review MCTS termination into bounded exploration plus linear frontier rollout: branching stops at `review_explore_depth`/node budgets, unfinished frontier leaves are then advanced one continuation at a time until a natural `<review>` or max-depth forced final, and non-review expansions no longer backpropagate neutral rewards that dilute q-values.
 - Made review prompts deployment-aligned by hiding dataset tests from the model by default across MCTS generation, direct baselines, bootstrap export, training preprocessing, and value-guided evaluation; tests remain available for offline reward/label computation and can be exposed only with the new `show_tests_in_prompt` diagnostic switch.
 - Switched the default review pipeline to correctness-only scoring: model-visible prompts no longer mention target review dimensions or require a `dimension` JSON field, CodeCritic samples expose only `Correctness Verification` by default, and the main local/API MCTS configs now explore one correctness branch.
 - Tightened objective review reward labeling: `compute_review_reward` now records AXIOM grade distance and caps rewards for predictions at least two AXIOM levels away from the target, so same-boundary but severely over/under-scored reviews no longer receive high q-values.

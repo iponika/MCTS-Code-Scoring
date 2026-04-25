@@ -204,6 +204,24 @@ class BaseConfig:
     show_tests_in_prompt: bool = field(
         default=False, metadata={"help": "expose dataset tests in review prompts for oracle diagnostics"}
     )
+    review_explore_depth: int = field(
+        default=2, metadata={"help": "maximum visible review-step depth that still uses branching MCTS exploration"}
+    )
+    review_max_exploration_nodes: int = field(
+        default=0, metadata={"help": "0 disables the cap; otherwise stop branching exploration after this many review nodes"}
+    )
+    review_finalize_frontier_limit: int = field(
+        default=0, metadata={"help": "0 finalizes all unfinished frontier leaves; otherwise cap leaves per finalization round"}
+    )
+    review_linear_rollout_rounds: int = field(
+        default=0, metadata={"help": "0 uses max_depth + 1; otherwise cap linear frontier rollout rounds"}
+    )
+    review_linear_rollout_samples: int = field(
+        default=1, metadata={"help": "number of continuations per frontier node during linear review finalization"}
+    )
+    review_target_leaf_count: int = field(
+        default=0, metadata={"help": "0 disables the cap; otherwise stop exploration/finalization after this many valid review leaves"}
+    )
     neutral_visit_reward: float = field(
         default=0.0, metadata={"help": "reward used to mark a non-terminal node as visited in review MCTS"}
     )

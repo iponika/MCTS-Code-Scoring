@@ -221,41 +221,52 @@ class Solver(BaseModel):
         return invalid_solvers
 
     def finalize_review_solvers(self, solvers: List[BaseTree]) -> List[BaseTree]:
-        prompts = []
-        prompts_span = [0]
-        valid_solvers = []
+        max_rounds = int(getattr(self.config, "review_linear_rollout_rounds", 0) or 0)
+        if max_rounds <= 0:
+            max_rounds = int(getattr(self.config, "max_depth", 1) or 1) + 1
 
-        for solver in solvers:
-            prepare_final_review_nodes = getattr(solver, "prepare_final_review_nodes", None)
-            if prepare_final_review_nodes is None or not prepare_final_review_nodes():
-                continue
-            solver_prompts = solver.create_prompt()
-            prompts.extend(solver_prompts)
-            prompts_span.append(prompts_span[-1] + len(solver_prompts))
-            valid_solvers.append(solver)
+        current_solvers = solvers
+        for _ in range(max_rounds):
+            prompts = []
+            prompts_span = [0]
+            valid_solvers = []
 
-        if not prompts:
-            return solvers
+            for solver in current_solvers:
+                prepare_final_review_nodes = getattr(solver, "prepare_final_review_nodes", None)
+                if prepare_final_review_nodes is None or not prepare_final_review_nodes():
+                    continue
+                solver_prompts = solver.create_prompt()
+                if not solver_prompts:
+                    continue
+                prompts.extend(solver_prompts)
+                prompts_span.append(prompts_span[-1] + len(solver_prompts))
+                valid_solvers.append(solver)
 
-        self.generate_sampling_params.n = self.config.n_generate_sample
-        self.generate_sampling_params.best_of = self.config.n_generate_sample
-        outputs = self.llm(prompts, self.generate_sampling_params)
-        reconstructed_outputs = [
-            outputs[bos_idx:eos_idx]
-            for bos_idx, eos_idx in zip(prompts_span, prompts_span[1:])
-        ]
-        updated_solvers = self.generate_postprocess(reconstructed_outputs, valid_solvers)
-        if self.need_value_func:
-            prompts, prompts_span = self.value_preprocess(updated_solvers)
-            if prompts:
-                outputs = self.llm(prompts, self.value_sampling_params)
-                reconstructed_outputs = [
-                    outputs[bos_idx:eos_idx]
-                    for bos_idx, eos_idx in zip(prompts_span, prompts_span[1:])
-                ]
-                updated_solvers = self.value_postprocess(reconstructed_outputs, updated_solvers)
-        updated_by_question = {solver.question: solver for solver in updated_solvers}
-        return [updated_by_question.get(solver.question, solver) for solver in solvers]
+            if not prompts:
+                break
+
+            rollout_samples = max(1, int(getattr(self.config, "review_linear_rollout_samples", 1) or 1))
+            self.generate_sampling_params.n = rollout_samples
+            self.generate_sampling_params.best_of = rollout_samples
+            outputs = self.llm(prompts, self.generate_sampling_params)
+            reconstructed_outputs = [
+                outputs[bos_idx:eos_idx]
+                for bos_idx, eos_idx in zip(prompts_span, prompts_span[1:])
+            ]
+            updated_solvers = self.generate_postprocess(reconstructed_outputs, valid_solvers)
+            if self.need_value_func:
+                prompts, prompts_span = self.value_preprocess(updated_solvers)
+                if prompts:
+                    outputs = self.llm(prompts, self.value_sampling_params)
+                    reconstructed_outputs = [
+                        outputs[bos_idx:eos_idx]
+                        for bos_idx, eos_idx in zip(prompts_span, prompts_span[1:])
+                    ]
+                    updated_solvers = self.value_postprocess(reconstructed_outputs, updated_solvers)
+            updated_by_question = {solver.question: solver for solver in updated_solvers}
+            current_solvers = [updated_by_question.get(solver.question, solver) for solver in current_solvers]
+
+        return current_solvers
     
     def solve(self, solvers: List[BaseTree], mcts: bool):
         #初始时自动选择一个节点，然后每一轮现根据选择的节点生成，然后expand，得到新的candidates更新value，再选择
