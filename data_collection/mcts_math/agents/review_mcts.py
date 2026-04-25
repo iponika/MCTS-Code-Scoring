@@ -75,16 +75,7 @@ class ReviewMCTS(MCTS):
 
     def _selected_review_dimensions(self) -> List[str]:
         available = list(dict.fromkeys(self.review_sample["reference_scores"].keys()))
-        preferred = [
-            "Correctness Verification",
-            "Robustness Validation",
-            "Time Complexity Optimization",
-            "Algorithm Optimization",
-            "Output Format Compliance",
-            "Space Complexity Control",
-            "Maintainability",
-            "Code Readability Enhancement",
-        ]
+        preferred = ["Correctness Verification"]
         ordered = [dimension for dimension in preferred if dimension in available]
         ordered.extend(dimension for dimension in available if dimension not in ordered)
         return ordered[: self.config.max_review_dimensions]

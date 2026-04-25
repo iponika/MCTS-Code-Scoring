@@ -21,7 +21,7 @@ update_leaf_value: False
 remove_duplicate: True
 verbose: False
 num_few_shot: 0
-max_review_dimensions: 10
+max_review_dimensions: 1
 neutral_visit_reward: 0.0
 positive_reward: 1.0
 negative_reward: -1.0

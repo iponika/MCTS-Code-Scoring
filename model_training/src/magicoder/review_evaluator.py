@@ -40,7 +40,7 @@ Calibration rule: do not assign grades 0-2 merely because an issue is suspected 
 
 Output exactly one JSON object wrapped in <review> tags.
 Do not output <step> blocks, markdown, code fixes, or prose outside the tags.
-Required JSON keys: dimension, axiom_grade, score, verdict, functional_correctness, repair_effort, summary, evidence.
+Required JSON keys: axiom_grade, score, verdict, functional_correctness, repair_effort, summary, evidence.
 Use a compact evidence array with at most 2 short strings.
 
 @@ Response
@@ -49,15 +49,6 @@ Use a compact evidence array with at most 2 short strings.
 
 DEFAULT_DIMENSIONS = [
     "Correctness Verification",
-    "Time Complexity Optimization",
-    "Space Complexity Control",
-    "Code Readability Enhancement",
-    "Robustness Validation",
-    "Algorithm Optimization",
-    "Comprehensive Testing",
-    "Output Format Compliance",
-    "Code Style Consistency",
-    "Maintainability",
 ]
 
 
@@ -131,8 +122,6 @@ def fill_sample_metadata(sample: dict[str, Any], record_index: int) -> dict[str,
 def dimensions_for_sample(sample: dict[str, Any], requested: list[str] | None) -> list[str]:
     if requested:
         return requested
-    if sample.get("reference_scores"):
-        return list(sample["reference_scores"].keys())
     return DEFAULT_DIMENSIONS
 
 
@@ -166,7 +155,7 @@ def prompt_for_dimension(
         instruction += (
             "\n\nCurrent generation mode: finish now. Start your next output with <review> and end it with </review>. "
             "Do not add more <step> blocks. Output exactly one valid JSON object inside the review tags. "
-            "Required JSON keys: dimension, axiom_grade, score, verdict, functional_correctness, repair_effort, summary, evidence. "
+            "Required JSON keys: axiom_grade, score, verdict, functional_correctness, repair_effort, summary, evidence. "
             "The evidence value must be a JSON array of strings using square brackets only. "
             "If a previous review block exists, ignore it and output a corrected final review. "
             "Use any <value_feedback> blocks as private guidance; do not quote or repeat them in the review."
@@ -190,7 +179,7 @@ def rethink_feedback(best: dict[str, Any], threshold: float, score_key: str) -> 
     return (
         "<value_feedback>\n"
         f"Value feedback: the previous continuation scored {value:.4f} on {score_key}, "
-        f"below the rethink threshold {threshold:.4f}. Rethink the dimension with more concrete evidence and avoid unsupported claims.\n"
+        f"below the rethink threshold {threshold:.4f}. Rethink the code score with more concrete evidence and avoid unsupported claims.\n"
         "</value_feedback>\n"
     )
 
@@ -523,7 +512,7 @@ def main() -> None:
     parser.add_argument("--input_record", required=True, help="Review MCTS sample JSON/JSONL or raw CodeCriticBench JSON/JSONL.")
     parser.add_argument("--record_index", type=int, default=0)
     parser.add_argument("--output_file")
-    parser.add_argument("--dimensions", nargs="*", help="Optional dimension subset. Defaults to dataset dimensions.")
+    parser.add_argument("--dimensions", nargs="*", help="Optional legacy dimension subset. Defaults to correctness only.")
     parser.add_argument("--max_dimensions", type=int, default=0, help="0 means all selected dimensions.")
     parser.add_argument("--device", choices=["auto", "cpu", "cuda"], default="auto")
     parser.add_argument("--dtype", choices=["auto", "bf16", "fp16", "fp32"], default="auto")
