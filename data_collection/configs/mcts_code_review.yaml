@@ -22,6 +22,12 @@ remove_duplicate: True
 verbose: False
 num_few_shot: 0
 max_review_dimensions: 1
+review_explore_depth: 2
+review_max_exploration_nodes: 32
+review_finalize_frontier_limit: 32
+review_linear_rollout_rounds: 0
+review_linear_rollout_samples: 1
+review_target_leaf_count: 32
 neutral_visit_reward: 0.0
 positive_reward: 1.0
 negative_reward: -1.0

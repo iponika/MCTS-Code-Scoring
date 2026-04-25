@@ -23,6 +23,7 @@ class ReviewMCTS(MCTS):
         "target_dimension",
         "reward_details",
         "force_final_review",
+        "linear_rollout",
     ]
 
     def __init__(self, **kwargs) -> None:
@@ -98,8 +99,36 @@ class ReviewMCTS(MCTS):
             cursor = cursor.parent
         return depth
 
+    def _review_node_count(self) -> int:
+        return sum(1 for node in self._collect_nodes() if node.state.get("text"))
+
+    def _review_leaf_count(self) -> int:
+        return sum(1 for node in self._collect_nodes() if self.__class__.is_valid_final_answer_node(node))
+
+    def _target_leaf_count_reached(self) -> bool:
+        target = int(getattr(self.config, "review_target_leaf_count", 0) or 0)
+        return target > 0 and self._review_leaf_count() >= target
+
+    def _exploration_node_budget_reached(self) -> bool:
+        budget = int(getattr(self.config, "review_max_exploration_nodes", 0) or 0)
+        return budget > 0 and self._review_node_count() >= budget
+
     def is_ignored_node(self, node: Type[MCTSNode]) -> bool:
-        return node.is_terminal or self._visible_step_depth(node) > self.config.max_depth
+        if node.is_terminal:
+            return True
+        visible_depth = self._visible_step_depth(node)
+        if node.state.get("linear_rollout"):
+            return visible_depth > self.config.max_depth
+        explore_depth = int(getattr(self.config, "review_explore_depth", self.config.max_depth) or 0)
+        return (
+            visible_depth >= explore_depth
+            or visible_depth >= self.config.max_depth
+            or self._target_leaf_count_reached()
+            or self._exploration_node_budget_reached()
+        )
+
+    def should_generate_next(self) -> bool:
+        return any(not self.is_ignored_node(step_node) for step_node in self.current_nodes)
 
     def selection(self) -> Optional[Type[MCTSNode]]:
         while True:
@@ -178,13 +207,15 @@ class ReviewMCTS(MCTS):
         new_node.depth = node.depth + 1
         new_node.prior = prior_prob
         new_node.state["target_dimension"] = self._get_target_dimension(node)
+        if node.state.get("linear_rollout"):
+            new_node.state["linear_rollout"] = True
 
         if parser_result is None:
             new_node.is_terminal = True
             new_node.state["text"] = step_result
             new_node.state["final_answer"] = NO_VALID_CHILD
             self.eval_final_answer(new_node)
-        elif parser_result["final_answer"] and self._should_force_final_review(node):
+        elif parser_result["final_answer"] and (self._should_force_final_review(node) or node.state.get("linear_rollout")):
             new_node.is_terminal = True
             new_node.state["text"] = step_result
             new_node.state["final_answer"] = parser_result["final_answer"]
@@ -257,36 +288,32 @@ class ReviewMCTS(MCTS):
         return nodes
 
     def prepare_final_review_nodes(self) -> bool:
+        if self._target_leaf_count_reached():
+            self.current_nodes = []
+            return False
         all_nodes = self._collect_nodes()
-        terminal_dimensions = {
-            node.state.get("target_dimension")
+        leaf_candidates = [
+            node
             for node in all_nodes
-            if self.__class__.is_valid_final_answer_node(node)
-        }
-        selected_nodes = []
-        for dimension in self._selected_review_dimensions():
-            if dimension in terminal_dimensions:
-                continue
-            leaf_candidates = [
-                node
-                for node in all_nodes
-                if node.state.get("target_dimension") == dimension
-                and not node.is_terminal
-                and not node.children
-            ]
-            if not leaf_candidates:
-                continue
-            best_leaf = max(
-                leaf_candidates,
-                key=lambda node: (
-                    self._visible_step_depth(node),
-                    node.q_value(),
-                    node.visit_count(),
-                    node.value if node.value is not None else -100,
-                ),
-            )
-            best_leaf.state["force_final_review"] = True
-            selected_nodes.append(best_leaf)
+            if node.state.get("target_dimension")
+            and not node.is_terminal
+            and not node.children
+            and self._visible_step_depth(node) <= self.config.max_depth
+        ]
+        leaf_candidates.sort(
+            key=lambda node: (
+                self._visible_step_depth(node),
+                node.q_value(),
+                node.visit_count(),
+                node.value if node.value is not None else -100,
+            ),
+            reverse=True,
+        )
+        limit = int(getattr(self.config, "review_finalize_frontier_limit", 0) or 0)
+        selected_nodes = leaf_candidates[:limit] if limit > 0 else leaf_candidates
+        for leaf in selected_nodes:
+            leaf.state["linear_rollout"] = True
+            leaf.state["force_final_review"] = self._visible_step_depth(leaf) >= self.config.max_depth
 
         self.current_nodes = selected_nodes
         return bool(self.current_nodes)
@@ -295,5 +322,4 @@ class ReviewMCTS(MCTS):
         self.candidate_nodes = []
         for current_node, output in zip(self.current_nodes, outputs):
             self.expand_node(output.outputs, current_node)
-            current_node.update_recursive(self.config.neutral_visit_reward, self.root)
             self.candidate_nodes.extend(current_node.children)
