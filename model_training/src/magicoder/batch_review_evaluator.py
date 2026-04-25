@@ -63,6 +63,11 @@ def main() -> None:
     parser.add_argument("--max_problem_chars", type=int, default=3500, help="Maximum task-description characters included in review prompts. 0 keeps full text.")
     parser.add_argument("--max_code_chars", type=int, default=3500, help="Maximum candidate-code characters included in review prompts. 0 keeps full text.")
     parser.add_argument(
+        "--show_tests_in_prompt",
+        action="store_true",
+        help="Expose dataset tests to the reviewer prompt for oracle diagnostics. Default hides tests.",
+    )
+    parser.add_argument(
         "--mark_code_truncation_inside_block",
         action=argparse.BooleanOptionalAction,
         default=True,

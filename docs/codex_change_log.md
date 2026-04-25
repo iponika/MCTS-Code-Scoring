@@ -4,6 +4,7 @@ This file records Codex-made project changes so work can be resumed safely acros
 
 ## 2026-04-25
 
+- Fixed `batch_review_evaluator.py` so the batch AXIOM evaluation path accepts the same `show_tests_in_prompt` option as the single-record evaluator; default batch evaluation still hides dataset tests from the model.
 - Relaxed the unsupported `provided_test_failure` reward cap when the review's AXIOM grade and functional boundary are correct: bad evidence typing still caps reward, but no longer ranks a correct-score review below a functional-boundary mistake.
 - Added semantic review deduplication for MCTS and training export: sibling final reviews with the same AXIOM grade, verdict, correctness flag, repair effort, and evidence type are skipped, and preprocessing removes same-parent semantic duplicates before building training items.
 - Reworked review MCTS termination into bounded exploration plus linear frontier rollout: branching stops at `review_explore_depth`/node budgets, unfinished frontier leaves are then advanced one continuation at a time until a natural `<review>` or max-depth forced final, and non-review expansions no longer backpropagate neutral rewards that dilute q-values.
