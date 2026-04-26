@@ -32,12 +32,12 @@ export BOOTSTRAP_STRATIFY_BY_DELTA_BUCKET="${BOOTSTRAP_STRATIFY_BY_DELTA_BUCKET:
 
 bash data_collection/scripts/run_bootstrap_comparison_qwen3_4b.sh
 
-python - <<'PY'
+python - <<PY
 import json
 from pathlib import Path
 
 root = Path("/data1/xianzhiwei/mcts-code-review")
-run = "bootstrap_cmp_stageq_branch2_overnight_20260426"
+run = "${RUN_NAME_VALUE}"
 summary = root / "data_collection/review_mcts_runs" / run / "summary.json"
 if summary.exists():
     payload = json.loads(summary.read_text(encoding="utf-8"))
