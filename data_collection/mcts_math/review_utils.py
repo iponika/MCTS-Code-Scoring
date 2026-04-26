@@ -85,6 +85,10 @@ def compute_pass_rate(
     return passed / len(selected_assertions)
 
 
+def _select_python_assertions(tests: List[str]) -> List[str]:
+    return [test for test in tests if str(test).lstrip().startswith("assert ")]
+
+
 def score_to_verdict(score: float) -> str:
     if score > 5:
         score = score / 20.0
@@ -474,9 +478,13 @@ def build_dimension_target_scores(sample: Dict[str, Any]) -> Dict[str, float]:
     targets: Dict[str, float] = {}
     pass_rate = sample["objective"]["full_test_pass_rate"]
     hard_correctness_score = 10.0 * pass_rate
+    has_executable_tests = bool(sample.get("objective", {}).get("has_executable_tests"))
     for dimension, reference_score in sample["reference_scores"].items():
         if dimension == "Correctness Verification":
-            targets[dimension] = round(0.6 * reference_score + 0.4 * hard_correctness_score, 2)
+            if has_executable_tests:
+                targets[dimension] = round(0.6 * reference_score + 0.4 * hard_correctness_score, 2)
+            else:
+                targets[dimension] = float(reference_score)
         else:
             targets[dimension] = float(reference_score)
     return targets
@@ -484,8 +492,9 @@ def build_dimension_target_scores(sample: Dict[str, Any]) -> Dict[str, float]:
 
 def build_axiom_target_grade(sample: Dict[str, Any]) -> int:
     mapped = axiom_grade_from_codecritic(sample.get("correctness_label"), sample.get("overall_score"))
-    has_executable_tests = bool(sample.get("tests"))
-    pass_rate = sample.get("objective", {}).get("full_test_pass_rate", 0.0)
+    objective = sample.get("objective", {})
+    has_executable_tests = bool(objective.get("has_executable_tests"))
+    pass_rate = objective.get("full_test_pass_rate", 0.0)
     if mapped is not None:
         if has_executable_tests and pass_rate >= 0.999 and mapped < 3:
             return 3
@@ -645,6 +654,9 @@ def prepare_codecriticbench_sample(
     public_assertions = list(raw_sample.get("public_test", {}).get("input", []) or [])
     private_assertions = list(raw_sample.get("private_test", {}).get("input", []) or [])
     all_assertions = public_assertions + private_assertions
+    executable_public_assertions = _select_python_assertions(public_assertions)
+    executable_private_assertions = _select_python_assertions(private_assertions)
+    executable_all_assertions = executable_public_assertions + executable_private_assertions
     candidate_code = raw_sample["answer"]
 
     raw_reference_scores = {
@@ -681,29 +693,29 @@ def prepare_codecriticbench_sample(
         "public_test_pass_rate": round(
             compute_pass_rate(
                 candidate_code,
-                public_assertions,
+                executable_public_assertions,
                 max_assertions=max_objective_assertions_per_split,
                 timeout_seconds=assertion_timeout_seconds,
             ),
             4,
         )
-        if public_assertions
+        if executable_public_assertions
         else 0.0,
         "private_test_pass_rate": round(
             compute_pass_rate(
                 candidate_code,
-                private_assertions,
+                executable_private_assertions,
                 max_assertions=max_objective_assertions_per_split,
                 timeout_seconds=assertion_timeout_seconds,
             ),
             4,
         )
-        if private_assertions
+        if executable_private_assertions
         else 0.0,
         "full_test_pass_rate": round(
             compute_pass_rate(
                 candidate_code,
-                all_assertions,
+                executable_all_assertions,
                 max_assertions=(max_objective_assertions_per_split * 2)
                 if max_objective_assertions_per_split is not None and max_objective_assertions_per_split > 0
                 else None,
@@ -711,8 +723,12 @@ def prepare_codecriticbench_sample(
             ),
             4,
         )
-        if all_assertions
+        if executable_all_assertions
         else 0.0,
+        "has_executable_tests": bool(executable_all_assertions),
+        "test_execution_kind": "python_assertion" if executable_all_assertions else "non_assertion",
+        "executable_test_count": len(executable_all_assertions),
+        "raw_test_count": len(all_assertions),
     }
     if max_objective_assertions_per_split is not None and max_objective_assertions_per_split > 0:
         sample["objective"]["test_eval_cap_per_split"] = max_objective_assertions_per_split
