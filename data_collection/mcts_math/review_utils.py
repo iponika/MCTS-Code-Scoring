@@ -63,18 +63,26 @@ def _normalize_candidate_code(code: str) -> str:
     return cleaned
 
 
-def evaluate_assertion(code: str, assertion: str) -> bool:
+def evaluate_assertion(code: str, assertion: str, timeout_seconds: float = 3) -> bool:
     candidate_code = _normalize_candidate_code(code)
     combined = f"{candidate_code}\n\n{assertion}\n"
-    _, stderr, returncode = _run_python(combined)
+    _, stderr, returncode = _run_python(combined, timeout_seconds=timeout_seconds)
     return returncode == 0 and (stderr or "").find("AssertionError") == -1
 
 
-def compute_pass_rate(code: str, assertions: List[str]) -> float:
+def compute_pass_rate(
+    code: str,
+    assertions: List[str],
+    max_assertions: int | None = None,
+    timeout_seconds: float = 3,
+) -> float:
     if not assertions:
         return 0.0
-    passed = sum(1 for assertion in assertions if evaluate_assertion(code, assertion))
-    return passed / len(assertions)
+    selected_assertions = assertions
+    if max_assertions is not None and max_assertions > 0:
+        selected_assertions = assertions[:max_assertions]
+    passed = sum(1 for assertion in selected_assertions if evaluate_assertion(code, assertion, timeout_seconds=timeout_seconds))
+    return passed / len(selected_assertions)
 
 
 def score_to_verdict(score: float) -> str:
@@ -628,7 +636,12 @@ def build_review_question(sample: Dict[str, Any]) -> str:
     )
 
 
-def prepare_codecriticbench_sample(raw_sample: Dict[str, Any], dataset_index: int | None = None) -> Dict[str, Any]:
+def prepare_codecriticbench_sample(
+    raw_sample: Dict[str, Any],
+    dataset_index: int | None = None,
+    max_objective_assertions_per_split: int | None = None,
+    assertion_timeout_seconds: float = 3,
+) -> Dict[str, Any]:
     public_assertions = list(raw_sample.get("public_test", {}).get("input", []) or [])
     private_assertions = list(raw_sample.get("private_test", {}).get("input", []) or [])
     all_assertions = public_assertions + private_assertions
@@ -665,10 +678,45 @@ def prepare_codecriticbench_sample(raw_sample: Dict[str, Any], dataset_index: in
         "correctness_label": raw_sample.get("correctness"),
     }
     sample["objective"] = {
-        "public_test_pass_rate": round(compute_pass_rate(candidate_code, public_assertions), 4) if public_assertions else 0.0,
-        "private_test_pass_rate": round(compute_pass_rate(candidate_code, private_assertions), 4) if private_assertions else 0.0,
-        "full_test_pass_rate": round(compute_pass_rate(candidate_code, all_assertions), 4) if all_assertions else 0.0,
+        "public_test_pass_rate": round(
+            compute_pass_rate(
+                candidate_code,
+                public_assertions,
+                max_assertions=max_objective_assertions_per_split,
+                timeout_seconds=assertion_timeout_seconds,
+            ),
+            4,
+        )
+        if public_assertions
+        else 0.0,
+        "private_test_pass_rate": round(
+            compute_pass_rate(
+                candidate_code,
+                private_assertions,
+                max_assertions=max_objective_assertions_per_split,
+                timeout_seconds=assertion_timeout_seconds,
+            ),
+            4,
+        )
+        if private_assertions
+        else 0.0,
+        "full_test_pass_rate": round(
+            compute_pass_rate(
+                candidate_code,
+                all_assertions,
+                max_assertions=(max_objective_assertions_per_split * 2)
+                if max_objective_assertions_per_split is not None and max_objective_assertions_per_split > 0
+                else None,
+                timeout_seconds=assertion_timeout_seconds,
+            ),
+            4,
+        )
+        if all_assertions
+        else 0.0,
     }
+    if max_objective_assertions_per_split is not None and max_objective_assertions_per_split > 0:
+        sample["objective"]["test_eval_cap_per_split"] = max_objective_assertions_per_split
+        sample["objective"]["assertion_timeout_seconds"] = assertion_timeout_seconds
     sample["dimension_target_scores"] = build_dimension_target_scores(sample)
     sample["axiom_target_grade"] = build_axiom_target_grade(sample)
     sample["axiom_target_score"] = axiom_scalar_score(sample["axiom_target_grade"])

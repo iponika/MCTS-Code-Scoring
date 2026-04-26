@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import random
+import time
 from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any
@@ -23,6 +24,19 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--oversample_factor", type=int, default=8)
     parser.add_argument("--seed", type=int, default=20260424)
     parser.add_argument("--strict", action="store_true")
+    parser.add_argument(
+        "--max_objective_assertions_per_split",
+        type=int,
+        default=None,
+        help="Cap executed public/private assertions per candidate while preparing objective pass rates.",
+    )
+    parser.add_argument(
+        "--assertion_timeout_seconds",
+        type=float,
+        default=3,
+        help="Timeout for each executed Python assertion during seed preparation.",
+    )
+    parser.add_argument("--progress_every", type=int, default=50)
     return parser.parse_args()
 
 
@@ -52,6 +66,7 @@ def usable_candidate(raw: dict[str, Any], max_code_chars: int) -> bool:
 
 def main() -> None:
     args = parse_args()
+    started_at = time.time()
     rng = random.Random(args.seed)
 
     coarse_by_grade: dict[int, list[tuple[int, dict[str, Any]]]] = defaultdict(list)
@@ -80,8 +95,26 @@ def main() -> None:
         shortlist_counts[str(grade)] = take
         shortlisted.extend(pool[:take])
 
-    for original_index, raw in shortlisted:
-        sample = prepare_codecriticbench_sample(raw, dataset_index=None)
+    for shortlist_index, (original_index, raw) in enumerate(shortlisted, start=1):
+        if args.progress_every > 0 and (shortlist_index == 1 or shortlist_index % args.progress_every == 0):
+            print(
+                json.dumps(
+                    {
+                        "stage": "prepare_seed_candidates",
+                        "processed": shortlist_index,
+                        "total": len(shortlisted),
+                        "elapsed_seconds": round(time.time() - started_at, 1),
+                    },
+                    ensure_ascii=False,
+                ),
+                flush=True,
+            )
+        sample = prepare_codecriticbench_sample(
+            raw,
+            dataset_index=None,
+            max_objective_assertions_per_split=args.max_objective_assertions_per_split,
+            assertion_timeout_seconds=args.assertion_timeout_seconds,
+        )
         final_grade = int(sample["axiom_target_grade"])
         if final_grade < args.min_grade or final_grade > args.max_grade:
             skipped[f"outside_final_grade_range_{final_grade}"] += 1
@@ -119,6 +152,9 @@ def main() -> None:
         "min_grade": args.min_grade,
         "max_grade": args.max_grade,
         "oversample_factor": args.oversample_factor,
+        "max_objective_assertions_per_split": args.max_objective_assertions_per_split,
+        "assertion_timeout_seconds": args.assertion_timeout_seconds,
+        "elapsed_seconds": round(time.time() - started_at, 3),
         "total": len(selected),
         "available_rough_grade_counts": {str(grade): len(coarse_by_grade.get(grade, [])) for grade in range(args.min_grade, args.max_grade + 1)},
         "shortlist_counts": shortlist_counts,
