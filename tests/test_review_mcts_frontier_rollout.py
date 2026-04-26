@@ -30,9 +30,15 @@ def make_solver() -> ReviewMCTS:
 
 
 class ReviewMCTSFrontierRolloutTest(unittest.TestCase):
-    def test_exploration_stops_at_explore_depth(self) -> None:
+    def test_single_dimension_uses_root_as_review_start_node(self) -> None:
         solver = make_solver()
-        dimension_node = solver.root.children[0]
+        self.assertEqual(solver.root.children, [])
+        self.assertEqual(solver.root.state["target_dimension"], "Correctness Verification")
+        self.assertEqual(solver.current_nodes, [solver.root])
+
+    def test_exploration_stops_after_explore_depth(self) -> None:
+        solver = make_solver()
+        dimension_node = solver.root
         solver.create_child(
             "<step>\nCheck the return expression.\n</step>",
             {"action": "Check the return expression.", "action_input": "", "final_answer": ""},
@@ -42,12 +48,21 @@ class ReviewMCTSFrontierRolloutTest(unittest.TestCase):
         )
         step_node = dimension_node.children[0]
         solver.current_nodes = [step_node]
+        self.assertTrue(solver.should_generate_next())
 
+        solver.create_child(
+            "<step>\nCheck edge cases.\n</step>",
+            {"action": "Check edge cases.", "action_input": "", "final_answer": ""},
+            step_node,
+            prior_prob=1.0,
+            idx=0,
+        )
+        solver.current_nodes = [step_node.children[0]]
         self.assertFalse(solver.should_generate_next())
 
     def test_frontier_rollout_does_not_force_final_before_max_depth(self) -> None:
         solver = make_solver()
-        dimension_node = solver.root.children[0]
+        dimension_node = solver.root
         solver.create_child(
             "<step>\nCheck the return expression.\n</step>",
             {"action": "Check the return expression.", "action_input": "", "final_answer": ""},
@@ -62,7 +77,7 @@ class ReviewMCTSFrontierRolloutTest(unittest.TestCase):
 
     def test_frontier_rollout_forces_final_at_max_depth(self) -> None:
         solver = make_solver()
-        dimension_node = solver.root.children[0]
+        dimension_node = solver.root
         first = dimension_node
         for depth in range(3):
             solver.create_child(
@@ -80,7 +95,7 @@ class ReviewMCTSFrontierRolloutTest(unittest.TestCase):
 
     def test_linear_rollout_accepts_natural_review_before_max_depth(self) -> None:
         solver = make_solver()
-        dimension_node = solver.root.children[0]
+        dimension_node = solver.root
         solver.create_child(
             "<step>\nCheck the return expression.\n</step>",
             {"action": "Check the return expression.", "action_input": "", "final_answer": ""},
@@ -112,7 +127,7 @@ class ReviewMCTSFrontierRolloutTest(unittest.TestCase):
 
     def test_duplicate_semantic_review_siblings_are_skipped(self) -> None:
         solver = make_solver()
-        dimension_node = solver.root.children[0]
+        dimension_node = solver.root
         solver.create_child(
             "<step>\nCheck the return expression.\n</step>",
             {"action": "Check the return expression.", "action_input": "", "final_answer": ""},

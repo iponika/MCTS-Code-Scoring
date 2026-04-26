@@ -23,7 +23,7 @@ remove_duplicate: True
 verbose: False
 num_few_shot: 0
 max_review_dimensions: 1
-review_explore_depth: 1
+review_explore_depth: 2
 review_max_exploration_nodes: 24
 review_finalize_frontier_limit: 24
 review_linear_rollout_rounds: 0
