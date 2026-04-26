@@ -5,6 +5,7 @@ This file records Codex-made project changes so work can be resumed safely acros
 ## 2026-04-26
 
 - Made CodeCritic AXIOM seed preparation observable and bounded: pass-rate evaluation now supports assertion caps/timeouts, the seed builder emits progress and elapsed metadata, and the 4B bootstrap comparison runner defaults to capped objective-test execution so first-stage seed preparation no longer appears stalled on larger overnight runs.
+- Fixed CodeCritic seed objective-test handling so only Python `assert` tests are executed; stdin-style debug/Codeforces tests are now treated as non-executable metadata and no longer demote CodeCritic-correct samples to low AXIOM grades or cause long timeout-heavy seed preparation.
 - Made the 4B bootstrap comparison runner's AXIOM held-out evaluation size configurable via `EVAL_PER_GRADE`, so overnight comparisons can trade runtime for more reliable cross-dataset metrics.
 - Added an overnight Qwen3-4B stage-aware branch-depth-2 bootstrap comparison wrapper for the 2026-04-26 run, using 80 CodeCritic seed samples, 240 training steps per method, larger AXIOM held-out evaluation, compact summary export, and no-proxy ntfy notification.
 - Added stage-aware review value labels during MCTS training export: each path now preserves `raw_q_value`, records node tags/stage buckets/best descendant q, and defaults to blended value labels that combine raw tree q, best terminal descendant q, and stage-standardized q while keeping final `<review>` rewards direct.
