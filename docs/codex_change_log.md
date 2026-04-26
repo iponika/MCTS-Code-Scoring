@@ -4,6 +4,7 @@ This file records Codex-made project changes so work can be resumed safely acros
 
 ## 2026-04-25
 
+- Tightened review MCTS training export policy imitation: high-q best paths now require exact AXIOM grade agreement with the target to keep `train_lm=True`; one-grade over/under-scored paths remain as value-only supervision and are counted as `policy_grade_mismatch_paths`.
 - Fixed `batch_review_evaluator.py` so the batch AXIOM evaluation path accepts the same `show_tests_in_prompt` option as the single-record evaluator; default batch evaluation still hides dataset tests from the model.
 - Relaxed the unsupported `provided_test_failure` reward cap when the review's AXIOM grade and functional boundary are correct: bad evidence typing still caps reward, but no longer ranks a correct-score review below a functional-boundary mistake.
 - Added semantic review deduplication for MCTS and training export: sibling final reviews with the same AXIOM grade, verdict, correctness flag, repair effort, and evidence type are skipped, and preprocessing removes same-parent semantic duplicates before building training items.

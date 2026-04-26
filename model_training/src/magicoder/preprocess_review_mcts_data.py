@@ -464,6 +464,27 @@ def numeric_q_value(value: Any, default: float = IGNORED_INDEX) -> float:
         return float(default)
 
 
+def policy_grade_matches(parsed_grade: Any, target_grade: Any) -> bool:
+    if parsed_grade is None or target_grade is None:
+        return False
+    try:
+        return clamp_axiom_grade(float(parsed_grade)) == clamp_axiom_grade(float(target_grade))
+    except (TypeError, ValueError):
+        return False
+
+
+def policy_grade_matches_details(details: dict[str, Any]) -> bool:
+    parsed = details.get("parsed") if isinstance(details.get("parsed"), dict) else {}
+    parsed_grade = details.get("predicted_axiom_grade")
+    if parsed_grade is None:
+        parsed_grade = parse_axiom_grade(parsed)
+    return policy_grade_matches(parsed_grade, details.get("target_axiom_grade"))
+
+
+def policy_grade_matches_item(item: dict[str, Any]) -> bool:
+    return policy_grade_matches(item.get("parsed_axiom_grade"), item.get("target_axiom_grade"))
+
+
 def convert_records(
     records: Iterable[dict[str, Any]],
     policy_min_q: float,
@@ -512,13 +533,20 @@ def convert_records(
                     continue
                 seen_review_signatures.add(semantic_key)
             has_verifier_issues = bool(verifier_issue_messages(details))
-            train_lm = tag in best and q_value >= policy_min_q and error is None and not has_verifier_issues
+            grade_matches = policy_grade_matches_details(details)
+            policy_candidate = tag in best and q_value >= policy_min_q and error is None and not has_verifier_issues
+            train_lm = policy_candidate and grade_matches
             item = path_to_training_item(record, tag, train_lm=train_lm)
             if item is None:
                 stats["skipped_paths"] += 1
                 continue
             item["is_best_path"] = tag in best
             item["data_split"] = data_split
+            if policy_candidate and not grade_matches:
+                item["force_value_only"] = True
+                item["lm_loss_weight"] = 0.0
+                item["policy_block_reason"] = "axiom_grade_mismatch"
+                stats["policy_grade_mismatch_paths"] += 1
             dedupe_key = (record.get("source"), record.get("subset"), record.get("dataset_index"), tag)
             if dedupe_key in seen:
                 stats["duplicate_paths"] += 1
@@ -842,6 +870,7 @@ def refresh_policy_flags(items: list[dict[str, Any]], policy_min_q: float) -> di
             and terminal_q >= policy_min_q
             and item.get("terminal_error") is None
             and not item.get("force_value_only")
+            and policy_grade_matches_item(item)
             and (not item.get("verifier_feedback") or item.get("allow_verifier_policy"))
         )
         item["train_lm"] = new_train_lm
