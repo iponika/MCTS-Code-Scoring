@@ -4,6 +4,7 @@ This file records Codex-made project changes so work can be resumed safely acros
 
 ## 2026-04-26
 
+- Added stage-aware review value labels during MCTS training export: each path now preserves `raw_q_value`, records node tags/stage buckets/best descendant q, and defaults to blended value labels that combine raw tree q, best terminal descendant q, and stage-standardized q while keeping final `<review>` rewards direct.
 - Fixed review MCTS tree shape for correctness-only runs: single-dimension review now starts directly from the root instead of creating an empty `0.0` dimension node, and branching exploration stops only after `review_explore_depth` rather than at it; local/API review configs now use `review_explore_depth: 2`.
 
 ## 2026-04-25
