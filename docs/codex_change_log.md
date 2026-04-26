@@ -2,6 +2,10 @@
 
 This file records Codex-made project changes so work can be resumed safely across forks and sessions. Each future code or workflow change should update this log and be followed by a git commit.
 
+## 2026-04-26
+
+- Fixed review MCTS tree shape for correctness-only runs: single-dimension review now starts directly from the root instead of creating an empty `0.0` dimension node, and branching exploration stops only after `review_explore_depth` rather than at it; local/API review configs now use `review_explore_depth: 2`.
+
 ## 2026-04-25
 
 - Tightened review MCTS training export policy imitation: high-q best paths now require exact AXIOM grade agreement with the target to keep `train_lm=True`; one-grade over/under-scored paths remain as value-only supervision and are counted as `policy_grade_mismatch_paths`.

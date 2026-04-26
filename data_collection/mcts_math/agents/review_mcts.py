@@ -61,6 +61,9 @@ class ReviewMCTS(MCTS):
         if not dimensions:
             self.root.is_terminal = True
             return
+        if len(dimensions) == 1:
+            self.root.state["target_dimension"] = dimensions[0]
+            return
 
         correctness_prior = 0.6 if "Correctness Verification" in dimensions and len(dimensions) > 1 else None
         for index, dimension in enumerate(dimensions):
@@ -121,7 +124,7 @@ class ReviewMCTS(MCTS):
             return visible_depth > self.config.max_depth
         explore_depth = int(getattr(self.config, "review_explore_depth", self.config.max_depth) or 0)
         return (
-            visible_depth >= explore_depth
+            visible_depth > explore_depth
             or visible_depth >= self.config.max_depth
             or self._target_leaf_count_reached()
             or self._exploration_node_budget_reached()
