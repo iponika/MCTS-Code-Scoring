@@ -364,6 +364,8 @@ def path_to_training_item(
 
     responses: list[str] = []
     q_values: list[float] = []
+    q_node_tags: list[str] = []
+    q_descendant_best: list[float] = []
     for node_tag in node_lineage(tag):
         node = react.get(node_tag)
         if not isinstance(node, dict):
@@ -371,11 +373,15 @@ def path_to_training_item(
         segment = normalize_response_segment(str(node.get("text") or ""))
         if not segment:
             continue
+        q_value = float(node.get("q_value", IGNORED_INDEX))
         responses.append(segment)
-        q_values.append(float(node.get("q_value", IGNORED_INDEX)))
+        q_values.append(q_value)
+        q_node_tags.append(node_tag)
+        q_descendant_best.append(best_terminal_descendant_q(react, node_tag, q_value))
 
     if not responses:
         return None
+    q_stages = [q_stage_for_segment(index, len(responses), segment) for index, segment in enumerate(responses)]
 
     details = terminal_reward_details(terminal)
     verifier_feedback = verifier_issue_messages(details)
@@ -388,6 +394,10 @@ def path_to_training_item(
         "instruction": build_instruction(record, dimension),
         "response": responses,
         "q_value": q_values,
+        "raw_q_value": list(q_values),
+        "q_node_tags": q_node_tags,
+        "q_descendant_best": q_descendant_best,
+        "q_stage": q_stages,
         "train_lm": train_lm,
         "dataset_index": record.get("dataset_index"),
         "source": record.get("source"),
@@ -464,6 +474,151 @@ def numeric_q_value(value: Any, default: float = IGNORED_INDEX) -> float:
         return float(default)
 
 
+def is_descendant_or_self(tag: str, ancestor_tag: str) -> bool:
+    return tag == ancestor_tag or tag.startswith(f"{ancestor_tag}.")
+
+
+def best_terminal_descendant_q(react: dict[str, Any], ancestor_tag: str, fallback: float) -> float:
+    values: list[float] = []
+    for tag, node in react.items():
+        if not is_descendant_or_self(str(tag), ancestor_tag):
+            continue
+        if not isinstance(node, dict) or not node.get("final_answer"):
+            continue
+        if terminal_error(node):
+            continue
+        q_value = numeric_q_value(node.get("q_value"))
+        if q_value == IGNORED_INDEX:
+            continue
+        values.append(q_value)
+    return max(values) if values else fallback
+
+
+def q_stage_for_segment(index: int, total: int, segment: str) -> str:
+    if segment.lstrip().startswith("<review>"):
+        return "review"
+    if total <= 1:
+        return "early"
+    if index == total - 1:
+        return "final_step"
+    ratio = index / max(1, total - 1)
+    if ratio < 0.34:
+        return "early"
+    if ratio < 0.67:
+        return "middle"
+    return "late"
+
+
+def stage_standardized_values(items: list[dict[str, Any]]) -> dict[tuple[int, int], float]:
+    values_by_stage: dict[str, list[float]] = defaultdict(list)
+    all_values: list[float] = []
+    for item in items:
+        if item.get("terminal_error"):
+            continue
+        for value, stage in zip(item.get("raw_q_value", []), item.get("q_stage", [])):
+            q_value = numeric_q_value(value)
+            if q_value == IGNORED_INDEX or not stage:
+                continue
+            values_by_stage[str(stage)].append(q_value)
+            all_values.append(q_value)
+
+    if len(all_values) < 2:
+        return {}
+    global_mean = statistics.fmean(all_values)
+    global_std = statistics.pstdev(all_values)
+    if global_std <= 1e-6:
+        return {}
+
+    standardized: dict[tuple[int, int], float] = {}
+    for item_index, item in enumerate(items):
+        for value_index, (value, stage) in enumerate(zip(item.get("raw_q_value", []), item.get("q_stage", []))):
+            q_value = numeric_q_value(value)
+            stage_values = values_by_stage.get(str(stage), [])
+            if q_value == IGNORED_INDEX or len(stage_values) < 2:
+                standardized[(item_index, value_index)] = q_value
+                continue
+            stage_std = statistics.pstdev(stage_values)
+            if stage_std <= 1e-6:
+                standardized[(item_index, value_index)] = q_value
+                continue
+            stage_mean = statistics.fmean(stage_values)
+            mapped = global_mean + ((q_value - stage_mean) / stage_std) * global_std
+            standardized[(item_index, value_index)] = round(clamp_reward(mapped), 4)
+    return standardized
+
+
+def apply_stage_value_labels(
+    items: list[dict[str, Any]],
+    raw_weight: float = 0.5,
+    best_descendant_weight: float = 0.3,
+    stage_weight: float = 0.2,
+) -> dict[str, int]:
+    stats = defaultdict(int)
+    total_weight = raw_weight + best_descendant_weight + stage_weight
+    if total_weight <= 0:
+        stats["stage_value_label_enabled"] = 0
+        stats["stage_value_label_skip_invalid_weights"] = 1
+        return dict(stats)
+
+    raw_weight /= total_weight
+    best_descendant_weight /= total_weight
+    stage_weight /= total_weight
+    standardized = stage_standardized_values(items)
+
+    for item_index, item in enumerate(items):
+        raw_values = [numeric_q_value(value) for value in item.get("raw_q_value", item.get("q_value", []))]
+        best_values = [numeric_q_value(value) for value in item.get("q_descendant_best", raw_values)]
+        stages = list(item.get("q_stage", []))
+        if "raw_q_value" not in item:
+            item["raw_q_value"] = list(raw_values)
+        if not stages:
+            responses = item.get("response", [])
+            stages = [
+                q_stage_for_segment(index, len(responses), str(segment))
+                for index, segment in enumerate(responses)
+            ]
+            item["q_stage"] = stages
+        if "q_descendant_best" not in item:
+            item["q_descendant_best"] = list(best_values)
+        if not raw_values or len(best_values) != len(raw_values):
+            stats["stage_value_label_skipped_items"] += 1
+            continue
+        if item.get("terminal_error"):
+            stats["stage_value_label_skipped_terminal_error"] += 1
+            continue
+
+        adjusted: list[float] = []
+        for value_index, raw_q in enumerate(raw_values):
+            if raw_q == IGNORED_INDEX:
+                adjusted.append(raw_q)
+                continue
+            stage = stages[value_index] if value_index < len(stages) else ""
+            if stage == "review" or value_index == len(raw_values) - 1:
+                adjusted.append(round(clamp_reward(raw_q), 4))
+                continue
+            best_q = best_values[value_index] if value_index < len(best_values) else raw_q
+            stage_q = standardized.get((item_index, value_index), raw_q)
+            mixed = raw_weight * raw_q + best_descendant_weight * best_q + stage_weight * stage_q
+            adjusted.append(round(clamp_reward(mixed), 4))
+
+        if adjusted == raw_values:
+            stats["stage_value_label_unchanged_items"] += 1
+            continue
+        item["q_value"] = adjusted
+        if adjusted:
+            item["terminal_q_value"] = adjusted[-1]
+        item["q_label_method"] = "stage_best_descendant_v1"
+        item["q_label_weights"] = {
+            "raw": round(raw_weight, 4),
+            "best_descendant": round(best_descendant_weight, 4),
+            "stage": round(stage_weight, 4),
+        }
+        stats["stage_value_label_adjusted_items"] += 1
+
+    stats["stage_value_label_enabled"] = 1
+    return dict(stats)
+
+
 def policy_grade_matches(parsed_grade: Any, target_grade: Any) -> bool:
     if parsed_grade is None or target_grade is None:
         return False
@@ -497,6 +652,10 @@ def convert_records(
     verifier_correction_value_weight: float = 0.5,
     verifier_correction_repeat: int = 1,
     max_verifier_corrections: int = 0,
+    stage_value_labels: bool = True,
+    stage_raw_weight: float = 0.5,
+    stage_best_descendant_weight: float = 0.3,
+    stage_standardized_weight: float = 0.2,
 ) -> tuple[list[dict[str, Any]], dict[str, int]]:
     items: list[dict[str, Any]] = []
     stats = defaultdict(int)
@@ -598,6 +757,18 @@ def convert_records(
                         stats[f"verifier_correction_mode_{verifier_correction_mode}"] += 1
                     verifier_corrections += 1
 
+    if stage_value_labels:
+        stats.update(
+            apply_stage_value_labels(
+                items,
+                raw_weight=stage_raw_weight,
+                best_descendant_weight=stage_best_descendant_weight,
+                stage_weight=stage_standardized_weight,
+            )
+        )
+    else:
+        stats["stage_value_label_enabled"] = 0
+
     return items, dict(stats)
 
 
@@ -687,8 +858,10 @@ def apply_q_calibration(items: list[dict[str, Any]], calibrator: dict[str, Any],
             stats["calibration_unchanged_items"] += 1
             continue
 
-        item["raw_q_value"] = raw_q_values
-        item["raw_terminal_q_value"] = numeric_q_value(item.get("terminal_q_value"))
+        item["pre_calibration_q_value"] = raw_q_values
+        item["pre_calibration_terminal_q_value"] = numeric_q_value(item.get("terminal_q_value"))
+        item.setdefault("raw_q_value", raw_q_values)
+        item.setdefault("raw_terminal_q_value", numeric_q_value(item.get("terminal_q_value")))
         item["q_value"] = calibrated
         if calibrated:
             item["terminal_q_value"] = calibrated[-1]
@@ -834,11 +1007,10 @@ def apply_score_consensus(
             item["lm_loss_weight"] = sample_weight
             stats["score_consensus_weighted_items"] += 1
         elif mode == "q_adjust":
-            if "raw_q_value" not in item:
-                item["raw_q_value"] = [numeric_q_value(value) for value in item.get("q_value", [])]
-                item["raw_terminal_q_value"] = numeric_q_value(item.get("terminal_q_value"))
             consensus_reward = summary["reward"]
             q_values = [numeric_q_value(value) for value in item.get("q_value", [])]
+            item.setdefault("raw_q_value", q_values)
+            item.setdefault("raw_terminal_q_value", numeric_q_value(item.get("terminal_q_value")))
             adjusted = [
                 value if value == IGNORED_INDEX else round(clamp_reward((1.0 - effective_strength) * value + effective_strength * consensus_reward), 4)
                 for value in q_values
@@ -929,6 +1101,28 @@ def main() -> None:
         type=int,
         default=0,
         help="0 keeps all terminal paths; otherwise cap value-only paths per sample dimension.",
+    )
+    parser.add_argument(
+        "--stage_value_labels",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help=(
+            "Blend raw MCTS node q-values with best-descendant and stage-standardized values for value-head labels. "
+            "Disable to train directly on raw tree-average q_values."
+        ),
+    )
+    parser.add_argument("--stage_raw_weight", type=float, default=0.5, help="Blend weight for raw node q_value.")
+    parser.add_argument(
+        "--stage_best_descendant_weight",
+        type=float,
+        default=0.3,
+        help="Blend weight for the best terminal descendant q_value under the same node.",
+    )
+    parser.add_argument(
+        "--stage_standardized_weight",
+        type=float,
+        default=0.2,
+        help="Blend weight for stage-normalized q_value within early/middle/late/final/review buckets.",
     )
     parser.add_argument(
         "--replay_ratio",
@@ -1043,6 +1237,10 @@ def main() -> None:
         verifier_correction_value_weight=args.verifier_correction_value_weight,
         verifier_correction_repeat=args.verifier_correction_repeat,
         max_verifier_corrections=args.max_verifier_corrections,
+        stage_value_labels=args.stage_value_labels,
+        stage_raw_weight=args.stage_raw_weight,
+        stage_best_descendant_weight=args.stage_best_descendant_weight,
+        stage_standardized_weight=args.stage_standardized_weight,
     )
     stats = {f"new_{key}": value for key, value in new_stats.items()}
 
@@ -1060,6 +1258,10 @@ def main() -> None:
         verifier_correction_value_weight=args.verifier_correction_value_weight,
         verifier_correction_repeat=args.verifier_correction_repeat,
         max_verifier_corrections=args.max_verifier_corrections,
+        stage_value_labels=args.stage_value_labels,
+        stage_raw_weight=args.stage_raw_weight,
+        stage_best_descendant_weight=args.stage_best_descendant_weight,
+        stage_standardized_weight=args.stage_standardized_weight,
     )
     stats.update({f"replay_{key}": value for key, value in replay_stats.items()})
     selected_replay_items = select_replay_items(

@@ -152,6 +152,50 @@ class ReviewTrainingDedupeTest(unittest.TestCase):
         self.assertTrue(items[0]["train_lm"])
         self.assertEqual(stats["policy_paths"], 1)
 
+    def test_stage_value_labels_lift_promising_intermediate_step(self) -> None:
+        review = (
+            '{"axiom_grade":5,"score":100,"verdict":"accept",'
+            '"functional_correctness":true,"repair_effort":"none",'
+            '"evidence_type":"uncertain","summary":"No defect is visible.",'
+            '"evidence":["The implementation directly returns x + 1."]}'
+        )
+        tag, terminal = terminal_node("0.0.0", review)
+        record = {
+            "dataset_index": 10,
+            "source": "unit",
+            "subset": "unit",
+            "problem": "Return x + 1.",
+            "candidate_code": "def f(x):\n    return x + 1",
+            "tests": [],
+            "language": "python",
+            "best_reviews_by_dimension": {"Correctness Verification": {"tag": tag}},
+            "react": {
+                "0": {"target_dimension": "Correctness Verification"},
+                "0.0": {
+                    "text": "<step>\nFrame the full requirement before scoring.\n</step>",
+                    "target_dimension": "Correctness Verification",
+                    "q_value": -0.2,
+                },
+                tag: terminal,
+            },
+        }
+
+        items, stats = convert_records(
+            [record],
+            policy_min_q=0.5,
+            max_value_paths_per_dimension=0,
+        )
+
+        self.assertEqual(len(items), 1)
+        item = items[0]
+        self.assertEqual(item["raw_q_value"], [-0.2, 1.0])
+        self.assertEqual(item["q_descendant_best"], [1.0, 1.0])
+        self.assertGreater(item["q_value"][0], item["raw_q_value"][0])
+        self.assertLess(item["q_value"][0], item["q_descendant_best"][0])
+        self.assertEqual(item["q_value"][-1], 1.0)
+        self.assertEqual(item["q_stage"], ["early", "review"])
+        self.assertEqual(stats["stage_value_label_adjusted_items"], 1)
+
 
 if __name__ == "__main__":
     unittest.main()
