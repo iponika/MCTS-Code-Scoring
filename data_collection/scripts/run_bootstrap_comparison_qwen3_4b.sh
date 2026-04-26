@@ -9,6 +9,8 @@ MODEL_PATH="${MODEL_PATH:-Qwen/Qwen3-4B-Instruct-2507}"
 SEED_PER_GRADE="${SEED_PER_GRADE:-24}"
 SEED_MIN_GRADE="${SEED_MIN_GRADE:-1}"
 SEED_MAX_GRADE="${SEED_MAX_GRADE:-5}"
+SEED_MAX_OBJECTIVE_ASSERTIONS_PER_SPLIT="${SEED_MAX_OBJECTIVE_ASSERTIONS_PER_SPLIT:-8}"
+SEED_ASSERTION_TIMEOUT_SECONDS="${SEED_ASSERTION_TIMEOUT_SECONDS:-1.5}"
 DIRECT_REPEATS="${DIRECT_REPEATS:-4}"
 MAX_TRAINING_SEQ_LENGTH="${MAX_TRAINING_SEQ_LENGTH:-1536}"
 MAX_STEPS="${MAX_STEPS:-240}"
@@ -74,7 +76,10 @@ prepare_seed_data() {
         --metadata "${SEED_META}" \
         --per_grade "${SEED_PER_GRADE}" \
         --min_grade "${SEED_MIN_GRADE}" \
-        --max_grade "${SEED_MAX_GRADE}"
+        --max_grade "${SEED_MAX_GRADE}" \
+        --max_objective_assertions_per_split "${SEED_MAX_OBJECTIVE_ASSERTIONS_PER_SPLIT}" \
+        --assertion_timeout_seconds "${SEED_ASSERTION_TIMEOUT_SECONDS}" \
+        --progress_every 50
   fi
 }
 
