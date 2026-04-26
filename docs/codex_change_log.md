@@ -5,6 +5,7 @@ This file records Codex-made project changes so work can be resumed safely acros
 ## 2026-04-26
 
 - Made CodeCritic AXIOM seed preparation observable and bounded: pass-rate evaluation now supports assertion caps/timeouts, the seed builder emits progress and elapsed metadata, and the 4B bootstrap comparison runner defaults to capped objective-test execution so first-stage seed preparation no longer appears stalled on larger overnight runs.
+- Made the 4B bootstrap comparison runner's AXIOM held-out evaluation size configurable via `EVAL_PER_GRADE`, so overnight comparisons can trade runtime for more reliable cross-dataset metrics.
 - Added stage-aware review value labels during MCTS training export: each path now preserves `raw_q_value`, records node tags/stage buckets/best descendant q, and defaults to blended value labels that combine raw tree q, best terminal descendant q, and stage-standardized q while keeping final `<review>` rewards direct.
 - Fixed review MCTS tree shape for correctness-only runs: single-dimension review now starts directly from the root instead of creating an empty `0.0` dimension node, and branching exploration stops only after `review_explore_depth` rather than at it; local/API review configs now use `review_explore_depth: 2`.
 
