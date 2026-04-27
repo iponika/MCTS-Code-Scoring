@@ -482,37 +482,58 @@ def get_model_wvalue_context(
     if model_args.peft=='lora':
         model_config = AutoConfig.from_pretrained(model_name_or_path)
         lora_kwargs = {}
+        target_scope = getattr(model_args, "lora_target_scope", "all")
         if getattr(model_config, "model_type", "") == "qwen3_5":
-            lora_kwargs["target_modules"] = [
+            attention_targets = [
                 "q_proj",
                 "k_proj",
                 "v_proj",
                 "o_proj",
                 "in_proj_qkv",
-                "in_proj_a",
-                "in_proj_b",
-                "in_proj_z",
                 "out_proj",
+            ]
+            mlp_targets = [
                 "gate_proj",
                 "up_proj",
                 "down_proj",
             ]
+            extra_targets = [
+                "in_proj_a",
+                "in_proj_b",
+                "in_proj_z",
+            ]
+            if target_scope == "attention":
+                lora_kwargs["target_modules"] = attention_targets
+            elif target_scope == "attention_mlp":
+                lora_kwargs["target_modules"] = attention_targets + mlp_targets
+            else:
+                lora_kwargs["target_modules"] = attention_targets + extra_targets + mlp_targets
         elif getattr(model_config, "model_type", "") == "qwen3":
-            lora_kwargs["target_modules"] = [
+            attention_targets = [
                 "q_proj",
                 "k_proj",
                 "v_proj",
                 "o_proj",
+            ]
+            mlp_targets = [
                 "gate_proj",
                 "up_proj",
                 "down_proj",
             ]
+            if target_scope == "attention":
+                lora_kwargs["target_modules"] = attention_targets
+            else:
+                lora_kwargs["target_modules"] = attention_targets + mlp_targets
+        lora_rank = int(getattr(model_args, "lora_rank", 64))
+        lora_alpha = getattr(model_args, "lora_alpha", None)
+        if lora_alpha is None:
+            lora_alpha = lora_rank * 2
         peft_config = LoraConfig(
             task_type=TaskType.CAUSAL_LM,
             inference_mode=False,
-            r=64,  # LoRA rank
-            lora_alpha=128,
-            lora_dropout=0.1,
+            r=lora_rank,
+            lora_alpha=int(lora_alpha),
+            lora_dropout=float(getattr(model_args, "lora_dropout", 0.1)),
             **lora_kwargs,
         )
         model = AutoModelForCausalLMWithValueHead.from_pretrained(
@@ -534,6 +555,11 @@ def get_model_wvalue_context(
     if vhead_params is not None:
         model.load_state_dict(vhead_params, strict=False)
 
+    if not inference_mode:
+        # PEFT adapters and TRL value heads are initialized in fp32 even when the
+        # backbone is loaded in bf16. FSDP flattening requires uniform dtype
+        # inside each wrapped module, so normalize the training wrapper here.
+        model.to(dtype=dtype)
 
     return ModelContext(tokenization_context, model, max_context_size)
 

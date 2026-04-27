@@ -77,6 +77,13 @@ class ModelArguments:
     model_key: str
     model_name_or_path: str | None = None
     peft: str | None = None
+    lora_rank: int = 64
+    lora_alpha: int | None = None
+    lora_dropout: float = 0.1
+    lora_target_scope: str = field(
+        default="all",
+        metadata={"help": "LoRA target scope: all, attention, or attention_mlp. Defaults to the previous full target list."},
+    )
 
 
 
@@ -102,6 +109,7 @@ class Args:
     disable_train_shuffle: bool = field(default=False, metadata={"help": "Keep tokenized training examples in dataset order."})
     task: str = field(default="code", metadata={"help": "code or review"})
     skip_save: bool = field(default=False, metadata={"help": "Skip final model saving for smoke tests."})
+    force_gradient_checkpointing: bool = field(default=True, metadata={"help": "Enable Trainer gradient checkpointing. Disable when using FSDP activation checkpointing."})
     save_merged_model: bool = field(
         default=False,
         metadata={"help": "For LoRA runs, also save a merged full-backbone checkpoint. Disabled by default to keep smoke checkpoints small."},
@@ -362,8 +370,15 @@ class RLTrainer(Trainer):
             del inputs["labels"]
             
         mask = Q.ne(IGNORED_INDEX)
+        has_lm_labels = labels is not None and labels.ne(IGNORED_INDEX).any()
+        model_inputs = dict(inputs)
+        if not has_lm_labels:
+            # Qwen-style CausalLM heads can avoid materializing full
+            # sequence-by-vocabulary logits. Value-only batches still need all
+            # hidden states for the value head, but not the LM logits.
+            model_inputs["logits_to_keep"] = 1
 
-        lm_logits, _, values = model(**inputs, output_hidden_states=True, return_dict=True)
+        lm_logits, _, values = model(**model_inputs, output_hidden_states=True, return_dict=True)
         values = torch.tanh(values)
 
         if value_loss_weight_tensor is None:
@@ -375,19 +390,22 @@ class RLTrainer(Trainer):
         else:
             lm_loss_weight_tensor = lm_loss_weight_tensor.to(Q.device, dtype=torch.float32)
 
-        # Shift so that tokens < n predict n
-        shift_logits = lm_logits[..., :-1, :].contiguous()
-        shift_labels = labels[..., 1:].contiguous().to(shift_logits.device)
-        token_loss = F.cross_entropy(
-            shift_logits.view(-1, model.pretrained_model.config.vocab_size),
-            shift_labels.view(-1),
-            ignore_index=IGNORED_INDEX,
-            reduction="none",
-        ).view_as(shift_labels)
-        lm_mask = shift_labels.ne(IGNORED_INDEX)
-        per_sample_lm_loss = token_loss.sum(dim=1) / (lm_mask.sum(dim=1).float() + 1e-6)
-        effective_lm_weight = lm_loss_weight_tensor.to(shift_logits.device) * lm_mask.any(dim=1).float()
-        loss = (per_sample_lm_loss * effective_lm_weight).sum() / (effective_lm_weight.sum() + 1e-6)
+        if has_lm_labels:
+            # Shift so that tokens < n predict n
+            shift_logits = lm_logits[..., :-1, :].contiguous()
+            shift_labels = labels[..., 1:].contiguous().to(shift_logits.device)
+            token_loss = F.cross_entropy(
+                shift_logits.view(-1, model.pretrained_model.config.vocab_size),
+                shift_labels.view(-1),
+                ignore_index=IGNORED_INDEX,
+                reduction="none",
+            ).view_as(shift_labels)
+            lm_mask = shift_labels.ne(IGNORED_INDEX)
+            per_sample_lm_loss = token_loss.sum(dim=1) / (lm_mask.sum(dim=1).float() + 1e-6)
+            effective_lm_weight = lm_loss_weight_tensor.to(shift_logits.device) * lm_mask.any(dim=1).float()
+            loss = (per_sample_lm_loss * effective_lm_weight).sum() / (effective_lm_weight.sum() + 1e-6)
+        else:
+            loss = values.new_tensor(0.0)
 
         assert not torch.isnan(loss) and Q is not None
 
@@ -442,8 +460,7 @@ def train():
         parser.parse_args_into_dataclasses(),
     )
 
-
-    training_args.gradient_checkpointing=True
+    training_args.gradient_checkpointing=args.force_gradient_checkpointing
     training_args.remove_unused_columns=False
     training_args.save_safetensors=False
     global model_name
