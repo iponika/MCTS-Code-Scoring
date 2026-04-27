@@ -167,6 +167,59 @@ class ReviewMCTSFrontierRolloutTest(unittest.TestCase):
 
         self.assertEqual(len(frontier.children), 1)
 
+    def test_near_duplicate_step_child_repeating_parent_is_skipped(self) -> None:
+        solver = make_solver()
+        dimension_node = solver.root
+        solver.create_child(
+            "<step>\nTrace input x=1: the code returns 2, matching the requirement.\n</step>",
+            {
+                "action": "Trace input x=1: the code returns 2, matching the requirement.",
+                "action_input": "",
+                "final_answer": "",
+            },
+            dimension_node,
+            prior_prob=1.0,
+            idx=0,
+        )
+        parent = dimension_node.children[0]
+
+        solver.create_child(
+            "<step>\nTrace x=1: code returns 2, matching the requirement.\n</step>",
+            {
+                "action": "Trace x=1: code returns 2, matching the requirement.",
+                "action_input": "",
+                "final_answer": "",
+            },
+            parent,
+            prior_prob=1.0,
+            idx=0,
+        )
+
+        self.assertEqual(parent.children, [])
+
+    def test_near_duplicate_step_sibling_is_skipped(self) -> None:
+        solver = make_solver()
+        dimension_node = solver.root
+        first = "Trace input x=1: the code returns 2, matching the requirement."
+        duplicate = "Trace x=1: code returns 2, matching the requirement."
+
+        solver.create_child(
+            f"<step>\n{first}\n</step>",
+            {"action": first, "action_input": "", "final_answer": ""},
+            dimension_node,
+            prior_prob=1.0,
+            idx=0,
+        )
+        solver.create_child(
+            f"<step>\n{duplicate}\n</step>",
+            {"action": duplicate, "action_input": "", "final_answer": ""},
+            dimension_node,
+            prior_prob=1.0,
+            idx=1,
+        )
+
+        self.assertEqual(len(dimension_node.children), 1)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -4,6 +4,7 @@ This file records Codex-made project changes so work can be resumed safely acros
 
 ## 2026-04-27
 
+- Tightened review-MCTS step generation after tree inspection: non-final prompts now hide the final `<review>` JSON schema, require each `<step>` to add new evidence or challenge a prior claim, and skip near-duplicate step children that merely restate a parent or sibling.
 - Parameterized AXIOM clean evaluation so it can run either final-only scoring or stepwise review-MCTS inference, with configurable `SCORE_KEY`, step/candidate counts, rethink thresholds, and optional base/trained eval stages.
 - Added a stepwise MCTS score-key comparison wrapper for the 2026-04-27 run: it reuses the latest MCTS checkpoint, disables `--final_only_json`, allows multi-step/multi-candidate value-reranked inference, compares `response_mean_value` against `last_value`, and writes a compact comparison against the existing Direct-Bootstrap final-only baseline.
 - Switched review value-guided inference defaults back to `last_value` and hardened final `<review>` parsing: malformed review JSON with extra braces, unescaped control characters, or truncated evidence strings can now recover a minimal AXIOM grade payload when the grade is present, improving stepwise MCTS valid-rate without changing generated text.

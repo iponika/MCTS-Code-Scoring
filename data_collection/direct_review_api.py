@@ -11,7 +11,11 @@ from tqdm import tqdm
 from mcts_math.axiom_scoring import axiom_functionally_correct, axiom_scalar_score, parse_axiom_grade
 from mcts_math.config import BaseConfig
 from mcts_math.llms.openai_api_llm import OpenAICompatibleGenerator, build_api_sampling_params
-from mcts_math.prompts.prompt_sft import QWEN_REVIEW_PROMPT
+from mcts_math.prompts.prompt_sft import (
+    REVIEW_FINAL_FORMAT_RULE,
+    REVIEW_FINAL_FORMAT_SECTION,
+    QWEN_REVIEW_PROMPT,
+)
 from mcts_math.review_utils import (
     DEFAULT_DIMENSION_RUBRIC,
     compute_review_reward,
@@ -59,6 +63,8 @@ def build_prompt(sample: dict[str, Any], dimension: str, config: Any) -> str:
             "Output only one structured final review in the exact <review> JSON format below. "
             "Do not output <step> blocks."
         ),
+        format_rule=REVIEW_FINAL_FORMAT_RULE,
+        output_format_section=REVIEW_FINAL_FORMAT_SECTION,
     )
 
 
