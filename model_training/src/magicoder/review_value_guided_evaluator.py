@@ -42,7 +42,7 @@ def main() -> None:
     parser.add_argument("--max_new_tokens", type=int, default=256)
     parser.add_argument("--temperature", type=float, default=0.7)
     parser.add_argument("--top_p", type=float, default=0.95)
-    parser.add_argument("--score_key", choices=VALUE_SCORE_KEYS, default="response_mean_value")
+    parser.add_argument("--score_key", choices=VALUE_SCORE_KEYS, default="last_value")
     parser.add_argument("--seed", type=int)
     args = parser.parse_args()
     if args.seed is not None:

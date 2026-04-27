@@ -190,17 +190,127 @@ def should_finish(response: str) -> bool:
     return "<review>" in response and "</review>" in response
 
 
+def _escape_control_chars_inside_json_strings(text: str) -> str:
+    result: list[str] = []
+    in_string = False
+    escaped = False
+    for char in text:
+        if escaped:
+            result.append(char)
+            escaped = False
+            continue
+        if char == "\\" and in_string:
+            result.append(char)
+            escaped = True
+            continue
+        if char == '"':
+            in_string = not in_string
+            result.append(char)
+            continue
+        if in_string and char == "\n":
+            result.append("\\n")
+            continue
+        if in_string and char == "\r":
+            result.append("\\r")
+            continue
+        if in_string and char == "\t":
+            result.append("\\t")
+            continue
+        result.append(char)
+    return "".join(result)
+
+
+def _balanced_json_prefix(text: str) -> str | None:
+    start = text.find("{")
+    if start < 0:
+        return None
+    depth = 0
+    in_string = False
+    escaped = False
+    for index in range(start, len(text)):
+        char = text[index]
+        if escaped:
+            escaped = False
+            continue
+        if char == "\\" and in_string:
+            escaped = True
+            continue
+        if char == '"':
+            in_string = not in_string
+            continue
+        if in_string:
+            continue
+        if char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth == 0:
+                return text[start : index + 1]
+    return None
+
+
+def _minimal_review_payload(text: str) -> dict[str, Any] | None:
+    grade = lenient_axiom_grade(text)
+    if grade is None:
+        return None
+    score_matches = re.findall(r'"score"\s*:\s*([0-9]+(?:\.\d+)?)', text)
+    if score_matches:
+        score = float(score_matches[-1])
+    else:
+        score = axiom_scalar_score(grade)
+    verdict_match = re.findall(r'"verdict"\s*:\s*"([^"\n\r]{0,120})"', text)
+    summary_match = re.findall(r'"summary"\s*:\s*"([^"\n\r]{0,240})"', text)
+    return {
+        "axiom_grade": grade,
+        "score": score,
+        "verdict": verdict_match[-1] if verdict_match else "recovered_from_malformed_review",
+        "functional_correctness": None,
+        "repair_effort": None,
+        "summary": summary_match[-1] if summary_match else "Recovered grade from malformed final review.",
+        "evidence": [],
+    }
+
+
+def _parse_review_json(review_text: str) -> dict[str, Any]:
+    candidates = [review_text.strip()]
+    balanced = _balanced_json_prefix(review_text)
+    if balanced and balanced not in candidates:
+        candidates.append(balanced)
+
+    for candidate_index, candidate in enumerate(candidates):
+        try:
+            result = {"ok": True, "parsed": json.loads(candidate)}
+            if candidate_index > 0:
+                result["recovered"] = True
+                result["recovery_method"] = "balanced_json_prefix"
+            return result
+        except json.JSONDecodeError:
+            pass
+        sanitized = _escape_control_chars_inside_json_strings(candidate)
+        if sanitized != candidate:
+            try:
+                return {"ok": True, "parsed": json.loads(sanitized), "recovered": True, "recovery_method": "escaped_control_chars"}
+            except json.JSONDecodeError:
+                pass
+
+    fallback = _minimal_review_payload(review_text)
+    if fallback is not None:
+        return {"ok": True, "parsed": fallback, "recovered": True, "recovery_method": "grade_fallback"}
+
+    try:
+        json.loads(review_text)
+    except json.JSONDecodeError as exc:
+        return {"ok": False, "error": "invalid_review_json", "raw_review": review_text, "message": str(exc)}
+    return {"ok": False, "error": "invalid_review_json", "raw_review": review_text, "message": "parsed JSON was not an object"}
+
+
 def parse_final_review(text: str) -> dict[str, Any]:
     if "<review>" not in text or "</review>" not in text:
         return {"ok": False, "error": "missing_review_tags"}
     review_text = text.rsplit("<review>", 1)[1].split("</review>", 1)[0].strip()
     if "{" in review_text and "}" in review_text:
         review_text = review_text[review_text.find("{") : review_text.rfind("}") + 1]
-    try:
-        parsed = json.loads(review_text)
-    except json.JSONDecodeError as exc:
-        return {"ok": False, "error": "invalid_review_json", "raw_review": review_text, "message": str(exc)}
-    return {"ok": True, "parsed": parsed}
+    return _parse_review_json(review_text)
 
 
 def lenient_axiom_grade(text: str) -> int | None:
@@ -527,7 +637,7 @@ def main() -> None:
     parser.add_argument("--final_max_new_tokens", type=int, default=0, help="0 means reuse --max_new_tokens for final review generation and retries.")
     parser.add_argument("--temperature", type=float, default=0.7)
     parser.add_argument("--top_p", type=float, default=0.95)
-    parser.add_argument("--score_key", choices=VALUE_SCORE_KEYS, default="response_mean_value")
+    parser.add_argument("--score_key", choices=VALUE_SCORE_KEYS, default="last_value")
     parser.add_argument("--seed", type=int)
     parser.add_argument("--final_only_json", action="store_true", help="Generate only one compact final <review> JSON block; no step reasoning.")
     parser.add_argument("--show_tests_in_prompt", action="store_true", help="Expose dataset tests to the reviewer prompt for oracle diagnostics. Default hides tests.")
