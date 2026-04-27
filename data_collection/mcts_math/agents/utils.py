@@ -16,6 +16,10 @@ from mcts_math.prompts.prompt_react import PROMPT_REACT
 from mcts_math.prompts.prompt_sft import (
     DEEPSEEK_PROMPT,
     DEEPSEEK_LCB_PROMPT,
+    REVIEW_FINAL_FORMAT_RULE,
+    REVIEW_FINAL_FORMAT_SECTION,
+    REVIEW_STEP_FORMAT_RULE,
+    REVIEW_STEP_FORMAT_SECTION,
     QWEN_REVIEW_PROMPT,
     QWEN_STEP_PROMPT,
 )
@@ -164,10 +168,14 @@ def review_prompt_wrap(
         mode_instruction = (
             "You must finish now. Output only one structured final review in the exact <review> JSON format below."
         )
+        format_rule = REVIEW_FINAL_FORMAT_RULE
+        output_format_section = REVIEW_FINAL_FORMAT_SECTION
     else:
         mode_instruction = (
             "Output exactly one concise next review reasoning step wrapped in <step>...</step>. Never output <review> yet."
         )
+        format_rule = REVIEW_STEP_FORMAT_RULE
+        output_format_section = REVIEW_STEP_FORMAT_SECTION
     return QWEN_REVIEW_PROMPT.format(
         dimension=review_context["target_dimension"],
         rubric=review_context["dimension_rubric"],
@@ -177,6 +185,8 @@ def review_prompt_wrap(
         tests=tests,
         partial_solution=partial_solution.strip() if partial_solution else "None",
         mode_instruction=mode_instruction,
+        format_rule=format_rule,
+        output_format_section=output_format_section,
     )
 
 

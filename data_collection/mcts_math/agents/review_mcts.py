@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import difflib
 import json
+import re
 from typing import Any, Dict, List, Optional, Type
 
 from pydantic import field_validator
@@ -174,6 +176,42 @@ class ReviewMCTS(MCTS):
                 return True
         return False
 
+    @staticmethod
+    def _normalize_step_for_similarity(text: str) -> str:
+        cleaned = str(text or "").lower()
+        cleaned = cleaned.replace("premature final review draft retained as a reasoning note, not as the final scored review", " ")
+        cleaned = re.sub(r"</?step>", " ", cleaned)
+        cleaned = re.sub(r"</?review>", " ", cleaned)
+        cleaned = re.sub(r"[^a-z0-9_]+", " ", cleaned)
+        return re.sub(r"\s+", " ", cleaned).strip()
+
+    @classmethod
+    def _step_similarity(cls, left: str, right: str) -> float:
+        left_norm = cls._normalize_step_for_similarity(left)
+        right_norm = cls._normalize_step_for_similarity(right)
+        if not left_norm or not right_norm:
+            return 0.0
+        return difflib.SequenceMatcher(None, left_norm, right_norm).ratio()
+
+    def _is_redundant_step_child(self, node: Type[MCTSNode], step_text: str) -> bool:
+        word_count = len(self._normalize_step_for_similarity(step_text).split())
+        min_words = int(getattr(self.config, "review_step_min_words_for_dedupe", 6) or 0)
+        if word_count < min_words:
+            return False
+
+        parent_threshold = float(getattr(self.config, "review_step_parent_similarity_threshold", 1.0) or 1.0)
+        if parent_threshold < 1.0 and self._step_similarity(step_text, str(node.state.get("text") or "")) >= parent_threshold:
+            return True
+
+        sibling_threshold = float(getattr(self.config, "review_step_sibling_similarity_threshold", 1.0) or 1.0)
+        if sibling_threshold < 1.0:
+            for child in node.children:
+                if child.state.get("final_answer"):
+                    continue
+                if self._step_similarity(step_text, str(child.state.get("text") or "")) >= sibling_threshold:
+                    return True
+        return False
+
     def create_prompt(self, is_value_only: bool = False) -> List[str]:
         if is_value_only and not self.config.need_value_func:
             return []
@@ -224,6 +262,18 @@ class ReviewMCTS(MCTS):
         )
         if is_final_review and self._has_duplicate_review_child(node, parser_result["final_answer"]):
             return
+        is_premature_review_step = (
+            parser_result is not None
+            and bool(parser_result["final_answer"])
+            and not is_final_review
+        )
+        candidate_step_text = ""
+        if parser_result is not None and parser_result["action"]:
+            candidate_step_text = step_result
+        elif is_premature_review_step:
+            candidate_step_text = self._premature_review_to_step(step_result)
+        if candidate_step_text and self._is_redundant_step_child(node, candidate_step_text):
+            return
 
         new_node = self.create_node(parent=node)
         new_node.tag = f"{node.tag}.{idx}"
@@ -244,7 +294,7 @@ class ReviewMCTS(MCTS):
             new_node.state["final_answer"] = parser_result["final_answer"]
             self.eval_final_answer(new_node)
         elif parser_result["final_answer"]:
-            coerced_step = self._premature_review_to_step(step_result)
+            coerced_step = candidate_step_text or self._premature_review_to_step(step_result)
             new_node.state["text"] = coerced_step
             new_node.state["action"] = coerced_step
             new_node.state["action_input"] = ""

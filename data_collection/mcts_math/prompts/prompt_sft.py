@@ -50,6 +50,28 @@ Here is your question: {question}
 {partial_solution}"""
 
 
+REVIEW_FINAL_FORMAT_RULE = (
+    'Keep the final JSON compact: summary under 35 words; evidence has at most 2 items, '
+    'each under 25 words. Output no prose outside <review>.'
+)
+
+REVIEW_FINAL_FORMAT_SECTION = """Structured final review format:
+<review>
+{{"axiom_grade": <0-5 integer>, "score": <0-100 number>, "verdict": "accept|minor_issue|major_issue", "functional_correctness": true, "repair_effort": "none|minor_quality|major_quality|minor_functional|major_functional|rewrite", "evidence_type": "provided_test_failure|deduced_counterexample|static_logic_contradiction|uncertain", "summary": "...", "evidence": ["...", "..."]}}
+</review>"""
+
+REVIEW_STEP_FORMAT_RULE = (
+    "Keep the step under 45 words. It must add new evidence, test an input-domain assumption, "
+    "trace a listed test, derive a new counterexample, or explicitly challenge/qualify a previous claim. "
+    "Do not restate a prior step."
+)
+
+REVIEW_STEP_FORMAT_SECTION = """Next-step format:
+<step>
+one of trace_listed_test | check_input_domain | derive_counterexample | static_logic_check | challenge_previous_claim: concise new reasoning
+</step>"""
+
+
 QWEN_REVIEW_PROMPT = """You are an exceptionally intelligent code reviewer.
 @@ Instruction
 You are scoring candidate code. Textual critique is only supporting evidence for the scalar score.
@@ -87,12 +109,9 @@ Rules:
 9. A listed test is evidence only if you trace the candidate code behavior against that exact test. Do not infer test failure from a vague mismatch.
 10. When citing a listed test failure, quote the exact assertion expectation from Available tests. If the expected output looks unusual, treat it as authoritative rather than replacing it with a standard definition or intuition.
 11. Do not call code unrelated merely because variable names, decomposition, or mathematical transformations differ from the statement. Equivalent factorization, counting, DP, or helper-class formulations can still be functionally correct.
-12. Keep the final JSON compact: summary under 35 words; evidence has at most 2 items, each under 25 words. Output no prose outside <review>.
+12. {format_rule}
 
-Structured final review format:
-<review>
-{{"axiom_grade": <0-5 integer>, "score": <0-100 number>, "verdict": "accept|minor_issue|major_issue", "functional_correctness": true, "repair_effort": "none|minor_quality|major_quality|minor_functional|major_functional|rewrite", "evidence_type": "provided_test_failure|deduced_counterexample|static_logic_contradiction|uncertain", "summary": "...", "evidence": ["...", "..."]}}
-</review>
+{output_format_section}
 
 @@ Response
 """

@@ -222,6 +222,15 @@ class BaseConfig:
     review_target_leaf_count: int = field(
         default=0, metadata={"help": "0 disables the cap; otherwise stop exploration/finalization after this many valid review leaves"}
     )
+    review_step_parent_similarity_threshold: float = field(
+        default=0.90, metadata={"help": "skip a non-final review step if it is this similar to its parent; 1.0 disables parent near-dedup"}
+    )
+    review_step_sibling_similarity_threshold: float = field(
+        default=0.90, metadata={"help": "skip a non-final review step if it is this similar to an existing sibling; 1.0 disables sibling near-dedup"}
+    )
+    review_step_min_words_for_dedupe: int = field(
+        default=6, metadata={"help": "minimum normalized word count before applying review-step near-duplicate suppression"}
+    )
     neutral_visit_reward: float = field(
         default=0.0, metadata={"help": "reward used to mark a non-terminal node as visited in review MCTS"}
     )
