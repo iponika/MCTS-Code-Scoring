@@ -2,6 +2,11 @@
 
 This file records Codex-made project changes so work can be resumed safely across forks and sessions. Each future code or workflow change should update this log and be followed by a git commit.
 
+## 2026-04-27
+
+- Parameterized AXIOM clean evaluation so it can run either final-only scoring or stepwise review-MCTS inference, with configurable `SCORE_KEY`, step/candidate counts, rethink thresholds, and optional base/trained eval stages.
+- Added a stepwise MCTS score-key comparison wrapper for the 2026-04-27 run: it reuses the latest MCTS checkpoint, disables `--final_only_json`, allows multi-step/multi-candidate value-reranked inference, compares `response_mean_value` against `last_value`, and writes a compact comparison against the existing Direct-Bootstrap final-only baseline.
+
 ## 2026-04-26
 
 - Made CodeCritic AXIOM seed preparation observable and bounded: pass-rate evaluation now supports assertion caps/timeouts, the seed builder emits progress and elapsed metadata, and the 4B bootstrap comparison runner defaults to capped objective-test execution so first-stage seed preparation no longer appears stalled on larger overnight runs.

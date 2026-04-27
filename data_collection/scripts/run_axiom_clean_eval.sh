@@ -18,6 +18,21 @@ MAX_PROBLEM_CHARS="${MAX_PROBLEM_CHARS:-12000}"
 MAX_CODE_CHARS="${MAX_CODE_CHARS:-12000}"
 MAX_NEW_TOKENS="${MAX_NEW_TOKENS:-256}"
 FINAL_MAX_NEW_TOKENS="${FINAL_MAX_NEW_TOKENS:-320}"
+SCORE_KEY="${SCORE_KEY:-response_mean_value}"
+FINAL_ONLY_JSON="${FINAL_ONLY_JSON:-1}"
+BASE_DIRECT_MAX_STEPS="${BASE_DIRECT_MAX_STEPS:-1}"
+BASE_DIRECT_NUM_CANDIDATES="${BASE_DIRECT_NUM_CANDIDATES:-1}"
+TRAINED_DIRECT_MAX_STEPS="${TRAINED_DIRECT_MAX_STEPS:-1}"
+TRAINED_DIRECT_NUM_CANDIDATES="${TRAINED_DIRECT_NUM_CANDIDATES:-1}"
+TRAINED_VALUE_MAX_STEPS="${TRAINED_VALUE_MAX_STEPS:-1}"
+TRAINED_VALUE_NUM_CANDIDATES="${TRAINED_VALUE_NUM_CANDIDATES:-2}"
+RETHINK_THRESHOLD="${RETHINK_THRESHOLD:--0.2}"
+RETHINK_SPREAD_THRESHOLD="${RETHINK_SPREAD_THRESHOLD:-0.0}"
+MAX_RETHINKS="${MAX_RETHINKS:-1}"
+MAX_FINAL_RETRIES="${MAX_FINAL_RETRIES:-2}"
+EVAL_BASE_DIRECT="${EVAL_BASE_DIRECT:-1}"
+EVAL_TRAINED_DIRECT="${EVAL_TRAINED_DIRECT:-1}"
+EVAL_TRAINED_VALUE="${EVAL_TRAINED_VALUE:-1}"
 NTFY_URL="${NTFY_URL:-https://ntfy.sh/iponika_mcts}"
 
 mkdir -p "${RUN_DIR}" "${LOG_DIR}" "${EVAL_ROOT}"
@@ -142,6 +157,10 @@ eval_one() {
     if [[ "${skip_value}" == "skip_value" ]]; then
       extra_args+=(--skip_value_scoring)
     fi
+    final_mode_args=()
+    if [[ "${FINAL_ONLY_JSON}" == "1" || "${FINAL_ONLY_JSON,,}" == "true" || "${FINAL_ONLY_JSON,,}" == "yes" ]]; then
+      final_mode_args+=(--final_only_json)
+    fi
     CUDA_VISIBLE_DEVICES="${cuda_device}" \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True \
@@ -165,16 +184,19 @@ eval_one() {
       --final_max_new_tokens "${FINAL_MAX_NEW_TOKENS}" \
       --temperature "${temperature}" \
       --top_p "${top_p}" \
-      --score_key response_mean_value \
+      --score_key "${SCORE_KEY}" \
       --seed "${seed}" \
-      --final_only_json \
+      "${final_mode_args[@]}" \
       --max_problem_chars "${MAX_PROBLEM_CHARS}" \
       --max_code_chars "${MAX_CODE_CHARS}" \
       --no-mark_code_truncation_inside_block \
       --format_penalty 1.0 \
       --low_grade_no_evidence_penalty 0.4 \
+      --rethink_threshold "${RETHINK_THRESHOLD}" \
+      --rethink_spread_threshold "${RETHINK_SPREAD_THRESHOLD}" \
+      --max_rethinks "${MAX_RETHINKS}" \
       --final_temperature 0 \
-      --max_final_retries 2
+      --max_final_retries "${MAX_FINAL_RETRIES}"
     PYTHONPATH="${ROOT}:${ROOT}/model_training/src:${ROOT}/data_collection" \
     PYTHONDONTWRITEBYTECODE=1 \
     HF_HUB_OFFLINE=1 \
@@ -226,13 +248,20 @@ main() {
     exit 0
   fi
 
-  CURRENT_STAGE="eval_base_direct"
-  eval_one "base_direct_clean" 0 "${BASE_MODEL_PATH}" "${BASE_MODEL_PATH}" "share" "skip_value" 1 1 0 1.0 202604221
+  if [[ "${EVAL_BASE_DIRECT}" == "1" ]]; then
+    CURRENT_STAGE="eval_base_direct"
+    eval_one "base_direct_clean" 0 "${BASE_MODEL_PATH}" "${BASE_MODEL_PATH}" "share" "skip_value" "${BASE_DIRECT_MAX_STEPS}" "${BASE_DIRECT_NUM_CANDIDATES}" 0 1.0 202604221
+  fi
 
   if [[ -n "${TRAINED_MODEL_PATH}" && -d "${TRAINED_MODEL_PATH}" ]]; then
-    CURRENT_STAGE="eval_trained"
-    eval_one "trained_direct_clean" 0 "${TRAINED_MODEL_PATH}" "${TRAINED_MODEL_PATH}" "share" "skip_value" 1 1 0 1.0 202604222
-    eval_one "trained_value_rerank_clean" 0 "${TRAINED_MODEL_PATH}" "${TRAINED_MODEL_PATH}" "share" "use_value" 1 2 0.7 0.95 202604223
+    if [[ "${EVAL_TRAINED_DIRECT}" == "1" ]]; then
+      CURRENT_STAGE="eval_trained_direct"
+      eval_one "trained_direct_clean" 0 "${TRAINED_MODEL_PATH}" "${TRAINED_MODEL_PATH}" "share" "skip_value" "${TRAINED_DIRECT_MAX_STEPS}" "${TRAINED_DIRECT_NUM_CANDIDATES}" 0 1.0 202604222
+    fi
+    if [[ "${EVAL_TRAINED_VALUE}" == "1" ]]; then
+      CURRENT_STAGE="eval_trained_value"
+      eval_one "trained_value_rerank_clean" 0 "${TRAINED_MODEL_PATH}" "${TRAINED_MODEL_PATH}" "share" "use_value" "${TRAINED_VALUE_MAX_STEPS}" "${TRAINED_VALUE_NUM_CANDIDATES}" 0.7 0.95 202604223
+    fi
   else
     echo "[stage:eval_trained] TRAINED_MODEL_PATH is empty or missing; skipping trained evaluations."
   fi
