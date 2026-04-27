@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import argparse
 import copy
+import difflib
 import json
 import random
+import re
 import statistics
 from collections import defaultdict
 from pathlib import Path
@@ -640,6 +642,74 @@ def policy_grade_matches_item(item: dict[str, Any]) -> bool:
     return policy_grade_matches(item.get("parsed_axiom_grade"), item.get("target_axiom_grade"))
 
 
+def parse_response_review_payload(segment: str) -> dict[str, Any]:
+    payload = str(segment or "").strip()
+    if payload.startswith("<review>"):
+        payload = payload[len("<review>"):].lstrip()
+    if payload.endswith("</review>"):
+        payload = payload[: -len("</review>")].rstrip()
+    if "{" in payload and "}" in payload:
+        payload = payload[payload.find("{") : payload.rfind("}") + 1]
+    try:
+        parsed = json.loads(payload)
+    except json.JSONDecodeError:
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
+
+
+def normalize_reasoning_segment_for_similarity(segment: str) -> str:
+    cleaned = str(segment or "").lower()
+    cleaned = cleaned.replace(
+        "premature final review draft retained as a reasoning note, not as the final scored review",
+        " ",
+    )
+    cleaned = re.sub(r"</?(step|review)>", " ", cleaned)
+    cleaned = re.sub(r"[^a-z0-9_]+", " ", cleaned)
+    return re.sub(r"\s+", " ", cleaned).strip()
+
+
+def reasoning_segments_too_similar(left: str, right: str, threshold: float = 0.90) -> bool:
+    left_norm = normalize_reasoning_segment_for_similarity(left)
+    right_norm = normalize_reasoning_segment_for_similarity(right)
+    if len(left_norm.split()) < 6 or len(right_norm.split()) < 6:
+        return False
+    return difflib.SequenceMatcher(None, left_norm, right_norm).ratio() >= threshold
+
+
+def policy_reasoning_quality_issue(item: dict[str, Any]) -> str | None:
+    responses = [str(segment or "") for segment in item.get("response", [])]
+    if not responses:
+        return "empty_response"
+
+    step_segments = [segment for segment in responses if not segment.lstrip().startswith("<review>")]
+    for segment in step_segments:
+        lowered = segment.lower()
+        if "premature final review draft retained" in lowered:
+            return "premature_review_step"
+        stripped = segment.strip()
+        if stripped.startswith("<step>"):
+            stripped = stripped[len("<step>"):].lstrip()
+        if stripped.startswith("{") or '"axiom_grade"' in lowered:
+            return "json_review_inside_step"
+
+    for left, right in zip(step_segments, step_segments[1:]):
+        if reasoning_segments_too_similar(left, right):
+            return "repeated_step"
+
+    final_payload = parse_response_review_payload(responses[-1])
+    if not final_payload:
+        return "missing_final_review_payload"
+    evidence_type = str(final_payload.get("evidence_type") or "").strip().lower()
+    evidence = final_payload.get("evidence")
+    evidence_items = [str(item).strip() for item in evidence] if isinstance(evidence, list) else []
+    evidence_items = [item for item in evidence_items if item]
+    if evidence_type in {"", "none"}:
+        return "weak_final_evidence_type"
+    if not evidence_items:
+        return "empty_final_evidence"
+    return None
+
+
 def convert_records(
     records: Iterable[dict[str, Any]],
     policy_min_q: float,
@@ -701,6 +771,16 @@ def convert_records(
                 continue
             item["is_best_path"] = tag in best
             item["data_split"] = data_split
+            quality_issue = policy_reasoning_quality_issue(item) if train_lm else None
+            if quality_issue:
+                train_lm = False
+                item["train_lm"] = False
+                item["force_value_only"] = True
+                item["lm_loss_weight"] = 0.0
+                item["policy_block_reason"] = "weak_or_malformed_reasoning"
+                item["policy_reasoning_quality_issue"] = quality_issue
+                stats["policy_reasoning_quality_blocked"] += 1
+                stats[f"policy_reasoning_quality_{quality_issue}"] += 1
             if policy_candidate and not grade_matches:
                 item["force_value_only"] = True
                 item["lm_loss_weight"] = 0.0
@@ -1037,7 +1117,8 @@ def refresh_policy_flags(items: list[dict[str, Any]], policy_min_q: float) -> di
     for item in items:
         old_train_lm = bool(item.get("train_lm"))
         terminal_q = numeric_q_value(item.get("terminal_q_value"))
-        new_train_lm = (
+        quality_issue = policy_reasoning_quality_issue(item)
+        policy_eligible_without_quality = (
             bool(item.get("is_best_path"))
             and terminal_q >= policy_min_q
             and item.get("terminal_error") is None
@@ -1045,6 +1126,14 @@ def refresh_policy_flags(items: list[dict[str, Any]], policy_min_q: float) -> di
             and policy_grade_matches_item(item)
             and (not item.get("verifier_feedback") or item.get("allow_verifier_policy"))
         )
+        if quality_issue and (old_train_lm or policy_eligible_without_quality):
+            item["force_value_only"] = True
+            item["lm_loss_weight"] = 0.0
+            item["policy_block_reason"] = "weak_or_malformed_reasoning"
+            item["policy_reasoning_quality_issue"] = quality_issue
+            stats["policy_reasoning_quality_blocked"] += 1
+            stats[f"policy_reasoning_quality_{quality_issue}"] += 1
+        new_train_lm = policy_eligible_without_quality and quality_issue is None
         item["train_lm"] = new_train_lm
         if not new_train_lm and item.get("force_value_only"):
             item["lm_loss_weight"] = 0.0

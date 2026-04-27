@@ -152,6 +152,130 @@ class ReviewTrainingDedupeTest(unittest.TestCase):
         self.assertTrue(items[0]["train_lm"])
         self.assertEqual(stats["policy_paths"], 1)
 
+    def test_high_q_exact_grade_with_empty_final_evidence_is_value_only(self) -> None:
+        review = (
+            '{"axiom_grade":5,"score":100,"verdict":"accept",'
+            '"functional_correctness":true,"repair_effort":"none",'
+            '"evidence_type":"none","summary":"No defects.",'
+            '"evidence":[]}'
+        )
+        tag, terminal = terminal_node("0.0.0.0", review)
+        record = {
+            "dataset_index": 11,
+            "source": "unit",
+            "subset": "unit",
+            "problem": "Return x + 1.",
+            "candidate_code": "def f(x):\n    return x + 1",
+            "tests": [],
+            "language": "python",
+            "best_reviews_by_dimension": {"Correctness Verification": {"tag": tag}},
+            "react": {
+                "0": {},
+                "0.0": {"target_dimension": "Correctness Verification"},
+                "0.0.0": {
+                    "text": "<step>\nTrace x=1: code returns 2.\n</step>",
+                    "target_dimension": "Correctness Verification",
+                    "q_value": 1.0,
+                },
+                tag: terminal,
+            },
+        }
+
+        items, stats = convert_records(
+            [record],
+            policy_min_q=0.5,
+            max_value_paths_per_dimension=0,
+        )
+
+        self.assertEqual(len(items), 1)
+        self.assertFalse(items[0]["train_lm"])
+        self.assertEqual(items[0]["policy_block_reason"], "weak_or_malformed_reasoning")
+        self.assertEqual(stats["policy_reasoning_quality_blocked"], 1)
+
+    def test_high_q_exact_grade_with_premature_review_step_is_value_only(self) -> None:
+        review = (
+            '{"axiom_grade":5,"score":100,"verdict":"accept",'
+            '"functional_correctness":true,"repair_effort":"none",'
+            '"evidence_type":"deduced_counterexample","summary":"Code returns x plus one.",'
+            '"evidence":["For x=1, code returns 2, matching the requirement."]}'
+        )
+        tag, terminal = terminal_node("0.0.0.0", review)
+        record = {
+            "dataset_index": 12,
+            "source": "unit",
+            "subset": "unit",
+            "problem": "Return x + 1.",
+            "candidate_code": "def f(x):\n    return x + 1",
+            "tests": [],
+            "language": "python",
+            "best_reviews_by_dimension": {"Correctness Verification": {"tag": tag}},
+            "react": {
+                "0": {},
+                "0.0": {"target_dimension": "Correctness Verification"},
+                "0.0.0": {
+                    "text": "<step>\nPremature final review draft retained as a reasoning note, not as the final scored review: {\"axiom_grade\": 5}\n</step>",
+                    "target_dimension": "Correctness Verification",
+                    "q_value": 1.0,
+                },
+                tag: terminal,
+            },
+        }
+
+        items, stats = convert_records(
+            [record],
+            policy_min_q=0.5,
+            max_value_paths_per_dimension=0,
+        )
+
+        self.assertEqual(len(items), 1)
+        self.assertFalse(items[0]["train_lm"])
+        self.assertEqual(items[0]["policy_block_reason"], "weak_or_malformed_reasoning")
+        self.assertEqual(stats["policy_reasoning_quality_blocked"], 1)
+
+    def test_high_q_exact_grade_with_repeated_step_is_value_only(self) -> None:
+        review = (
+            '{"axiom_grade":5,"score":100,"verdict":"accept",'
+            '"functional_correctness":true,"repair_effort":"none",'
+            '"evidence_type":"deduced_counterexample","summary":"Code returns x plus one.",'
+            '"evidence":["For x=1, code returns 2, matching the requirement."]}'
+        )
+        tag, terminal = terminal_node("0.0.0.0", review)
+        record = {
+            "dataset_index": 13,
+            "source": "unit",
+            "subset": "unit",
+            "problem": "Return x + 1.",
+            "candidate_code": "def f(x):\n    return x + 1",
+            "tests": [],
+            "language": "python",
+            "best_reviews_by_dimension": {"Correctness Verification": {"tag": tag}},
+            "react": {
+                "0": {},
+                "0.0": {
+                    "text": "<step>\nTrace input x=1: the code returns 2, matching the requirement.\n</step>",
+                    "target_dimension": "Correctness Verification",
+                    "q_value": 1.0,
+                },
+                "0.0.0": {
+                    "text": "<step>\nTrace x=1: code returns 2, matching the requirement.\n</step>",
+                    "target_dimension": "Correctness Verification",
+                    "q_value": 1.0,
+                },
+                tag: terminal,
+            },
+        }
+
+        items, stats = convert_records(
+            [record],
+            policy_min_q=0.5,
+            max_value_paths_per_dimension=0,
+        )
+
+        self.assertEqual(len(items), 1)
+        self.assertFalse(items[0]["train_lm"])
+        self.assertEqual(items[0]["policy_block_reason"], "weak_or_malformed_reasoning")
+        self.assertEqual(stats["policy_reasoning_quality_blocked"], 1)
+
     def test_stage_value_labels_lift_promising_intermediate_step(self) -> None:
         review = (
             '{"axiom_grade":5,"score":100,"verdict":"accept",'
