@@ -4,6 +4,13 @@ This file records Codex-made project changes so work can be resumed safely acros
 
 ## 2026-04-27
 
+- Optimized review value-only batches in `RLTrainer`: when a batch has no LM-supervised tokens, Qwen-style models now use `logits_to_keep=1` and skip cross-entropy, avoiding unnecessary full sequence-by-vocabulary logits during value-head training.
+- Added a `force_gradient_checkpointing` training switch and changed the Qwen3.5-9B FSDP smoke to use FSDP activation checkpointing instead of Trainer gradient checkpointing, avoiding the previous conflict while reducing backward activation memory.
+- Parameterized LoRA rank/alpha/dropout/target scope for review training and set the Qwen3.5-9B FSDP smoke to a lighter rank-8 attention-only LoRA profile, preserving the previous rank-64 full-scope defaults for other scripts.
+- Added a configurable `FSDP_OFFLOAD_PARAMS` switch to the Qwen3.5-9B FSDP smoke script after confirming the first real backward pass OOMs even on an 888-token batch without CPU offload.
+- Revised the Qwen3.5-9B FSDP smoke launcher to keep Accelerate mixed precision off by default while loading/casting the model wrapper itself to bf16, avoiding Accelerate's FSDP fp32 flat-parameter upcast that OOMs on dual 4090s before training begins.
+- Normalized the review value-head training wrapper to bf16 in non-inference mode so Accelerate FSDP can flatten Qwen3.5-9B decoder modules without mixed bf16/fp32 LoRA/value-head parameters.
+- Added a Qwen3.5-9B dual-4090 FSDP smoke workflow and documentation. The new script launches `magicoder.train_multi` through Accelerate FSDP with `Qwen3_5DecoderLayer` wrapping, LoRA/value-head training, token-length auditing, resume support, and ntfy notification so 4096/6144/8192-token capacity can be probed without the old single-card truncation pressure.
 - Added a policy-imitation quality gate in review MCTS preprocessing: exact-grade high-q paths with empty/`none` final evidence, premature JSON review steps, or near-duplicate reasoning steps are kept as value-only supervision instead of being imitated by the policy model.
 - Tightened review-MCTS step generation after tree inspection: non-final prompts now hide the final `<review>` JSON schema, require each `<step>` to add new evidence or challenge a prior claim, and skip near-duplicate step children that merely restate a parent or sibling.
 - Parameterized AXIOM clean evaluation so it can run either final-only scoring or stepwise review-MCTS inference, with configurable `SCORE_KEY`, step/candidate counts, rethink thresholds, and optional base/trained eval stages.
