@@ -4,6 +4,7 @@ This file records Codex-made project changes so work can be resumed safely acros
 
 ## 2026-04-28
 
+- Added `run_qwen35_9b_direct_stepwise_vs_review_smoke.sh`, a minimal Qwen3.5-9B Direct-review-only vs Direct-stepwise comparison workflow using vLLM tensor-parallel generation, FSDP dual-4090 LoRA/value training, and small AXIOM stepwise evaluation.
 - Added `--response_mode stepwise` and `--reasoning_steps` to `data_collection/direct_bootstrap_review.py`, enabling non-MCTS Direct-Bootstrap rollouts that sequentially generate fixed `<step>` reasoning blocks before the final `<review>`.
 - Added `DIRECT_BOOTSTRAP_RESPONSE_MODE` and `DIRECT_BOOTSTRAP_REASONING_STEPS` environment controls to the 4B bootstrap comparison scripts so review-only Direct and stepwise Direct can be compared under the same training/evaluation workflow.
 - Added `run_direct_stepwise_vs_review_qwen3_4b.sh`, a focused comparison workflow that reuses the latest review-only Direct baseline, trains only a new non-MCTS stepwise Direct checkpoint, and evaluates it with stepwise value-guided inference.
