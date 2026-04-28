@@ -2,6 +2,12 @@
 
 This file records Codex-made project changes so work can be resumed safely across forks and sessions. Each future code or workflow change should update this log and be followed by a git commit.
 
+## 2026-04-28
+
+- Added `--response_mode stepwise` and `--reasoning_steps` to `data_collection/direct_bootstrap_review.py`, enabling non-MCTS Direct-Bootstrap rollouts that sequentially generate fixed `<step>` reasoning blocks before the final `<review>`.
+- Added `DIRECT_BOOTSTRAP_RESPONSE_MODE` and `DIRECT_BOOTSTRAP_REASONING_STEPS` environment controls to the 4B bootstrap comparison scripts so review-only Direct and stepwise Direct can be compared under the same training/evaluation workflow.
+- Verified the new stepwise Direct react-tree shape with a no-GPU smoke test: a direct trajectory is exported as `c0 -> c0.0 -> c0.0.0 -> c0.0.0.0` and preprocesses into `early, early, middle, review` response segments.
+
 ## 2026-04-27
 
 - Updated the 4B bootstrap-comparison workflow for the current stepwise-MCTS objective: default training context is now 3072 tokens, MCTS value-only paths are no longer downsampled to Direct by default, and optional `policy_response_mode=final_review` can collapse MCTS policy items to the final `<review>` for final-only scorer comparisons.
