@@ -12,13 +12,23 @@ SEED_MAX_GRADE="${SEED_MAX_GRADE:-5}"
 SEED_MAX_OBJECTIVE_ASSERTIONS_PER_SPLIT="${SEED_MAX_OBJECTIVE_ASSERTIONS_PER_SPLIT:-8}"
 SEED_ASSERTION_TIMEOUT_SECONDS="${SEED_ASSERTION_TIMEOUT_SECONDS:-1.5}"
 DIRECT_REPEATS="${DIRECT_REPEATS:-4}"
-MAX_TRAINING_SEQ_LENGTH="${MAX_TRAINING_SEQ_LENGTH:-1536}"
+MAX_TRAINING_SEQ_LENGTH="${MAX_TRAINING_SEQ_LENGTH:-3072}"
 MAX_STEPS="${MAX_STEPS:-240}"
 EVAL_PER_GRADE="${EVAL_PER_GRADE:-8}"
 POLICY_MIN_Q="${POLICY_MIN_Q:-0.5}"
 MAX_VALUE_PATHS_PER_DIMENSION="${MAX_VALUE_PATHS_PER_DIMENSION:-0}"
+DIRECT_POLICY_RESPONSE_MODE="${DIRECT_POLICY_RESPONSE_MODE:-path}"
+MCTS_POLICY_RESPONSE_MODE="${MCTS_POLICY_RESPONSE_MODE:-path}"
+DIRECT_KEEP_ALL_VALUE_PATHS="${DIRECT_KEEP_ALL_VALUE_PATHS:-1}"
+MCTS_KEEP_ALL_VALUE_PATHS="${MCTS_KEEP_ALL_VALUE_PATHS:-1}"
 BOOTSTRAP_STRATIFY_BY_DATASET="${BOOTSTRAP_STRATIFY_BY_DATASET:-1}"
 BOOTSTRAP_STRATIFY_BY_DELTA_BUCKET="${BOOTSTRAP_STRATIFY_BY_DELTA_BUCKET:-1}"
+EVAL_FINAL_ONLY_JSON="${EVAL_FINAL_ONLY_JSON:-1}"
+STEPWISE_MAX_STEPS="${STEPWISE_MAX_STEPS:-3}"
+STEPWISE_NUM_CANDIDATES="${STEPWISE_NUM_CANDIDATES:-3}"
+STEPWISE_MAX_RETHINKS="${STEPWISE_MAX_RETHINKS:-1}"
+STEPWISE_RETHINK_THRESHOLD="${STEPWISE_RETHINK_THRESHOLD:--0.2}"
+STEPWISE_RETHINK_SPREAD_THRESHOLD="${STEPWISE_RETHINK_SPREAD_THRESHOLD:-0.0}"
 NTFY_URL="${NTFY_URL:-https://ntfy.sh/iponika_mcts}"
 
 RUN_DIR="${ROOT}/data_collection/review_mcts_runs/${RUN_NAME}"
@@ -143,6 +153,12 @@ prepare_bootstrap_train() {
   local mode="$1"
   local raw_file="$2"
   local output_file="$3"
+  local policy_response_mode="path"
+  if [[ "${mode}" == "direct" ]]; then
+    policy_response_mode="${DIRECT_POLICY_RESPONSE_MODE}"
+  elif [[ "${mode}" == "mcts" ]]; then
+    policy_response_mode="${MCTS_POLICY_RESPONSE_MODE}"
+  fi
   CURRENT_STAGE="prepare_${mode}_train"
   if [[ -f "${output_file}" ]]; then
     echo "[stage:${CURRENT_STAGE}] exists: ${output_file}"
@@ -154,6 +170,7 @@ prepare_bootstrap_train() {
       --input "${raw_file}" \
       --output_file "${output_file}" \
       --policy_min_q "${POLICY_MIN_Q}" \
+      --policy_response_mode "${policy_response_mode}" \
       --max_value_paths_per_dimension "${MAX_VALUE_PATHS_PER_DIMENSION}"
 }
 
@@ -179,37 +196,57 @@ def count(path_str: str):
 direct = count("${DIRECT_TRAIN_RAW}")
 mcts = count("${MCTS_TRAIN_RAW}")
 target_policy = min(direct['policy'], mcts['policy'])
-target_value = min(direct['value'], mcts['value'])
-target_total = target_policy + target_value
+direct_target_value = direct['value'] if "${DIRECT_KEEP_ALL_VALUE_PATHS}" == "1" else min(direct['value'], mcts['value'])
+mcts_target_value = mcts['value'] if "${MCTS_KEEP_ALL_VALUE_PATHS}" == "1" else min(direct['value'], mcts['value'])
+direct_target_total = target_policy + direct_target_value
+mcts_target_total = target_policy + mcts_target_value
 payload = {
     'direct': direct,
     'mcts': mcts,
     'target_policy': target_policy,
-    'target_value': target_value,
-    'target_total': target_total,
+    'direct_target_value': direct_target_value,
+    'mcts_target_value': mcts_target_value,
+    'direct_target_total': direct_target_total,
+    'mcts_target_total': mcts_target_total,
+    'direct_keep_all_value_paths': "${DIRECT_KEEP_ALL_VALUE_PATHS}",
+    'mcts_keep_all_value_paths': "${MCTS_KEEP_ALL_VALUE_PATHS}",
 }
 print(json.dumps(payload))
 PY
   )"
   local target_policy
-  local target_value
-  local target_total
+  local direct_target_value
+  local mcts_target_value
+  local direct_target_total
+  local mcts_target_total
   target_policy="$(python - <<PY
 import json
 payload=json.loads('''${counts}''')
 print(payload['target_policy'])
 PY
 )"
-  target_value="$(python - <<PY
+  direct_target_value="$(python - <<PY
 import json
 payload=json.loads('''${counts}''')
-print(payload['target_value'])
+print(payload['direct_target_value'])
 PY
 )"
-  target_total="$(python - <<PY
+  mcts_target_value="$(python - <<PY
 import json
 payload=json.loads('''${counts}''')
-print(payload['target_total'])
+print(payload['mcts_target_value'])
+PY
+)"
+  direct_target_total="$(python - <<PY
+import json
+payload=json.loads('''${counts}''')
+print(payload['direct_target_total'])
+PY
+)"
+  mcts_target_total="$(python - <<PY
+import json
+payload=json.loads('''${counts}''')
+print(payload['mcts_target_total'])
 PY
 )"
   echo "${counts}" | python -m json.tool > "${BALANCE_META}"
@@ -232,22 +269,22 @@ PY
       --input "${DIRECT_TRAIN_RAW}" \
       --output "${DIRECT_TRAIN}" \
       --target_policy_count "${target_policy}" \
-      --target_value_count "${target_value}" \
-      --target_total_count "${target_total}" \
+      --target_value_count "${direct_target_value}" \
+      --target_total_count "${direct_target_total}" \
       "${direct_balance_args[@]}"
   PYTHONPATH="${ROOT}" UV_CACHE_DIR=/tmp/uv-cache \
     uv run python data_collection/rebalance_review_train_data.py \
       --input "${MCTS_TRAIN_RAW}" \
       --output "${MCTS_TRAIN}" \
       --target_policy_count "${target_policy}" \
-      --target_value_count "${target_value}" \
-      --target_total_count "${target_total}" \
+      --target_value_count "${mcts_target_value}" \
+      --target_total_count "${mcts_target_total}" \
       "${mcts_balance_args[@]}"
   PYTHONPATH="${ROOT}" UV_CACHE_DIR=/tmp/uv-cache \
     uv run python data_collection/rebalance_review_train_data.py \
       --input "${STATIC_TRAIN_RAW}" \
       --output "${STATIC_TRAIN}" \
-      --target_total_count "${target_total}" \
+      --target_total_count "${direct_target_total}" \
       "${static_balance_args[@]}"
 }
 
@@ -316,6 +353,12 @@ run_eval_for_model() {
   TRAIN_DATA="${SEED_DATA}" \
   PER_GRADE="${EVAL_PER_GRADE}" \
   DROP_AXIOM_GRADE_ZERO=1 \
+  FINAL_ONLY_JSON="${EVAL_FINAL_ONLY_JSON}" \
+  TRAINED_VALUE_MAX_STEPS="${STEPWISE_MAX_STEPS}" \
+  TRAINED_VALUE_NUM_CANDIDATES="${STEPWISE_NUM_CANDIDATES}" \
+  MAX_RETHINKS="${STEPWISE_MAX_RETHINKS}" \
+  RETHINK_THRESHOLD="${STEPWISE_RETHINK_THRESHOLD}" \
+  RETHINK_SPREAD_THRESHOLD="${STEPWISE_RETHINK_SPREAD_THRESHOLD}" \
   NTFY_URL="${NTFY_URL}" \
   "${ROOT}/data_collection/scripts/run_axiom_clean_eval.sh"
 }
@@ -347,6 +390,12 @@ summary = {
     "static_train": "${STATIC_TRAIN}",
     "direct_train": "${DIRECT_TRAIN}",
     "mcts_train": "${MCTS_TRAIN}",
+    "max_training_seq_length": int("${MAX_TRAINING_SEQ_LENGTH}"),
+    "eval_final_only_json": "${EVAL_FINAL_ONLY_JSON}",
+    "direct_policy_response_mode": "${DIRECT_POLICY_RESPONSE_MODE}",
+    "mcts_policy_response_mode": "${MCTS_POLICY_RESPONSE_MODE}",
+    "direct_keep_all_value_paths": "${DIRECT_KEEP_ALL_VALUE_PATHS}",
+    "mcts_keep_all_value_paths": "${MCTS_KEEP_ALL_VALUE_PATHS}",
     "evaluations": {
         "static": load_eval("static"),
         "direct": load_eval("direct"),

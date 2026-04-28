@@ -4,6 +4,7 @@ This file records Codex-made project changes so work can be resumed safely acros
 
 ## 2026-04-27
 
+- Updated the 4B bootstrap-comparison workflow for the current stepwise-MCTS objective: default training context is now 3072 tokens, MCTS value-only paths are no longer downsampled to Direct by default, and optional `policy_response_mode=final_review` can collapse MCTS policy items to the final `<review>` for final-only scorer comparisons.
 - Optimized review value-only batches in `RLTrainer`: when a batch has no LM-supervised tokens, Qwen-style models now use `logits_to_keep=1` and skip cross-entropy, avoiding unnecessary full sequence-by-vocabulary logits during value-head training.
 - Added a `force_gradient_checkpointing` training switch and changed the Qwen3.5-9B FSDP smoke to use FSDP activation checkpointing instead of Trainer gradient checkpointing, avoiding the previous conflict while reducing backward activation memory.
 - Parameterized LoRA rank/alpha/dropout/target scope for review training and set the Qwen3.5-9B FSDP smoke to a lighter rank-8 attention-only LoRA profile, preserving the previous rank-64 full-scope defaults for other scripts.

@@ -1144,6 +1144,33 @@ def refresh_policy_flags(items: list[dict[str, Any]], policy_min_q: float) -> di
     return dict(stats)
 
 
+def collapse_policy_responses_to_final_review(items: list[dict[str, Any]]) -> dict[str, int]:
+    stats = defaultdict(int)
+    for item in items:
+        if not item.get("train_lm"):
+            continue
+        responses = [str(segment or "") for segment in item.get("response", [])]
+        if not responses:
+            continue
+        final_index = None
+        for index in range(len(responses) - 1, -1, -1):
+            if responses[index].lstrip().startswith("<review>"):
+                final_index = index
+                break
+        if final_index is None:
+            stats["policy_final_review_missing"] += 1
+            continue
+
+        for key in ["q_value", "raw_q_value", "q_node_tags", "q_descendant_best", "q_stage"]:
+            values = item.get(key)
+            if isinstance(values, list) and len(values) == len(responses):
+                item[key] = [values[final_index]]
+        item["response"] = [responses[final_index]]
+        item["policy_response_mode"] = "final_review"
+        stats["policy_final_review_collapsed"] += 1
+    return dict(stats)
+
+
 def dedupe_items(items: Iterable[dict[str, Any]]) -> tuple[list[dict[str, Any]], int]:
     deduped = []
     seen: set[tuple[Any, str]] = set()
@@ -1185,6 +1212,12 @@ def main() -> None:
     )
     parser.add_argument("--output_file", required=True, help="Output JSONL consumed by magicoder.train_multi --task review.")
     parser.add_argument("--policy_min_q", type=float, default=0.5, help="Minimum terminal q_value for LM imitation.")
+    parser.add_argument(
+        "--policy_response_mode",
+        choices=["path", "final_review"],
+        default="path",
+        help="Keep full best paths for policy imitation, or collapse policy items to the final <review> only.",
+    )
     parser.add_argument(
         "--max_value_paths_per_dimension",
         type=int,
@@ -1378,6 +1411,8 @@ def main() -> None:
     else:
         stats["score_consensus_enabled"] = 0
     stats.update({f"final_{key}": value for key, value in refresh_policy_flags(items, args.policy_min_q).items()})
+    if args.policy_response_mode == "final_review":
+        stats.update(collapse_policy_responses_to_final_review(items))
 
     if args.shuffle:
         random.Random(args.shuffle_seed).shuffle(items)
