@@ -12,6 +12,8 @@ SEED_MAX_GRADE="${SEED_MAX_GRADE:-5}"
 SEED_MAX_OBJECTIVE_ASSERTIONS_PER_SPLIT="${SEED_MAX_OBJECTIVE_ASSERTIONS_PER_SPLIT:-8}"
 SEED_ASSERTION_TIMEOUT_SECONDS="${SEED_ASSERTION_TIMEOUT_SECONDS:-1.5}"
 DIRECT_REPEATS="${DIRECT_REPEATS:-4}"
+DIRECT_BOOTSTRAP_RESPONSE_MODE="${DIRECT_BOOTSTRAP_RESPONSE_MODE:-review}"
+DIRECT_BOOTSTRAP_REASONING_STEPS="${DIRECT_BOOTSTRAP_REASONING_STEPS:-3}"
 MAX_TRAINING_SEQ_LENGTH="${MAX_TRAINING_SEQ_LENGTH:-3072}"
 MAX_STEPS="${MAX_STEPS:-240}"
 EVAL_PER_GRADE="${EVAL_PER_GRADE:-8}"
@@ -113,7 +115,9 @@ generate_direct_bootstrap() {
     --output "${DIRECT_RAW}" \
     --dimension "Correctness Verification" \
     --batch_size 4 \
-    --repeats "${DIRECT_REPEATS}"
+    --repeats "${DIRECT_REPEATS}" \
+    --response_mode "${DIRECT_BOOTSTRAP_RESPONSE_MODE}" \
+    --reasoning_steps "${DIRECT_BOOTSTRAP_REASONING_STEPS}"
 }
 
 generate_mcts_bootstrap() {
@@ -392,6 +396,8 @@ summary = {
     "mcts_train": "${MCTS_TRAIN}",
     "max_training_seq_length": int("${MAX_TRAINING_SEQ_LENGTH}"),
     "eval_final_only_json": "${EVAL_FINAL_ONLY_JSON}",
+    "direct_bootstrap_response_mode": "${DIRECT_BOOTSTRAP_RESPONSE_MODE}",
+    "direct_bootstrap_reasoning_steps": int("${DIRECT_BOOTSTRAP_REASONING_STEPS}"),
     "direct_policy_response_mode": "${DIRECT_POLICY_RESPONSE_MODE}",
     "mcts_policy_response_mode": "${MCTS_POLICY_RESPONSE_MODE}",
     "direct_keep_all_value_paths": "${DIRECT_KEEP_ALL_VALUE_PATHS}",
