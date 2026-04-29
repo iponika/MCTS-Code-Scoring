@@ -9,11 +9,12 @@ from pathlib import Path
 from typing import Any
 
 from magicoder.llm_wrapper import EncodingConfig, TokenizationContext
-from magicoder.prompt_template import QWEN_REVIEW_STEP_PROMPT
+from magicoder.prompt_template import review_prompt_for_response
 
 
 def review_item_token_length(item: dict[str, Any], context: TokenizationContext) -> int:
-    prompt = QWEN_REVIEW_STEP_PROMPT.format(instruction=item["instruction"], response="")
+    responses = item.get("response") or []
+    prompt = review_prompt_for_response(item["instruction"], str(responses[0] if responses else ""))
     prompt_ids = context.encode(EncodingConfig(add_bos=True, add_eos=False), [prompt])[0]
     total = len(prompt_ids) + 1
     for response in item.get("response") or []:

@@ -570,14 +570,15 @@ You will be given a question (problem specification) and will generate a correct
 {response}"""
 
 
-QWEN_REVIEW_STEP_PROMPT = """You are an exceptionally intelligent code reviewer.
+QWEN_REVIEW_STEP_PROMPT = """You are a code scoring model for functional correctness.
 @@ Instruction
-You will be given one code scoring task.
-Think through functional correctness and AXIOM repair effort in concise <step>...</step> blocks, then finish with exactly one <review> JSON block when the current generation mode asks you to finish.
-Keep the reasoning grounded in the task, candidate code, and any reviewer-visible tests. Do not output code fixes.
-The project goal is scalar code scoring; textual critique is only supporting evidence.
-AXIOM grade semantics: 5=production-ready; 4=functionally correct with minor quality tweaks; 3=functionally correct but major quality refactor needed; 2=functionally defective but minor fix; 1=functionally defective and major repair; 0=fundamentally flawed or mismatched. Functionality is the primary boundary: grades 3-5 are functionally correct, grades 0-2 are not.
-Calibration rule: do not assign grades 0-2 merely because an issue is suspected or because no tests are available. Low grades require concrete visible evidence such as a syntax/runtime error, missing required I/O, unrelated or empty code, a direct contradiction of the task, or a simple counterexample grounded in the prompt/tests. If the implementation is complete and plausibly functional but you cannot prove a functional defect, keep the grade in 3-5 and use repair_effort to express quality/refactoring concerns.
+Goal: assign a stable AXIOM 0-5 grade to candidate code. Text critique is only evidence for the score.
+Scope: judge functional correctness only. Ignore style, naming, formatting, missing explanation, or alternative implementation strategy unless it changes observable behavior.
+Reasoning format: write concise <step> blocks when useful, then finish with exactly one <review> JSON block.
+Evidence source: use only the task, candidate code, visible tests, completed previous steps, and private value feedback if present.
+AXIOM semantics: 5=functionally correct with no concrete defect found; 4=functionally correct with a minor visible edge/deployability concern; 3=likely functionally correct but important behavior remains uncertain; 2=functionally defective with a small local fix; 1=functionally defective requiring major repair; 0=unrelated, non-runnable, empty, or fundamentally mismatched.
+Boundary rule: grades 3-5 mean functionally correct or not disproven; grades 0-2 require a concrete visible functional defect. If no defect is verifiable, keep functional_correctness=true and choose 3-5.
+Evidence rule: do not claim tests pass or fail unless tests are visible and traced exactly. A low grade needs a syntax/runtime error, missing required I/O, direct requirement contradiction, unrelated code, or a concrete counterexample. Do not output code fixes.
 
 {instruction}
 
@@ -590,19 +591,44 @@ Final review format:
 {response}"""
 
 
-QWEN_REVIEW_STEP_ONLY_PROMPT = """You are an exceptionally intelligent code reviewer.
+QWEN_REVIEW_STEP_ONLY_PROMPT = """You are a code scoring model for functional correctness.
 @@ Instruction
-You will be given one code scoring task.
-Think through functional correctness and AXIOM repair effort in concise <step>...</step> blocks.
-Keep the reasoning grounded in the task, candidate code, and any reviewer-visible tests. Do not output code fixes.
-The project goal is scalar code scoring; textual critique is only supporting evidence.
-AXIOM grade semantics: 5=production-ready; 4=functionally correct with minor quality tweaks; 3=functionally correct but major quality refactor needed; 2=functionally defective but minor fix; 1=functionally defective and major repair; 0=fundamentally flawed or mismatched. Functionality is the primary boundary: grades 3-5 are functionally correct, grades 0-2 are not.
-Calibration rule: do not assign grades 0-2 merely because an issue is suspected or because no tests are available. Low grades require concrete visible evidence such as a syntax/runtime error, missing required I/O, unrelated or empty code, a direct contradiction of the task, or a simple counterexample grounded in the prompt/tests. If the implementation is complete and plausibly functional but you cannot prove a functional defect, keep the grade in 3-5 and use repair_effort to express quality/refactoring concerns.
+Goal: assign a stable AXIOM 0-5 grade to candidate code. Text critique is only evidence for the score.
+Scope: judge functional correctness only. Ignore style, naming, formatting, missing explanation, or alternative implementation strategy unless it changes observable behavior.
+Current output is one intermediate reasoning step, not the final score.
+Evidence source: use only the task, candidate code, visible tests, completed previous steps, and private value feedback if present.
+AXIOM boundary: grades 3-5 mean functionally correct or not disproven; grades 0-2 require a concrete visible functional defect.
+Evidence rule: do not claim tests pass or fail unless tests are visible and traced exactly. Do not output code fixes.
 
 {instruction}
 
 @@ Response
 {response}"""
+
+
+QWEN_REVIEW_FINAL_ONLY_PROMPT = """You are a code scoring model for functional correctness.
+@@ Instruction
+Goal: assign one stable AXIOM 0-5 grade to candidate code. Text critique is only evidence for the score.
+Scope: judge functional correctness only. Ignore style, naming, formatting, missing explanation, or alternative implementation strategy unless it changes observable behavior.
+AXIOM semantics: 5=functionally correct with no concrete defect found; 4=functionally correct with a minor visible edge/deployability concern; 3=likely functionally correct but important behavior remains uncertain; 2=functionally defective with a small local fix; 1=functionally defective requiring major repair; 0=unrelated, non-runnable, empty, or fundamentally mismatched.
+Boundary rule: grades 3-5 mean functionally correct or not disproven; grades 0-2 require a concrete visible functional defect. If no defect is verifiable, keep functional_correctness=true and choose 3-5.
+Evidence rule: do not claim tests pass or fail unless tests are visible and traced exactly. A low grade needs a syntax/runtime error, missing required I/O, direct requirement contradiction, unrelated code, or a concrete counterexample. Do not output code fixes.
+
+{instruction}
+
+Output exactly one JSON object wrapped in <review> tags.
+Required JSON keys: axiom_grade, score, verdict, functional_correctness, repair_effort, summary, evidence.
+Use at most 2 short evidence strings. Output no <step> blocks and no prose outside <review>.
+
+@@ Response
+{response}"""
+
+
+def review_prompt_for_response(instruction: str, response: str = "") -> str:
+    stripped = str(response or "").lstrip()
+    if stripped.startswith("<review>"):
+        return QWEN_REVIEW_FINAL_ONLY_PROMPT.format(instruction=instruction, response="")
+    return QWEN_REVIEW_STEP_PROMPT.format(instruction=instruction, response="")
 
 
 DSC_PROMPT = """You are an exceptionally intelligent coding assistant that consistently delivers accurate and reliable responses to user instructions. 

@@ -5,6 +5,7 @@ from omegaconf import OmegaConf
 from mcts_math.agents.utils import review_prompt_wrap, review_step_result_unwrap
 from mcts_math.config import BaseConfig
 from magicoder.preprocess_review_mcts_data import build_instruction
+from magicoder.prompt_template import review_prompt_for_response
 from magicoder.review_evaluator import prompt_for_dimension
 
 
@@ -51,9 +52,13 @@ class ReviewPromptVisibilityTest(unittest.TestCase):
         )
 
         self.assertIn("<step>", prompt)
-        self.assertIn("Never output <review> yet", prompt)
+        self.assertIn("Do not output <review> yet", prompt)
         self.assertNotIn("Structured final review format", prompt)
         self.assertNotIn('"axiom_grade"', prompt)
+        self.assertNotIn("exceptionally intelligent", prompt)
+        self.assertNotIn("coding assistant", prompt)
+        self.assertNotIn("problem-solving plan", prompt)
+        self.assertNotIn("<code>", prompt)
 
     def test_final_prompt_shows_final_review_json_template(self) -> None:
         config = OmegaConf.structured(BaseConfig)
@@ -74,6 +79,8 @@ class ReviewPromptVisibilityTest(unittest.TestCase):
         self.assertIn("Structured final review format", prompt)
         self.assertIn("<review>", prompt)
         self.assertIn('"axiom_grade"', prompt)
+        self.assertNotIn("exceptionally intelligent", prompt)
+        self.assertNotIn("coding assistant", prompt)
 
     def test_qwen_thinking_mode_appends_soft_switch(self) -> None:
         config = OmegaConf.structured(BaseConfig)
@@ -141,6 +148,8 @@ class ReviewPromptVisibilityTest(unittest.TestCase):
         self.assertIn("Do not output <review> yet", prompt)
         self.assertNotIn("unless the review is already ready", prompt)
         self.assertNotIn('"axiom_grade"', prompt)
+        self.assertNotIn("Final review format", prompt)
+        self.assertNotIn("exceptionally intelligent", prompt)
 
     def test_stepwise_eval_final_prompt_shows_review_format(self) -> None:
         sample = {
@@ -159,6 +168,17 @@ class ReviewPromptVisibilityTest(unittest.TestCase):
         self.assertIn("completed previous <step> blocks", prompt)
         self.assertIn("Start your next output with <review>", prompt)
         self.assertIn('"axiom_grade"', prompt)
+
+    def test_review_training_prompt_matches_response_shape(self) -> None:
+        instruction = "Scoring target: assess candidate code correctness.\n\nTask description:\nReturn x + 1."
+
+        final_prompt = review_prompt_for_response(instruction, "<review>\n{\"axiom_grade\": 5}\n</review>")
+        step_prompt = review_prompt_for_response(instruction, "<step>\ntrace_requirement: Check return value.\n</step>")
+
+        self.assertIn("Output exactly one JSON object wrapped in <review> tags", final_prompt)
+        self.assertNotIn("Reasoning format: write concise <step> blocks", final_prompt)
+        self.assertIn("Reasoning format: write concise <step> blocks", step_prompt)
+        self.assertIn("then finish with exactly one <review> JSON block", step_prompt)
 
 
 if __name__ == "__main__":

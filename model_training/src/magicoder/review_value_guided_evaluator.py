@@ -7,7 +7,7 @@ from typing import Any
 import torch
 from transformers import AutoTokenizer, set_seed
 
-from magicoder.prompt_template import QWEN_REVIEW_STEP_PROMPT
+from magicoder.prompt_template import QWEN_REVIEW_STEP_ONLY_PROMPT, QWEN_REVIEW_STEP_PROMPT
 from magicoder.review_policy_value_inference import (
     generate_response,
     load_jsonl_item,
@@ -20,8 +20,20 @@ from magicoder.review_policy_value_inference import (
 VALUE_SCORE_KEYS = ["last_value", "response_mean_value", "response_min_value", "response_conservative_value"]
 
 
-def build_prompt(instruction: str, partial_response: str) -> str:
-    return QWEN_REVIEW_STEP_PROMPT.format(instruction=instruction, response=partial_response)
+def build_prompt(instruction: str, partial_response: str, *, force_final: bool) -> str:
+    if force_final:
+        mode_instruction = (
+            instruction
+            + "\n\nCurrent generation mode: completed previous <step> blocks are fixed context. "
+            "Finish now with exactly one <review> JSON block and do not add more <step> blocks."
+        )
+        return QWEN_REVIEW_STEP_PROMPT.format(instruction=mode_instruction, response=partial_response)
+    mode_instruction = (
+        instruction
+        + "\n\nCurrent generation mode: completed previous <step> blocks are fixed context. "
+        "Continue from the last completed step. Output exactly one new <step> block. Do not output <review> yet."
+    )
+    return QWEN_REVIEW_STEP_ONLY_PROMPT.format(instruction=mode_instruction, response=partial_response)
 
 
 def candidate_sort_key(candidate: dict[str, Any], score_key: str) -> tuple[float, float]:
@@ -61,7 +73,7 @@ def main() -> None:
     for step_index in range(args.max_steps):
         is_final_step = step_index == args.max_steps - 1
         stop = "</review>" if is_final_step else "</step>"
-        prompt = build_prompt(item["instruction"], partial_response)
+        prompt = build_prompt(item["instruction"], partial_response, force_final=is_final_step)
         candidates = []
         for candidate_index in range(args.num_candidates):
             with torch.no_grad():
