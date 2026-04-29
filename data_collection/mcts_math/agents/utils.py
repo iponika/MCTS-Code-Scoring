@@ -175,13 +175,16 @@ def review_prompt_wrap(
         thinking_suffix = "\n\n/no_think"
     if force_final:
         mode_instruction = (
-            "You must finish now. Output only one structured final review in the exact <review> JSON format below."
+            "Use the completed previous steps as fixed context. You must finish now. "
+            "Output only one structured final review in the exact <review> JSON format below."
         )
         format_rule = REVIEW_FINAL_FORMAT_RULE
         output_format_section = REVIEW_FINAL_FORMAT_SECTION
     else:
         mode_instruction = (
-            "Output exactly one concise next review reasoning step wrapped in <step>...</step>. Never output <review> yet."
+            "Use the completed previous steps as fixed context. Continue from the last completed step. "
+            "Output exactly one concise next review reasoning step wrapped in <step>...</step>. "
+            "Never output <review> yet."
         )
         format_rule = REVIEW_STEP_FORMAT_RULE
         output_format_section = REVIEW_STEP_FORMAT_SECTION

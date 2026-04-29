@@ -75,6 +75,7 @@ def build_prompt(
     rubric = sample["dimension_rubrics"].get(dimension) or DEFAULT_DIMENSION_RUBRIC.get(dimension, "")
     if force_final_review:
         mode_instruction = (
+            "Use the completed previous steps as fixed context. "
             "Output only one structured final review in the exact <review> JSON format below. "
             "Do not output <step> blocks."
         )
@@ -82,7 +83,9 @@ def build_prompt(
         output_format_section = REVIEW_FINAL_FORMAT_SECTION
     else:
         mode_instruction = (
-            "Output exactly one concise next review reasoning step wrapped in <step>...</step>. Never output <review> yet."
+            "Use the completed previous steps as fixed context. Continue from the last completed step. "
+            "Output exactly one concise next review reasoning step wrapped in <step>...</step>. "
+            "Never output <review> yet."
         )
         from mcts_math.prompts.prompt_sft import REVIEW_STEP_FORMAT_RULE, REVIEW_STEP_FORMAT_SECTION
 

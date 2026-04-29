@@ -61,9 +61,10 @@ REVIEW_FINAL_FORMAT_SECTION = """Structured final review format:
 </review>"""
 
 REVIEW_STEP_FORMAT_RULE = (
-    "Keep the step under 45 words. It must add new evidence, test an input-domain assumption, "
-    "trace a listed test, derive a new counterexample, or explicitly challenge/qualify a previous claim. "
-    "Do not restate a prior step."
+    "Keep the step under 45 words. Continue from the completed previous steps. "
+    "It must add new evidence, test an input-domain assumption, trace a listed test, "
+    "derive a new counterexample, or explicitly challenge/qualify a previous claim. "
+    "Do not restate, paraphrase, or restart a prior step."
 )
 
 REVIEW_STEP_FORMAT_SECTION = """Next-step format:
@@ -88,7 +89,7 @@ Candidate code:
 Available tests:
 {tests}
 
-Previous review steps:
+Completed previous review steps:
 {partial_solution}
 
 AXIOM grade semantics: 5=production-ready; 4=functionally correct with minor quality tweaks; 3=functionally correct but major quality refactor needed; 2=functionally defective but minor fix; 1=functionally defective and major repair; 0=fundamentally flawed or mismatched. Functionality is the primary boundary: grades 3-5 are functionally correct, grades 0-2 are not.
