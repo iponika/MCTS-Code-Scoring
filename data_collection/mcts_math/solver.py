@@ -107,6 +107,7 @@ class Solver(BaseModel):
         return partial(
             local_generator,
             engine=self.engine,
+            config=self.config,
         )
         
     @staticmethod

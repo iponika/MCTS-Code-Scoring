@@ -58,5 +58,7 @@ uv run python data_collection/solver_review.py \
 - `scripts/run_qwen35_9b_fsdp_smoke.sh`: isolated 9B training smoke.
 - `scripts/run_direct_stepwise_vs_review_qwen3_4b.sh`: 4B diagnostic comparing direct final-review SFT and non-MCTS stepwise SFT.
 - `scripts/run_axiom_clean_eval.sh`: AXIOM held-out evaluation.
+- `configs/mcts_code_review_qwen3_4b_thinking.yaml`: Qwen3-4B native `/think` review-MCTS smoke configuration.
+- `configs/mcts_code_review_qwen3_4b_no_think.yaml`: Qwen3-4B `/no_think` comparison configuration.
 
 All wrappers are resumable at file/stage level where practical and write logs under `data_collection/review_mcts_runs/<RUN_NAME>/logs`.

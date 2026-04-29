@@ -204,6 +204,18 @@ class BaseConfig:
     show_tests_in_prompt: bool = field(
         default=False, metadata={"help": "expose dataset tests in review prompts for oracle diagnostics"}
     )
+    qwen_thinking_mode: str = field(
+        default="", metadata={"help": "Optional Qwen3 soft thinking directive for prompts: think, no_think, or empty."}
+    )
+    use_chat_template: bool = field(
+        default=False, metadata={"help": "Apply the tokenizer chat template before vLLM generation."}
+    )
+    chat_template_enable_thinking: bool = field(
+        default=True, metadata={"help": "Default enable_thinking value when use_chat_template is enabled and the prompt has no /think or /no_think suffix."}
+    )
+    review_native_thinking_steps: bool = field(
+        default=False, metadata={"help": "Treat Qwen native <think> blocks as review MCTS step nodes when present."}
+    )
     review_explore_depth: int = field(
         default=2, metadata={"help": "maximum visible review-step depth that still uses branching MCTS exploration"}
     )

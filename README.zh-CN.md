@@ -108,6 +108,20 @@ MAX_TRAINING_SEQ_LENGTH=2048 \
 bash data_collection/scripts/run_qwen35_9b_direct_stepwise_vs_review_smoke.sh
 ```
 
+Qwen3-4B 原生 thinking 的 review-MCTS smoke：
+
+```bash
+CUDA_VISIBLE_DEVICES=0 \
+PYTHONPATH=data_collection \
+uv run python data_collection/solver_review.py \
+  --custom_cfg data_collection/configs/mcts_code_review_qwen3_4b_thinking.yaml \
+  --dataset datasets/CodeCriticBench/data/CodeCriticBench.jsonl \
+  --start 0 \
+  --limit 1 \
+  --output data_collection/review_mcts_runs/qwen3_4b_thinking_smoke/aggregate.jsonl \
+  --output_dir data_collection/review_mcts_runs/qwen3_4b_thinking_smoke/samples
+```
+
 对已有 checkpoint 进行 AXIOM held-out 评测：
 
 ```bash
