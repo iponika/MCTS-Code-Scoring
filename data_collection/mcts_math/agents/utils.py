@@ -14,14 +14,11 @@ from typing import List, Dict, Any, Optional, Type, Tuple, Union
 
 from mcts_math.prompts.prompt_react import PROMPT_REACT
 from mcts_math.prompts.prompt_sft import (
-    DEEPSEEK_PROMPT,
-    DEEPSEEK_LCB_PROMPT,
     REVIEW_FINAL_FORMAT_RULE,
     REVIEW_FINAL_FORMAT_SECTION,
     REVIEW_STEP_FORMAT_RULE,
     REVIEW_STEP_FORMAT_SECTION,
     QWEN_REVIEW_PROMPT,
-    QWEN_STEP_PROMPT,
 )
 from mcts_math.tools.python_tool import PythonInterpreter
 
@@ -98,36 +95,7 @@ def react_sft_prompt_wrap(
     config, 
     is_value_only=False
 ) -> str:
-    delim = 'matches the specification and passes all tests.\n\nQuestion:'
-
-    if 'qwen' in config.model_dir:
-        prompt = QWEN_STEP_PROMPT
-        lcb=False
-        if delim in question:
-            question = question.split(delim)[1].strip()
-            lcb=True
-    elif 'dsc' in config.model_dir or  'deepseek' in config.model_dir:
-        if delim in question:
-            prompt = DEEPSEEK_LCB_PROMPT
-        else:
-            prompt = DEEPSEEK_PROMPT
-    else:
-        print(config)
-        input()
-
-
-    if partial_solution:
-        inputs = f"<step>\n{partial_solution}"
-    else:
-        inputs = f"<step>\n"
-    prompt = prompt.format(question=question, partial_solution=inputs)
-
-
-    if 'qwen' in config.model_dir and lcb and not is_value_only:
-        prompt = prompt.replace('a high-level problem-solving plan and', 'a high-level problem-solving plan with no more than six steps and')
-        
-
-    return prompt
+    raise RuntimeError("react_sft_prompt_wrap is a retired code-generation prompt path; use review_prompt_wrap.")
 
 
 def react_sft_obs_wrap(observation: str) -> str:

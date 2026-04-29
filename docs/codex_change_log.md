@@ -17,6 +17,7 @@ This file records Codex-made project changes so work can be resumed safely acros
 - Rewrote the maintained review prompts around correctness-only AXIOM scoring: removed SEER/code-generation persona noise from review paths, separated step-only/final-only prompt templates, and made review training choose a final-only prompt for review-only responses instead of always asking for stepwise reasoning.
 - Removed unused legacy Magicoder few-shot/codegen prompt constants from `model_training/src/magicoder/prompt_template.py` while retaining the small compatibility templates still imported by non-review training branches.
 - Removed the remaining unused `QWEN_STEP_PROMPT`/`DSC_PROMPT` compatibility templates from `model_training/src/magicoder/prompt_template.py` and made `train_multi.py` explicitly review-only to avoid accidental code-generation prompt fallback.
+- Removed legacy code-generation prompt constants from `data_collection/mcts_math/prompts/prompt_sft.py`, retired the old `react_sft_prompt_wrap` path, and simplified local vLLM generation so review data collection cannot accidentally use code-generation direct-prompt mixing.
 
 ## 2026-04-28
 
