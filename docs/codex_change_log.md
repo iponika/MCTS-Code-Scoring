@@ -10,6 +10,7 @@ This file records Codex-made project changes so work can be resumed safely acros
 - Added `docs/server_migration.md` with clone, environment, dataset, model-cache, smoke-test, and tmux checklist for moving to a new GPU server.
 - Made maintained shell wrappers derive `ROOT` from their script path by default and removed hard-coded local model paths from Qwen3.5 smoke scripts.
 - Replaced the old non-portable `requirements.txt` with a review-pipeline dependency list compatible with uv-based installation.
+- Added `README.zh-CN.md`, linked it from the English README, and documented Codex session migration in `docs/server_migration.md`.
 
 ## 2026-04-28
 

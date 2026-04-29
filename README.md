@@ -1,5 +1,7 @@
 # MCTS Code Scoring
 
+[中文 README](README.zh-CN.md)
+
 This repository is a code-evaluation adaptation of the SEER MCTS pipeline. The current target is not code generation: it trains and evaluates models that assign stable AXIOM-style scores to candidate code. Text comments are auxiliary evidence for the score.
 
 ## Active Scope

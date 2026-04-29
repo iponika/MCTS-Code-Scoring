@@ -87,3 +87,41 @@ data_collection/review_mcts_runs/
 model_training/review_mcts_train_data/
 model_training/src/output/
 ```
+
+## Codex Session Migration
+
+Codex resume sessions are local files under:
+
+```text
+~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl
+```
+
+To continue existing conversations on another server, copy the needed session JSONL files. It is usually also useful to copy memories and rules, but avoid copying caches:
+
+```bash
+tar -czf codex-state.tar.gz \
+  -C "$HOME" \
+  .codex/sessions \
+  .codex/memories \
+  .codex/rules
+```
+
+Transfer `codex-state.tar.gz` to the new server and extract it under the same Unix user:
+
+```bash
+tar -xzf codex-state.tar.gz -C "$HOME"
+```
+
+If you only want two sessions, copy just the matching rollout files. The resume id is the UUID suffix in the filename:
+
+```text
+~/.codex/sessions/2026/04/21/rollout-2026-04-21T19-56-51-019dafe6-7c7c-7a51-8cb8-f5978fe0708f.jsonl
+```
+
+Then resume with:
+
+```bash
+codex resume 019dafe6-7c7c-7a51-8cb8-f5978fe0708f
+```
+
+Do not copy `~/.codex/cache`, `~/.codex/tmp`, or plugin caches unless you know they are needed. They are machine-specific and can be regenerated.
