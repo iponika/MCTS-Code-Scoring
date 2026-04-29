@@ -7,17 +7,6 @@ SRC_INSTRUCT_ILLUSTRATION_PROMPT = """[Problem]
 {solution}"""
 
 
-QWEN_STEP_PROMPT = """You are a coding assistant.
-@@ Instruction
-Generate a correct program for the given programming task.
-Use <step> blocks for concise reasoning and wrap the final code in <code> tags.
-
-{instruction}
-
-@@ Response
-{response}"""
-
-
 QWEN_REVIEW_STEP_PROMPT = """You are a code scoring model for functional correctness.
 @@ Instruction
 Goal: assign a stable AXIOM 0-5 grade to candidate code. Text critique is only evidence for the score.
@@ -77,11 +66,3 @@ def review_prompt_for_response(instruction: str, response: str = "") -> str:
     if stripped.startswith("<review>"):
         return QWEN_REVIEW_FINAL_ONLY_PROMPT.format(instruction=instruction, response="")
     return QWEN_REVIEW_STEP_PROMPT.format(instruction=instruction, response="")
-
-
-DSC_PROMPT = """You are a coding assistant.
-@@ Instruction
-{instruction}
-
-@@ Response
-{response}"""
