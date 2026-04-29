@@ -189,6 +189,7 @@ class ReviewPromptVisibilityTest(unittest.TestCase):
             "COTHE_PROMPT",
             "COTMP_PROMPT",
             "QWEN_DIRECT_PROMPT",
+            "QWEN_STEP_PROMPT",
             "MAGICODER_PROMPT",
         ]:
             self.assertFalse(hasattr(prompt_template, name), name)

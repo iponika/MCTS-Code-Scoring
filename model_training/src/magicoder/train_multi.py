@@ -29,7 +29,7 @@ from magicoder.llm_wrapper import (
     get_model_wvalue_context,
     pad_sequences,
 )
-from magicoder.prompt_template import DSC_PROMPT, QWEN_STEP_PROMPT, review_prompt_for_response
+from magicoder.prompt_template import review_prompt_for_response
 from magicoder.utils import N_CORES
 from torch.nn import MSELoss, CrossEntropyLoss
 import torch.nn.functional as F
@@ -107,7 +107,7 @@ class Args:
     )
     pairwise_margin: float = field(default=0.2, metadata={"help": "Required value margin between positive and negative paired samples."})
     disable_train_shuffle: bool = field(default=False, metadata={"help": "Keep tokenized training examples in dataset order."})
-    task: str = field(default="code", metadata={"help": "code or review"})
+    task: str = field(default="review", metadata={"help": "Only review is maintained in this project."})
     skip_save: bool = field(default=False, metadata={"help": "Skip final model saving for smoke tests."})
     force_gradient_checkpointing: bool = field(default=True, metadata={"help": "Enable Trainer gradient checkpointing. Disable when using FSDP activation checkpointing."})
     save_merged_model: bool = field(
@@ -158,13 +158,10 @@ def map_dataset(
         pair_role = "" if pair_roles is None or pair_roles[i] is None else str(pair_roles[i])
 
  
-        if args.task == "review":
-            first_response = str(responses[0] if responses else "")
-            prompt = review_prompt_for_response(instruction, first_response)
-        elif 'deepseek' in model_name or 'dsc' in model_name:
-            prompt = DSC_PROMPT.format(instruction=instruction, response="<step>\n")
-        else:
-            prompt = QWEN_STEP_PROMPT.format(instruction=instruction, response="<step>\n")
+        if args.task != "review":
+            raise ValueError("train_multi.py only supports --task review in this code-scoring project.")
+        first_response = str(responses[0] if responses else "")
+        prompt = review_prompt_for_response(instruction, first_response)
         prompt_config = EncodingConfig(add_bos=True, add_eos=False)
         prompt_id_batches = context.encode(prompt_config, [prompt])
         input_ids = prompt_id_batches[0]
