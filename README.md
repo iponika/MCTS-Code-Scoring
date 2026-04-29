@@ -2,7 +2,7 @@
 
 [中文 README](README.zh-CN.md)
 
-This repository is a code-evaluation adaptation of the SEER MCTS pipeline. The current target is not code generation: it trains and evaluates models that assign stable AXIOM-style scores to candidate code. Text comments are auxiliary evidence for the score.
+This repository is a code-evaluation adaptation of the SEER MCTS pipeline. It trains and evaluates models that assign stable AXIOM-style scores to candidate code. Text comments are auxiliary evidence for the score.
 
 ## Active Scope
 
@@ -11,7 +11,7 @@ This repository is a code-evaluation adaptation of the SEER MCTS pipeline. The c
 - Train a policy/value model with LoRA and a value head.
 - Evaluate on AXIOM-style held-out code-scoring tasks.
 
-The original code-generation datasets, Open-R1 reproduction code, old perturbation training, and historical ablation wrappers have been removed from the tracked repository. Large datasets, model checkpoints, and run outputs are intentionally ignored.
+Large datasets, model checkpoints, and run outputs are intentionally ignored.
 
 ## Repository Layout
 

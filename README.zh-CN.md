@@ -2,7 +2,7 @@
 
 [English README](README.md)
 
-本仓库是对 SEER 风格 MCTS 流程的代码评估改编版本。当前目标不是代码生成，而是训练和评测能够稳定给候选代码打 AXIOM 风格分数的模型。文本评论只作为评分证据和可解释性辅助，核心输出是代码质量分数。
+本仓库是对 SEER 风格 MCTS 流程的代码评估改编版本。项目目标是训练和评测能够稳定给候选代码打 AXIOM 风格分数的模型。文本评论只作为评分证据和可解释性辅助。
 
 ## 当前范围
 
@@ -11,7 +11,7 @@
 - 使用 LoRA 和 value head 训练 policy/value 模型。
 - 在 AXIOM 风格 held-out 代码评分任务上评测模型。
 
-原始代码生成数据集、Open-R1 复现代码、旧扰动训练和历史消融 wrapper 已从 Git 跟踪中移除。大型数据集、模型 checkpoint 和实验输出都通过 `.gitignore` 排除，不随 `git clone` 迁移。
+大型数据集、模型 checkpoint 和实验输出都通过 `.gitignore` 排除。
 
 ## 项目结构
 
