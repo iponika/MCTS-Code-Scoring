@@ -11,6 +11,7 @@ This file records Codex-made project changes so work can be resumed safely acros
 - Made maintained shell wrappers derive `ROOT` from their script path by default and removed hard-coded local model paths from Qwen3.5 smoke scripts.
 - Replaced the old non-portable `requirements.txt` with a review-pipeline dependency list compatible with uv-based installation.
 - Added `README.zh-CN.md`, linked it from the English README, and documented Codex session migration in `docs/server_migration.md`.
+- Added `Qwen/Qwen3-4B` thinking/no-thinking review-MCTS configs, a vLLM serve helper, and prompt parsing support that turns native `<think>` blocks into review `<step>` nodes.
 
 ## 2026-04-28
 

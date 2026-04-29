@@ -164,7 +164,16 @@ def review_prompt_wrap(
 ) -> str:
     del is_value_only
     tests = review_context.get("tests_for_prompt", "No tests are available.")
-    if review_context.get("force_final_review", False):
+    force_final = review_context.get("force_final_review", False)
+    thinking_mode = str(getattr(config, "qwen_thinking_mode", "") or "").strip().lower()
+    thinking_suffix = ""
+    if force_final and getattr(config, "review_native_thinking_steps", False):
+        thinking_suffix = "\n\n/no_think"
+    elif thinking_mode in {"think", "/think"}:
+        thinking_suffix = "\n\n/think"
+    elif thinking_mode in {"no_think", "no-think", "/no_think"}:
+        thinking_suffix = "\n\n/no_think"
+    if force_final:
         mode_instruction = (
             "You must finish now. Output only one structured final review in the exact <review> JSON format below."
         )
@@ -176,7 +185,7 @@ def review_prompt_wrap(
         )
         format_rule = REVIEW_STEP_FORMAT_RULE
         output_format_section = REVIEW_STEP_FORMAT_SECTION
-    return QWEN_REVIEW_PROMPT.format(
+    prompt = QWEN_REVIEW_PROMPT.format(
         dimension=review_context["target_dimension"],
         rubric=review_context["dimension_rubric"],
         question=question,
@@ -188,6 +197,7 @@ def review_prompt_wrap(
         format_rule=format_rule,
         output_format_section=output_format_section,
     )
+    return prompt + thinking_suffix
 
 
 def _strip_outer_step_block(text: str) -> str:
@@ -211,6 +221,15 @@ def review_step_result_unwrap(
     if "<review>" in cleaned:
         parser_result["final_answer"] = cleaned.split("<review>", 1)[1].strip()
         return cleaned, parser_result
+    if "<think>" in cleaned:
+        think_body = cleaned.split("<think>", 1)[1]
+        if "</think>" in think_body:
+            think_body = think_body.split("</think>", 1)[0]
+        think_body = think_body.strip()
+        if think_body:
+            step_text = f"<step>\nnative_think: {think_body}\n</step>"
+            parser_result["action"] = step_text
+            return step_text, parser_result
 
     parser_result["action"] = cleaned
     return cleaned, parser_result

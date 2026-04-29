@@ -10,6 +10,7 @@ from tqdm import tqdm
 
 from mcts_math.axiom_scoring import axiom_functionally_correct, axiom_scalar_score, parse_axiom_grade
 from mcts_math.config import BaseConfig
+from mcts_math.llms.local_llms import maybe_apply_chat_template
 from mcts_math.llms.local_llm_engine import llm_engine
 from mcts_math.prompts.prompt_sft import (
     REVIEW_FINAL_FORMAT_RULE,
@@ -87,7 +88,7 @@ def build_prompt(
 
         format_rule = REVIEW_STEP_FORMAT_RULE
         output_format_section = REVIEW_STEP_FORMAT_SECTION
-    return QWEN_REVIEW_PROMPT.format(
+    prompt = QWEN_REVIEW_PROMPT.format(
         dimension=dimension,
         rubric=rubric,
         question=sample["question"],
@@ -99,6 +100,14 @@ def build_prompt(
         format_rule=format_rule,
         output_format_section=output_format_section,
     )
+    thinking_mode = str(getattr(config, "qwen_thinking_mode", "") or "").strip().lower()
+    if force_final_review and getattr(config, "review_native_thinking_steps", False):
+        return prompt + "\n\n/no_think"
+    if thinking_mode in {"think", "/think"}:
+        return prompt + "\n\n/think"
+    if thinking_mode in {"no_think", "no-think", "/no_think"}:
+        return prompt + "\n\n/no_think"
+    return prompt
 
 
 def iter_batches(items: list[dict[str, Any]], batch_size: int):
@@ -116,6 +125,13 @@ def normalize_step_text(text: str) -> str:
     cleaned = text.strip()
     if "<review>" in cleaned:
         cleaned = cleaned.split("<review>", 1)[0].strip()
+    if "<think>" in cleaned:
+        think_body = cleaned.split("<think>", 1)[1]
+        if "</think>" in think_body:
+            think_body = think_body.split("</think>", 1)[0]
+        think_body = think_body.strip()
+        if think_body:
+            return f"<step>\nnative_think: {think_body}\n</step>"
     if cleaned.startswith("<step>") and "</step>" not in cleaned:
         return cleaned.rstrip() + "\n</step>"
     if cleaned.startswith("<step>"):
@@ -219,6 +235,7 @@ def generate_review_only(
         build_prompt(sample, args.dimension, config, partial_solution="None", force_final_review=True)
         for sample in sample_batch
     ]
+    prompts = maybe_apply_chat_template(prompts, engine, config)
     outputs = engine.generate(prompts, sampling_params=sampling_params)
     result = []
     for sample, output in zip(sample_batch, outputs):
@@ -261,6 +278,7 @@ def generate_stepwise(
             )
             for item in trajectories
         ]
+        prompts = maybe_apply_chat_template(prompts, engine, config)
         outputs = engine.generate(prompts, sampling_params=sampling_params)
         for item, output in zip(trajectories, outputs):
             text = output.outputs[0].text if output.outputs else ""
@@ -277,6 +295,7 @@ def generate_stepwise(
         )
         for item in trajectories
     ]
+    prompts = maybe_apply_chat_template(prompts, engine, config)
     outputs = engine.generate(prompts, sampling_params=sampling_params)
     by_sample_index: dict[int, list[dict[str, Any]]] = {index: [] for index in range(len(sample_batch))}
     sample_position = {id(sample): index for index, sample in enumerate(sample_batch)}

@@ -2,7 +2,7 @@ import unittest
 
 from omegaconf import OmegaConf
 
-from mcts_math.agents.utils import review_prompt_wrap
+from mcts_math.agents.utils import review_prompt_wrap, review_step_result_unwrap
 from mcts_math.config import BaseConfig
 from magicoder.preprocess_review_mcts_data import build_instruction
 
@@ -73,6 +73,53 @@ class ReviewPromptVisibilityTest(unittest.TestCase):
         self.assertIn("Structured final review format", prompt)
         self.assertIn("<review>", prompt)
         self.assertIn('"axiom_grade"', prompt)
+
+    def test_qwen_thinking_mode_appends_soft_switch(self) -> None:
+        config = OmegaConf.structured(BaseConfig)
+        config.qwen_thinking_mode = "think"
+        prompt = review_prompt_wrap(
+            "Return x + 1.",
+            "",
+            config,
+            {
+                "target_dimension": "Correctness Verification",
+                "dimension_rubric": "Correctness only.",
+                "candidate_code": "def f(x):\n    return x + 1",
+                "code_language": "python",
+                "tests_for_prompt": "No tests are available to the reviewer.",
+                "force_final_review": False,
+            },
+        )
+
+        self.assertTrue(prompt.rstrip().endswith("/think"))
+
+    def test_native_thinking_final_prompt_uses_no_think(self) -> None:
+        config = OmegaConf.structured(BaseConfig)
+        config.qwen_thinking_mode = "think"
+        config.review_native_thinking_steps = True
+        prompt = review_prompt_wrap(
+            "Return x + 1.",
+            "<step>\nnative_think: trace return\n</step>",
+            config,
+            {
+                "target_dimension": "Correctness Verification",
+                "dimension_rubric": "Correctness only.",
+                "candidate_code": "def f(x):\n    return x + 1",
+                "code_language": "python",
+                "tests_for_prompt": "No tests are available to the reviewer.",
+                "force_final_review": True,
+            },
+        )
+
+        self.assertTrue(prompt.rstrip().endswith("/no_think"))
+
+    def test_native_think_block_becomes_step_node_text(self) -> None:
+        step_text, parsed = review_step_result_unwrap("<think>\nTrace f(1): returns 2.\n</think>")
+
+        self.assertIn("native_think", step_text)
+        self.assertIn("<step>", step_text)
+        self.assertEqual(parsed["action"], step_text)
+        self.assertEqual(parsed["final_answer"], "")
 
 
 if __name__ == "__main__":

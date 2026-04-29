@@ -54,11 +54,43 @@ def server_generator(
     return vllm_outputs
 
 
+def chat_template_thinking_enabled(prompt: str, config: Any) -> bool:
+    prompt_tail = str(prompt or "").rstrip().lower()
+    if prompt_tail.endswith("/no_think"):
+        return False
+    if prompt_tail.endswith("/think"):
+        return True
+    return bool(getattr(config, "chat_template_enable_thinking", True))
+
+
+def maybe_apply_chat_template(prompts: List[str], engine: LLM, config: Any | None) -> List[str]:
+    if config is None or not getattr(config, "use_chat_template", False):
+        return prompts
+    tokenizer = engine.get_tokenizer()
+    rendered = []
+    for prompt in prompts:
+        kwargs = {
+            "tokenize": False,
+            "add_generation_prompt": True,
+            "enable_thinking": chat_template_thinking_enabled(prompt, config),
+        }
+        try:
+            rendered.append(tokenizer.apply_chat_template([{"role": "user", "content": prompt}], **kwargs))
+        except TypeError:
+            kwargs.pop("enable_thinking", None)
+            rendered.append(tokenizer.apply_chat_template([{"role": "user", "content": prompt}], **kwargs))
+    return rendered
+
+
 def local_generator(
     prompts: List[str],
     sampling_params: SamplingParams,
     engine: LLM,
+    config: Any | None = None,
 ):
+    prompts = maybe_apply_chat_template(prompts, engine, config)
+    if config is not None and getattr(config, "use_chat_template", False):
+        return engine.generate(prompts, sampling_params=sampling_params)
     if not prompts or any('@@ Response' not in prompt for prompt in prompts):
         return engine.generate(prompts, sampling_params=sampling_params)
 
