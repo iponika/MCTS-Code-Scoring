@@ -18,7 +18,12 @@ from magicoder.review_policy_value_inference import (
     score_response,
 )
 from magicoder.review_value_guided_evaluator import VALUE_SCORE_KEYS
-from magicoder.prompt_template import QWEN_REVIEW_FINAL_ONLY_PROMPT, QWEN_REVIEW_STEP_ONLY_PROMPT, QWEN_REVIEW_STEP_PROMPT
+from magicoder.prompt_template import (
+    AXIOM_REFINEMENT_SCALE,
+    QWEN_REVIEW_FINAL_ONLY_PROMPT,
+    QWEN_REVIEW_STEP_ONLY_PROMPT,
+    QWEN_REVIEW_STEP_PROMPT,
+)
 from magicoder.axiom_scoring import (
     AXIOM_SCALE_TEXT,
     axiom_grade_from_scalar,
@@ -134,11 +139,15 @@ def prompt_for_dimension(
                 f"{parse_error.get('error')}: {parse_error.get('message', '')}. "
                 "Correct the JSON syntax in the next review block."
             )
-        return QWEN_REVIEW_FINAL_ONLY_PROMPT.format(instruction=instruction, response="")
+        return QWEN_REVIEW_FINAL_ONLY_PROMPT.format(
+            instruction=instruction,
+            response="",
+            axiom_scale=AXIOM_REFINEMENT_SCALE,
+        )
     if force_final:
         instruction += (
-            "\n\nCurrent generation mode: the text already present after @@ Response contains completed previous <step> blocks. "
-            "Use them as fixed context and do not repeat them. Finish now. "
+            "\n\nThe text already present after @@ Response contains completed previous <step> blocks. "
+            "Use them as fixed context and do not repeat them. "
             "Start your next output with <review> and end it with </review>. "
             "Do not add more <step> blocks. Output exactly one valid JSON object inside the review tags. "
             "Required JSON keys: axiom_grade, score, verdict, functional_correctness, repair_effort, summary, evidence. "
@@ -154,14 +163,22 @@ def prompt_for_dimension(
             )
     else:
         instruction += (
-            "\n\nCurrent generation mode: the text already present after @@ Response contains completed previous <step> blocks. "
+            "\n\nThe text already present after @@ Response contains completed previous <step> blocks. "
             "Use them as fixed context. Continue from the last completed step. "
             "Output exactly one new <step>...</step> reasoning block. Do not output <review> yet. "
             "Do not repeat, paraphrase, or restart previous steps. "
             "Use any <value_feedback> blocks as private guidance; do not quote or repeat them."
         )
-        return QWEN_REVIEW_STEP_ONLY_PROMPT.format(instruction=instruction, response=partial_response)
-    return QWEN_REVIEW_STEP_PROMPT.format(instruction=instruction, response=partial_response)
+        return QWEN_REVIEW_STEP_ONLY_PROMPT.format(
+            instruction=instruction,
+            response=partial_response,
+            axiom_scale=AXIOM_REFINEMENT_SCALE,
+        )
+    return QWEN_REVIEW_STEP_PROMPT.format(
+        instruction=instruction,
+        response=partial_response,
+        axiom_scale=AXIOM_REFINEMENT_SCALE,
+    )
 
 
 def rethink_feedback(best: dict[str, Any], threshold: float, score_key: str) -> str:

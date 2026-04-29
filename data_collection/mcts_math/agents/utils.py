@@ -14,11 +14,12 @@ from typing import List, Dict, Any, Optional, Type, Tuple, Union
 
 from mcts_math.prompts.prompt_react import PROMPT_REACT
 from mcts_math.prompts.prompt_sft import (
-    REVIEW_FINAL_FORMAT_RULE,
     REVIEW_FINAL_FORMAT_SECTION,
-    REVIEW_STEP_FORMAT_RULE,
     REVIEW_STEP_FORMAT_SECTION,
-    QWEN_REVIEW_PROMPT,
+    AXIOM_REFINEMENT_SCALE,
+    REVIEW_EVIDENCE_RULES,
+    QWEN_REVIEW_FINAL_PROMPT,
+    QWEN_REVIEW_STEP_PROMPT,
 )
 from mcts_math.tools.python_tool import PythonInterpreter
 
@@ -141,31 +142,17 @@ def review_prompt_wrap(
         thinking_suffix = "\n\n/think"
     elif thinking_mode in {"no_think", "no-think", "/no_think"}:
         thinking_suffix = "\n\n/no_think"
-    if force_final:
-        mode_instruction = (
-            "Use completed previous steps as fixed context. Finish now with exactly one <review> JSON block. "
-            "Do not add more <step> blocks."
-        )
-        format_rule = REVIEW_FINAL_FORMAT_RULE
-        output_format_section = REVIEW_FINAL_FORMAT_SECTION
-    else:
-        mode_instruction = (
-            "Use completed previous steps as fixed context. Continue from the last completed step. "
-            "Output exactly one new <step> block. Do not output <review> yet."
-        )
-        format_rule = REVIEW_STEP_FORMAT_RULE
-        output_format_section = REVIEW_STEP_FORMAT_SECTION
-    prompt = QWEN_REVIEW_PROMPT.format(
-        dimension=review_context["target_dimension"],
-        rubric=review_context["dimension_rubric"],
+    template = QWEN_REVIEW_FINAL_PROMPT if force_final else QWEN_REVIEW_STEP_PROMPT
+    prompt = template.format(
         question=question,
         candidate_code=review_context["candidate_code"],
         code_language=review_context.get("code_language", "python"),
         tests=tests,
         partial_solution=partial_solution.strip() if partial_solution else "None",
-        mode_instruction=mode_instruction,
-        format_rule=format_rule,
-        output_format_section=output_format_section,
+        axiom_scale=AXIOM_REFINEMENT_SCALE,
+        evidence_rules=REVIEW_EVIDENCE_RULES,
+        step_format_section=REVIEW_STEP_FORMAT_SECTION,
+        final_format_section=REVIEW_FINAL_FORMAT_SECTION,
     )
     return prompt + thinking_suffix
 
