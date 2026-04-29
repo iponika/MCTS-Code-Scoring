@@ -29,7 +29,7 @@ from magicoder.llm_wrapper import (
     get_model_wvalue_context,
     pad_sequences,
 )
-from magicoder.prompt_template import DSC_PROMPT, QWEN_REVIEW_STEP_PROMPT, QWEN_STEP_PROMPT
+from magicoder.prompt_template import DSC_PROMPT, QWEN_STEP_PROMPT, review_prompt_for_response
 from magicoder.utils import N_CORES
 from torch.nn import MSELoss, CrossEntropyLoss
 import torch.nn.functional as F
@@ -159,7 +159,8 @@ def map_dataset(
 
  
         if args.task == "review":
-            prompt = QWEN_REVIEW_STEP_PROMPT.format(instruction=instruction, response="")
+            first_response = str(responses[0] if responses else "")
+            prompt = review_prompt_for_response(instruction, first_response)
         elif 'deepseek' in model_name or 'dsc' in model_name:
             prompt = DSC_PROMPT.format(instruction=instruction, response="<step>\n")
         else:

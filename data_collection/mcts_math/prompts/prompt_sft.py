@@ -51,8 +51,8 @@ Here is your question: {question}
 
 
 REVIEW_FINAL_FORMAT_RULE = (
-    'Keep the final JSON compact: summary under 35 words; evidence has at most 2 items, '
-    'each under 25 words. Output no prose outside <review>.'
+    "Final answer only. Output one compact JSON object wrapped in <review> tags. "
+    "Use at most 2 short evidence strings. Output no prose outside <review>."
 )
 
 REVIEW_FINAL_FORMAT_SECTION = """Structured final review format:
@@ -61,22 +61,21 @@ REVIEW_FINAL_FORMAT_SECTION = """Structured final review format:
 </review>"""
 
 REVIEW_STEP_FORMAT_RULE = (
-    "Keep the step under 45 words. Continue from the completed previous steps. "
-    "It must add new evidence, test an input-domain assumption, trace a listed test, "
-    "derive a new counterexample, or explicitly challenge/qualify a previous claim. "
-    "Do not restate, paraphrase, or restart a prior step."
+    "Step answer only. Output one <step> block under 40 words. Continue from the completed previous steps. "
+    "Add exactly one new functional-evidence item or challenge one unsupported prior claim. "
+    "Do not restate, paraphrase, restart, output JSON, or propose code fixes."
 )
 
 REVIEW_STEP_FORMAT_SECTION = """Next-step format:
 <step>
-one of trace_listed_test | check_input_domain | derive_counterexample | static_logic_check | challenge_previous_claim: concise new reasoning
+trace_requirement | trace_visible_test | derive_counterexample | static_logic_check | challenge_previous_claim: concise new reasoning
 </step>"""
 
 
-QWEN_REVIEW_PROMPT = """You are an exceptionally intelligent code reviewer.
+QWEN_REVIEW_PROMPT = """You are a code scoring model for functional correctness.
 @@ Instruction
-You are scoring candidate code. Textual critique is only supporting evidence for the scalar score.
-Assess functional correctness and assign the overall AXIOM code-quality grade.
+Goal: assign a stable AXIOM 0-5 grade to the candidate code. Text critique is only evidence for the score.
+Scope: judge whether the candidate satisfies the task's functional requirements. Ignore style, naming, formatting, missing explanation, or alternative implementation strategy unless it changes observable behavior.
 
 Task description:
 {question}
@@ -92,25 +91,31 @@ Available tests:
 Completed previous review steps:
 {partial_solution}
 
-AXIOM grade semantics: 5=production-ready; 4=functionally correct with minor quality tweaks; 3=functionally correct but major quality refactor needed; 2=functionally defective but minor fix; 1=functionally defective and major repair; 0=fundamentally flawed or mismatched. Functionality is the primary boundary: grades 3-5 are functionally correct, grades 0-2 are not.
+AXIOM grade semantics for this project:
+- 5: functionally correct for the visible task, with no concrete defect found.
+- 4: functionally correct, with a minor visible edge-case or deployability concern.
+- 3: likely functionally correct, but important behavior remains uncertain from visible evidence.
+- 2: functionally defective, but a small local fix appears sufficient.
+- 1: functionally defective and requires major repair.
+- 0: unrelated, non-runnable, empty, or fundamentally mismatched.
+Boundary rule: grades 3-5 mean functionally correct or not disproven; grades 0-2 require a concrete visible functional defect.
 
 Rules:
-1. Keep all reasoning focused on functional correctness and AXIOM repair effort.
+1. Keep reasoning focused on functional behavior and AXIOM repair effort.
 2. {mode_instruction}
 3. Do not output code fixes.
-4. Calibrate against the AXIOM grade semantics. Grades 0-2 require a concrete functional defect. If you cannot state a verifiable defect, keep functional_correctness=true and choose 3-5 based on repair effort.
-5. Evidence discipline is mandatory:
+4. Use only the task, candidate code, visible tests, and completed previous steps. If tests are not visible, never claim that tests pass or fail.
+5. Low grades require concrete evidence: a certain syntax/runtime error, missing required I/O, direct requirement contradiction, unrelated code, or a concrete counterexample.
+6. If you cannot state a verifiable functional defect, set functional_correctness=true and choose grade 3-5.
+7. Evidence discipline:
    - provided_test_failure: only use this when a listed Available test directly fails.
    - deduced_counterexample: give a concrete input and expected/actual behavior that follows from the code.
    - static_logic_contradiction: cite the exact violated requirement and the exact code logic that contradicts it.
    - uncertain: use this when the concern is speculative, opaque, stylistic, or not fully verified.
-6. Do not claim that tests pass or fail unless those tests are explicitly listed in Available tests. If Available tests says no tests are available, never cite test results.
-7. If no listed test can be shown to fail, do not assign grade 0 or 1 unless the code is unrelated to the task, has a certain runtime/syntax error, or directly contradicts an explicit requirement. Use grade 2 for a likely but not fully proven functional defect; use grade 3 for a plausible correct solution with serious quality/verification concerns.
-8. Do not lower a functionally correct solution below 3 for style, readability, performance, maintainability, opacity, missing explanation, missing input validation, or lack of proof alone.
-9. A listed test is evidence only if you trace the candidate code behavior against that exact test. Do not infer test failure from a vague mismatch.
-10. When citing a listed test failure, quote the exact assertion expectation from Available tests. If the expected output looks unusual, treat it as authoritative rather than replacing it with a standard definition or intuition.
-11. Do not call code unrelated merely because variable names, decomposition, or mathematical transformations differ from the statement. Equivalent factorization, counting, DP, or helper-class formulations can still be functionally correct.
-12. {format_rule}
+8. A listed test is evidence only if you trace the candidate code against that exact test. Quote the exact expected assertion when citing failure.
+9. Treat unusual listed-test expectations as authoritative. Do not replace them with intuition.
+10. Equivalent variable names, decomposition, formulas, DP states, or helper classes can still be correct.
+11. {format_rule}
 
 {output_format_section}
 

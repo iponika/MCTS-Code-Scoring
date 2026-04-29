@@ -18,7 +18,7 @@ from magicoder.review_policy_value_inference import (
     score_response,
 )
 from magicoder.review_value_guided_evaluator import VALUE_SCORE_KEYS
-from magicoder.prompt_template import QWEN_REVIEW_STEP_ONLY_PROMPT, QWEN_REVIEW_STEP_PROMPT
+from magicoder.prompt_template import QWEN_REVIEW_FINAL_ONLY_PROMPT, QWEN_REVIEW_STEP_ONLY_PROMPT, QWEN_REVIEW_STEP_PROMPT
 from magicoder.axiom_scoring import (
     AXIOM_SCALE_TEXT,
     axiom_grade_from_scalar,
@@ -27,24 +27,6 @@ from magicoder.axiom_scoring import (
     clamp_axiom_grade,
     parse_axiom_grade,
 )
-
-
-QWEN_REVIEW_FINAL_ONLY_PROMPT = """You are an exceptionally intelligent code scoring model.
-@@ Instruction
-Score the candidate code using the AXIOM 0-5 ordinal code-quality scale.
-Textual critique is only supporting evidence; the primary output is a stable scalar grade.
-Functionality is the primary boundary: grades 3-5 are functionally correct, grades 0-2 are not.
-Calibration rule: do not assign grades 0-2 merely because an issue is suspected or because no tests are available. Low grades require concrete visible evidence such as a syntax/runtime error, missing required I/O, unrelated or empty code, a direct contradiction of the task, or a simple counterexample grounded in the prompt/tests. If the implementation is complete and plausibly functional but you cannot prove a functional defect, keep the grade in 3-5 and use repair_effort to express quality/refactoring concerns.
-
-{instruction}
-
-Output exactly one JSON object wrapped in <review> tags.
-Do not output <step> blocks, markdown, code fixes, or prose outside the tags.
-Required JSON keys: axiom_grade, score, verdict, functional_correctness, repair_effort, summary, evidence.
-Use a compact evidence array with at most 2 short strings.
-
-@@ Response
-"""
 
 
 DEFAULT_DIMENSIONS = [
@@ -152,7 +134,7 @@ def prompt_for_dimension(
                 f"{parse_error.get('error')}: {parse_error.get('message', '')}. "
                 "Correct the JSON syntax in the next review block."
             )
-        return QWEN_REVIEW_FINAL_ONLY_PROMPT.format(instruction=instruction)
+        return QWEN_REVIEW_FINAL_ONLY_PROMPT.format(instruction=instruction, response="")
     if force_final:
         instruction += (
             "\n\nCurrent generation mode: the text already present after @@ Response contains completed previous <step> blocks. "

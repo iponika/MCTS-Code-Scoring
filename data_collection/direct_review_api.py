@@ -60,7 +60,7 @@ def build_prompt(sample: dict[str, Any], dimension: str, config: Any) -> str:
         tests=prompt_tests_text(sample, config),
         partial_solution="None",
         mode_instruction=(
-            "Output only one structured final review in the exact <review> JSON format below. "
+            "No previous steps are available. Finish now with exactly one <review> JSON block. "
             "Do not output <step> blocks."
         ),
         format_rule=REVIEW_FINAL_FORMAT_RULE,
