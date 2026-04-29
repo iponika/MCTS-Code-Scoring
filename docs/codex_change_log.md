@@ -15,6 +15,7 @@ This file records Codex-made project changes so work can be resumed safely acros
 - Retired the old non-thinking `Qwen/Qwen3-4B-Instruct-2507` defaults in maintained scripts/configs and removed its dedicated serve helper.
 - Tightened review step prompts so prior `<step>` blocks are described as completed fixed context, non-final stepwise evaluation no longer advertises the final review JSON schema, and non-final generation explicitly forbids premature `<review>` output or repeated prior reasoning.
 - Rewrote the maintained review prompts around correctness-only AXIOM scoring: removed SEER/code-generation persona noise from review paths, separated step-only/final-only prompt templates, and made review training choose a final-only prompt for review-only responses instead of always asking for stepwise reasoning.
+- Removed unused legacy Magicoder few-shot/codegen prompt constants from `model_training/src/magicoder/prompt_template.py` while retaining the small compatibility templates still imported by non-review training branches.
 
 ## 2026-04-28
 

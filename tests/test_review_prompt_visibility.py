@@ -180,6 +180,19 @@ class ReviewPromptVisibilityTest(unittest.TestCase):
         self.assertIn("Reasoning format: write concise <step> blocks", step_prompt)
         self.assertIn("then finish with exactly one <review> JSON block", step_prompt)
 
+    def test_review_prompt_template_module_does_not_export_unused_legacy_prompts(self) -> None:
+        import magicoder.prompt_template as prompt_template
+
+        for name in [
+            "SPHE_PROMPT",
+            "SPMP_PROMPT",
+            "COTHE_PROMPT",
+            "COTMP_PROMPT",
+            "QWEN_DIRECT_PROMPT",
+            "MAGICODER_PROMPT",
+        ]:
+            self.assertFalse(hasattr(prompt_template, name), name)
+
 
 if __name__ == "__main__":
     unittest.main()
