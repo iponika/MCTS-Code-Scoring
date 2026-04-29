@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT="${ROOT:-/data1/xianzhiwei/mcts-code-review}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT="${ROOT:-$(cd "${SCRIPT_DIR}/../.." && pwd)}"
 RUN_NAME="${RUN_NAME:-qwen35_9b_direct_stepwise_vs_review_smoke_20260428}"
 CFG="${CFG:-${ROOT}/data_collection/configs/mcts_code_review.yaml}"
 MODEL_KEY="${MODEL_KEY:-Qwen/Qwen3.5-9B}"
-MODEL_PATH="${MODEL_PATH:-/data1/xianzhiwei/model/huggingface/hub/models--Qwen--Qwen3.5-9B/snapshots/c202236235762e1c871ad0ccb60c8ee5ba337b9a}"
+MODEL_PATH="${MODEL_PATH:-Qwen/Qwen3.5-9B}"
 
 SEED_PER_GRADE="${SEED_PER_GRADE:-4}"
 DIRECT_REPEATS="${DIRECT_REPEATS:-2}"

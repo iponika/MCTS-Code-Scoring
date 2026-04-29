@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT="${ROOT:-/data1/xianzhiwei/mcts-code-review}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT="${ROOT:-$(cd "${SCRIPT_DIR}/../.." && pwd)}"
 RUN_NAME="${RUN_NAME:-qwen35_9b_fsdp_smoke_20260427}"
 MODEL_KEY="${MODEL_KEY:-Qwen/Qwen3.5-9B}"
-MODEL_PATH="${MODEL_PATH:-/data1/xianzhiwei/model/huggingface/hub/models--Qwen--Qwen3.5-9B/snapshots/c202236235762e1c871ad0ccb60c8ee5ba337b9a}"
-TRAIN_DATA="${TRAIN_DATA:-${ROOT}/model_training/review_mcts_train_data/bootstrap_cmp_stageq_branch2_overnight_v2_20260426_mcts_bootstrap.jsonl}"
+MODEL_PATH="${MODEL_PATH:-Qwen/Qwen3.5-9B}"
+TRAIN_DATA="${TRAIN_DATA:-}"
 OUTPUT_MODEL="${OUTPUT_MODEL:-${ROOT}/model_training/src/output/review-lora-${RUN_NAME}}"
 MAX_TRAINING_SEQ_LENGTH="${MAX_TRAINING_SEQ_LENGTH:-4096}"
 MAX_STEPS="${MAX_STEPS:-1}"
@@ -138,7 +139,7 @@ train_fsdp() {
       --lora_alpha "${LORA_ALPHA}" \
       --lora_dropout "${LORA_DROPOUT}" \
       --lora_target_scope "${LORA_TARGET_SCOPE}" \
-      --datafile_paths "../review_mcts_train_data/$(basename "${TRAIN_DATA}")" \
+      --datafile_paths "${TRAIN_DATA}" \
       --output_dir "${OUTPUT_MODEL}" \
       --max_steps "${MAX_STEPS}" \
       --num_train_epochs 1 \
@@ -169,6 +170,10 @@ echo "[run] ${RUN_NAME}"
 echo "[log] ${LOG_FILE}"
 echo "[model] ${MODEL_PATH}"
 echo "[train_data] ${TRAIN_DATA}"
+if [[ -z "${TRAIN_DATA}" || ! -f "${TRAIN_DATA}" ]]; then
+  echo "TRAIN_DATA must point to an existing review training JSONL file." >&2
+  exit 2
+fi
 audit_lengths
 train_fsdp
 CURRENT_STAGE="finished"

@@ -200,7 +200,7 @@ def make_item(
     return item
 
 
-def load_axiom_items(path: Path, train_lm_exact: bool, limit: int) -> Iterable[dict[str, Any]]:
+def load_axiom_items(path: Path, train_lm_exact: bool, limit: int, drop_grade_zero: bool = False) -> Iterable[dict[str, Any]]:
     counts = defaultdict(int)
     files = sorted((path / "axiombench").glob("*.jsonl")) if path.is_dir() else [path]
     for file_path in files:
@@ -209,6 +209,8 @@ def load_axiom_items(path: Path, train_lm_exact: bool, limit: int) -> Iterable[d
             if limit > 0 and counts["axiom"] >= limit:
                 return
             grade = clamp_axiom_grade(row.get("score", 0))
+            if drop_grade_zero and grade == 0:
+                continue
             instruction = build_instruction(row.get("inst", ""), row.get("code", ""), language=str(row.get("lang") or "unknown"))
             counts["axiom"] += 1
             yield make_item(
@@ -350,6 +352,7 @@ def main() -> None:
     parser.add_argument("--codejudgebench_root", type=Path, default=None, help="Path to benchmarks/mattymchen___codejudgebench.")
     parser.add_argument("--include_codejudge_as_intervals", action="store_true", help="Use CodeJudgeBench pos/neg pairs as weak interval value labels.")
     parser.add_argument("--train_lm_exact", action="store_true", help="Also train LM tokens for exact AXIOM/CodeCritic labels. Default trains value only.")
+    parser.add_argument("--drop_axiom_grade_zero", action="store_true", help="Skip AXIOM grade-0 rows when they are treated as outliers for the current training objective.")
     parser.add_argument("--limit_per_source", type=int, default=0, help="Maximum rows per source family; 0 keeps all.")
     parser.add_argument("--shuffle_seed", type=int, default=42)
     parser.add_argument("--disable_shuffle", action="store_true", help="Keep source order; useful when preserving adjacent CodeJudgeBench pairs for pairwise loss.")
@@ -358,7 +361,14 @@ def main() -> None:
 
     items: list[dict[str, Any]] = []
     if args.axiom_dir:
-        items.extend(load_axiom_items(args.axiom_dir, train_lm_exact=args.train_lm_exact, limit=args.limit_per_source))
+        items.extend(
+            load_axiom_items(
+                args.axiom_dir,
+                train_lm_exact=args.train_lm_exact,
+                limit=args.limit_per_source,
+                drop_grade_zero=args.drop_axiom_grade_zero,
+            )
+        )
     if args.codecriticbench:
         items.extend(load_codecritic_items(args.codecriticbench, train_lm_exact=args.train_lm_exact, limit=args.limit_per_source))
     if args.code_diting_root:

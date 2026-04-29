@@ -1,149 +1,60 @@
-# Reproduce the Experiments
+# Review Policy/Value Training
 
-This document provides comprehensive instructions for reproducing the experiments presented in our paper.
+Run commands in this file from `model_training/src` unless stated otherwise. This avoids the repository-level `datasets/` directory shadowing Hugging Face `datasets`.
 
-## Data Preprocessing
+## Convert Review Trajectories
 
-After MCTS data collection (see `../data_collection/README.md`), follow these steps to prepare the training data:
-
-### Step 1: Merge and Filter MCTS Data
+Convert direct or MCTS trajectory JSONL files into `train_multi` JSONL:
 
 ```bash
-RAW_DATA_PATH=../../data/dsc_collection
-PREPROCESS_OUTPUT_PATH=../../data/dsc_collection/data_mcts.jsonl
-
-python magicoder/preprocess_mcts_data.py \
---dataset_path json \
---raw_dataset_path ${RAW_DATA_PATH} \
---output_file ${PREPROCESS_OUTPUT_PATH} \
---stage mcts \
---key src-instruct
-```
-
-### Step 2: Combine Path Refinement and Perturbation Data (First Stage)
-
-```bash
-RAW_DATA_PATH=../../data/dsc_collection
-PREPROCESS_OUTPUT_PATH=../../data/dsc_collection/data_mcts_pr.jsonl
-
-python magicoder/preprocess_mcts_data.py \
---dataset_path json \
---raw_dataset_path ${RAW_DATA_PATH} \
---output_file ${PREPROCESS_OUTPUT_PATH} \
---stage pr \
---key src-instruct
-```
-
-### Step 3: Create Training Data for Adaptive CoT Reasoning (Second Stage)
-
-```bash
-RAW_DATA_PATH=../../data/dsc_collection
-PREPROCESS_OUTPUT_PATH=../../data/dsc_collection/data_mcts_s2.jsonl
-
-python magicoder/preprocess_mcts_data.py \
---dataset_path json \
---raw_dataset_path ${RAW_DATA_PATH} \
---output_file ${PREPROCESS_OUTPUT_PATH} \
---stage s2 \
---key src-instruct
-```
-
-## Model Training
-
-First, set `CUDA_VISIBLE_DEVICES` to specify which 1-2 GPUs to use.
-
-### Code Review MCTS Data
-
-The code-evaluation adaptation uses a dedicated converter because review rewards are continuous and terminal leaves are `<review>` JSON blocks rather than generated code.
-The internal scoring target is now the AXIOM 0-5 ordinal grade: `5` production-ready, `4` functionally correct with minor quality tweaks, `3` functionally correct but requiring major quality refactor, `2` functionally defective but minor-fixable, `1` functionally defective and requiring major repair, and `0` fundamentally flawed or mismatched. User-facing 0-100 scores are derived as `grade / 5 * 100`; they are not the primary training label.
-
-```bash
-python model_training/src/magicoder/preprocess_review_mcts_data.py \
-  --input data_collection/review_mcts_runs/codecriticbench_2_1/samples/2_mbpp_mbpp.json \
-  --output_file model_training/review_mcts_train_data/codecriticbench_2_1_train_multi.jsonl \
-  --policy_min_q 0.5
-```
-
-Each output item contains `instruction`, segmented `response`, continuous `q_value`, and `train_lm`.
-Items with `train_lm=true` train both the policy tokens and value head; items with `train_lm=false` mask LM labels and train only the value head.
-For more stable review-value labels across runs, convert new data together with older replay samples and fixed anchor samples:
-
-```bash
-python model_training/src/magicoder/preprocess_review_mcts_data.py \
-  --input data_collection/review_mcts_runs/codecriticbench_5_16_full/samples \
-  --replay_input \
-    data_collection/review_mcts_runs/codecriticbench_1_1/samples \
-    data_collection/review_mcts_runs/codecriticbench_2_1/samples \
-    data_collection/review_mcts_runs/codecriticbench_3_2/samples \
-  --anchor_input \
-    data_collection/review_mcts_runs/codecriticbench_1_1/samples \
-    data_collection/review_mcts_runs/codecriticbench_2_1/samples \
-    data_collection/review_mcts_runs/codecriticbench_3_2/samples \
-  --output_file model_training/review_mcts_train_data/codecriticbench_1_20_mixed_calibrated_train_multi.jsonl \
+cd model_training/src
+PYTHONPATH=.:../../data_collection uv run python -m magicoder.preprocess_review_mcts_data \
+  --input ../../data_collection/review_mcts_runs/example/mcts_bootstrap_raw.jsonl \
+  --output_file ../review_mcts_train_data/example_mcts_train.jsonl \
   --policy_min_q 0.5 \
-  --replay_ratio 0.5 \
-  --calibrate_q_values \
-  --calibration_strength 0.35 \
-  --min_calibration_count 8 \
-  --apply_score_consensus \
-  --score_consensus_mode weight \
-  --score_consensus_strength 0.25 \
-  --score_consensus_min_valid 3 \
-  --shuffle_seed 42
+  --policy_response_mode path
 ```
 
-This keeps raw labels in `raw_q_value`/`raw_terminal_q_value`, applies per-dimension anchor standardization only to non-error paths, refreshes `train_lm` after calibration, and shuffles the mixed new/replay output. Prefer a fixed `--anchor_input` set for comparable label scales across independent generation batches. `--apply_score_consensus --score_consensus_mode weight` uses the median parsed AXIOM grade, MAD, and valid-review rate from repeated terminal reviews under the same `(dataset_index, target_dimension)` to emit `value_loss_weight`/`lm_loss_weight`; it does not rewrite `q_value`. Use `--score_consensus_mode q_adjust` only for the older label-blending behavior.
+Each output row contains:
 
-### Static Scalar Scoring Data
+- `instruction`: task and candidate-code scoring prompt.
+- `response`: one or more `<step>` / `<review>` segments.
+- `q_value`: value target in the training range.
+- `train_lm`: whether the response tokens also train the policy head.
+- optional interval fields such as `q_min` / `q_max` for weak labels.
 
-Use AXIOM-style static data to calibrate the value head. The current stable path uses AXIOM and CodeCriticBench because their labels align best with the 0-5 ordinal grade. AXIOM becomes exact labels; CodeCriticBench becomes exact mapped labels after filtering non-code answers and extracting fenced code blocks. Code-DiTing can later become interval supervision (`label=1 -> grade 3-5`, `label=0 -> grade 0-2`); CodeJudgeBench can later be included as weak interval proxy data for its positive/negative pairs until a dedicated pairwise ranking loss is added.
+Use `--policy_response_mode final_review` when exporting only the best final `<review>` for final-only policy training.
 
-Run this from `model_training/src` so the repository-level `datasets/` directory does not shadow Hugging Face `datasets`:
+## Static AXIOM-Style Score Data
+
+Use AXIOM and CodeCriticBench as the stable first-stage score sources:
 
 ```bash
 cd model_training/src
 uv run python -m magicoder.preprocess_score_datasets \
   --axiom_dir ../../datasets/axiom-llm-judge \
   --codecriticbench ../../datasets/CodeCriticBench/data/CodeCriticBench.jsonl \
-  --output_file ../review_mcts_train_data/axiom_codecritic_static_full.jsonl \
+  --drop_axiom_grade_zero \
+  --output_file ../review_mcts_train_data/axiom_codecritic_static.jsonl \
   --shuffle_seed 42
 ```
 
-Optional lower-confidence datasets can be added later:
+The internal target is AXIOM grade 0-5, treated as an ordinal repair-effort score. User-facing 0-100 scores are derived as `grade / 5 * 100`; they are not the primary label.
+
+## Train LoRA Policy/Value Model
+
+Example single-node command:
 
 ```bash
 cd model_training/src
-uv run python -m magicoder.preprocess_score_datasets \
-  --axiom_dir ../../datasets/axiom-llm-judge \
-  --codecriticbench ../../datasets/CodeCriticBench/data/CodeCriticBench.jsonl \
-  --code_diting_root ../../datasets/Code-DiTing \
-  --codejudgebench_root ../../benchmarks/mattymchen___codejudgebench \
-  --include_codejudge_as_intervals \
-  --output_file ../review_mcts_train_data/axiom_static_score_train_multi.jsonl \
-  --shuffle_seed 42
-```
-
-By default this converter emits value-only items (`train_lm=false`) because the project objective is scalar code scoring and template comments are only auxiliary. Add `--train_lm_exact` only if you intentionally want exact AXIOM/CodeCritic examples to also teach the final `<review>` JSON format. The trainer supports optional `q_min`/`q_max` fields: exact labels have `q_min == q_value == q_max`, while interval labels incur value loss only when predictions fall outside the allowed grade interval.
-
-Run review policy/value training from `model_training/src` to avoid the repository-level `datasets/` directory shadowing Hugging Face `datasets`:
-
-Qwen3.5 requires a Transformers build that recognizes `model_type=qwen3_5`. If your installed release does not, install Transformers from the official main branch:
-
-```bash
-UV_CACHE_DIR=/tmp/uv-cache uv pip install --upgrade --no-deps "git+https://github.com/huggingface/transformers.git"
-UV_CACHE_DIR=/tmp/uv-cache uv pip install --upgrade "huggingface-hub>=1.5.0,<2.0"
-```
-
-When running offline, prefer the local Hugging Face snapshot path for `--model_name_or_path`; this avoids adapter-config probes against the Hub.
-
-```bash
-cd model_training/src
-CUDA_VISIBLE_DEVICES=0 HF_DATASETS_CACHE=/tmp/hf-datasets-cache uv run accelerate launch --num_processes=1 -m magicoder.train_multi \
+CUDA_VISIBLE_DEVICES=0,1 \
+uv run accelerate launch --num_processes=2 -m magicoder.train_multi \
   --task review \
   --model_key Qwen/Qwen3.5-9B \
-  --model_name_or_path /path/to/models--Qwen--Qwen3.5-9B/snapshots/<snapshot-id> \
-  --datafile_paths ../review_mcts_train_data/codecriticbench_2_1_train_multi.jsonl \
-  --output_dir ./output/qwen3_5_9b-review-s1 \
+  --model_name_or_path Qwen/Qwen3.5-9B \
+  --datafile_paths ../review_mcts_train_data/example_mcts_train.jsonl \
+  --output_dir ./output/qwen35-review-example \
+  --max_training_seq_length 2048 \
   --num_train_epochs 1 \
   --per_device_train_batch_size 1 \
   --gradient_accumulation_steps 16 \
@@ -153,168 +64,47 @@ CUDA_VISIBLE_DEVICES=0 HF_DATASETS_CACHE=/tmp/hf-datasets-cache uv run accelerat
   --learning_rate 5e-5 \
   --lr_scheduler_type linear \
   --peft lora \
+  --lora_target_scope attention \
+  --lora_rank 8 \
   --value_weight 0.025 \
-  --num_proc 1
+  --save_strategy no \
+  --report_to none
 ```
 
-For a one-step smoke test, add `--max_steps 1 --save_strategy no --skip_save True --report_to none`.
-For a small real checkpoint, remove `--skip_save`, keep `--save_strategy no`, and use a small `--max_steps` such as `20`. LoRA runs now save the adapter plus `value_head.pth` by default; add `--save_merged_model True` only when you explicitly need a merged full-backbone checkpoint.
-If the installed Transformers version does not recognize `model_type=qwen3_5`, upgrade Transformers to a build that supports Qwen3.5 before running the real target model.
+For a smoke test, add `--max_steps 1 --skip_save True`. For a real checkpoint, remove `--skip_save` and set a finite `--max_steps`.
 
-After training a policy/value checkpoint, inspect value scoring on an existing path:
+LoRA runs save the adapter plus `value_head.pth`. Add `--save_merged_model True` only when a merged full-backbone checkpoint is explicitly needed.
+
+## Evaluate
+
+Value-head inspection on a known training row:
 
 ```bash
 cd model_training/src
-HF_HUB_OFFLINE=1 uv run python -m magicoder.review_policy_value_inference \
-  --policy_model_path ./output/qwen3_5_9b-review-s1 \
-  --value_model_path ./output/qwen3_5_9b-review-s1 \
-  --datafile_path ../review_mcts_train_data/codecriticbench_2_1_train_multi.jsonl \
-  --item_index 7 \
+uv run python -m magicoder.review_policy_value_inference \
+  --policy_model_path ./output/qwen35-review-example \
+  --value_model_path ./output/qwen35-review-example \
+  --datafile_path ../review_mcts_train_data/example_mcts_train.jsonl \
+  --item_index 0 \
   --use_gold_response
 ```
 
-Run a minimal value-guided review loop, where the value model scores policy candidates at each step and the highest-value continuation is selected:
+Structured held-out evaluation:
 
 ```bash
 cd model_training/src
-HF_HUB_OFFLINE=1 uv run python -m magicoder.review_value_guided_evaluator \
-  --policy_model_path ./output/qwen3_5_9b-review-s1 \
-  --value_model_path ./output/qwen3_5_9b-review-s1 \
-  --datafile_path ../review_mcts_train_data/codecriticbench_2_1_train_multi.jsonl \
-  --item_index 7 \
+uv run python -m magicoder.review_evaluator \
+  --policy_model_path ./output/qwen35-review-example \
+  --value_model_path ./output/qwen35-review-example \
+  --share_policy_value_model \
+  --input_record ../../datasets/axiom-llm-judge/axiombench/apps.jsonl \
+  --output_file ./output/review-eval-example/apps_0.json \
+  --record_index 0 \
   --max_steps 3 \
-  --num_candidates 4 \
-  --max_new_tokens 256 \
-  --final_max_new_tokens 512 \
-  --temperature 0.7 \
-  --top_p 0.95
+  --num_candidates 2 \
+  --max_new_tokens 192 \
+  --final_max_new_tokens 256 \
+  --score_key last_value
 ```
 
-For the structured code-review evaluation flow, use `review_evaluator`. It loops over review dimensions, samples policy candidates, selects continuations with the value model, triggers rethink when the selected value is below `--rethink_threshold`, and writes a full trace:
-
-```bash
-cd model_training/src
-HF_HUB_OFFLINE=1 uv run python -m magicoder.review_evaluator \
-  --policy_model_path ./output/qwen3_5_9b-review-s1 \
-  --value_model_path ./output/qwen3_5_9b-review-s1 \
-  --input_record ../../data_collection/review_mcts_runs/codecriticbench_2_1/samples/2_mbpp_mbpp.json \
-  --output_file ./output/review-eval/2_mbpp.json \
-  --max_dimensions 10 \
-  --max_steps 3 \
-  --num_candidates 4 \
-  --max_new_tokens 256 \
-  --temperature 0.7 \
-  --top_p 0.95 \
-  --rethink_threshold -0.2 \
-  --max_rethinks 1 \
-  --max_final_retries 1
-```
-
-If `--policy_model_path` and `--value_model_path` are the same path, `review_evaluator` loads one value-head model and uses its `pretrained_model` for policy generation to avoid loading two 9B backbones. Local relative checkpoint paths are resolved before model loading so TRL/PEFT does not misinterpret them as Hub repo ids. Each dimension output includes `reference_score`, `parsed_score`, and `score_delta` when dataset scores are available; the top-level `evaluation_summary` reports valid review rate and mean absolute score delta. A run that ends without a valid `<review>...</review>` is marked in `final_review_parse`; increase `--final_max_new_tokens`, `--max_new_tokens`, or `--max_final_retries` if this happens with a trained checkpoint.
-
-### First Stage: Dual Model Training
-
-```bash
-MODEL_KEY=deepseek-ai/deepseek-coder-6.7b-instruct
-MODEL_PATH=deepseek-ai/deepseek-coder-6.7b-instruct
-MAGICODER_OUTPUT_DIR=./output/deepseek-coder-s1
-PATH_TO_OSS_INSTRUCT=../../data/dsc_collection/data_mcts_pr.jsonl
-
-accelerate launch --num_processes=1 -m magicoder.train_multi \
---model_key $MODEL_KEY \
---model_name_or_path $MODEL_PATH \
---use_flash_attention True \
---max_training_seq_length 2048 \
---datafile_paths ${PATH_TO_OSS_INSTRUCT} \
---output_dir $MAGICODER_OUTPUT_DIR \
---num_train_epochs 2 \
---per_device_train_batch_size 1 \
---gradient_accumulation_steps 128 \
---group_by_length False \
---bf16 True \
---ddp_find_unused_parameters False \
---logging_steps 1 \
---log_level info \
---optim adafactor \
---warmup_steps 15 \
---learning_rate 5e-5 \
---lr_scheduler_type linear \
---peft lora \
---value_weight 0.025
-```
-
-### Second Stage: Adaptive CoT Reasoning Training
-
-```bash
-MODEL_KEY=deepseek-ai/deepseek-coder-6.7b-instruct
-MODEL_PATH=deepseek-ai/deepseek-coder-6.7b-instruct
-MAGICODER_OUTPUT_DIR=./output/deepseek-coder-s2 # Note: Changed output directory
-PATH_TO_OSS_INSTRUCT=../../data/dsc_collection/data_mcts_s2.jsonl
-
-accelerate launch --num_processes=1 -m magicoder.train_multikl \
---model_key $MODEL_KEY \
---model_name_or_path $MODEL_PATH \
---use_flash_attention True \
---max_training_seq_length 2048 \
---datafile_paths ${PATH_TO_OSS_INSTRUCT} \
---output_dir $MAGICODER_OUTPUT_DIR \
---num_train_epochs 2 \
---per_device_train_batch_size 1 \
---gradient_accumulation_steps 128 \
---group_by_length False \
---bf16 True \
---ddp_find_unused_parameters False \
---logging_steps 1 \
---log_level info \
---optim adafactor \
---warmup_steps 15 \
---learning_rate 5e-5 \
---lr_scheduler_type linear \
---peft lora \
---value_weight 0.025
-```
-
-## Model Inference
-
-Update the `MODEL` variable to your saved model path. The code below runs inference for the baseline model. To use self-planning or code CoT templates, modify the prompt_template in `../experiments/text2code.py`. For SPEAR inference, see `../data_collection/README.md`.
-
-```bash
-MODEL_KEY=deepseek-ai/deepseek-coder-6.7b-instruct
-MODEL=./output/deepseek-coder-s1 # Change to your model path
-
-DATASET=lcb # Options: humaneval, mbpp, lcb
-SAVE_PATH=$MODEL/evalplus-$DATASET.jsonl
-
-python -m experiments.text2code \
---model_key $MODEL_KEY \
---model_name_or_path $MODEL \
---save_path $SAVE_PATH \
---dataset $DATASET \
---temperature 0 \
---top_p 1.0 \
---max_new_tokens 2048 \
---n_problems_per_batch 5 \
---n_samples_per_problem 1 \
---n_batches 1 \
---prompt direct # Options: direct, self-planning, code-cot
-```
-
-## Calculating Benchmark Pass Rates
-
-### For HumanEval and MBPP
-
-Use EvalPlus with the following command:
-
-```bash
-evalplus.evaluate --dataset $DATASET --samples $SAVE_PATH
-```
-
-Where:
-- `$DATASET` is either "humaneval" or "mbpp"
-- `$SAVE_PATH` is the path to your generated solutions
-
-Generated predictions can be found in the `../data/code_gen_eval` directory.
-
-### For LiveCodeBench
-
-Use the official [LiveCodeBench repository](https://github.com/livecodebench/LiveCodeBench) and follow its evaluation pipeline to calculate pass rates.
+Use `--final_only_json` for final-only scoring. Omit it for stepwise value-guided evaluation.

@@ -9,7 +9,7 @@ GPU_MEMORY_UTILIZATION="${GPU_MEMORY_UTILIZATION:-0.85}"
 CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0}"
 
 export CUDA_VISIBLE_DEVICES
-export HF_HOME="${HF_HOME:-/data1/xianzhiwei/model/huggingface}"
+export HF_HOME="${HF_HOME:-${HOME}/.cache/huggingface}"
 
 exec vllm serve "${MODEL_PATH}" \
   --host "${VLLM_HOST}" \

@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT="${ROOT:-/data1/xianzhiwei/mcts-code-review}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT="${ROOT:-$(cd "${SCRIPT_DIR}/../.." && pwd)}"
 RUN_NAME="${RUN_NAME:-axiom_clean_eval_no0_20260422}"
 BASE_MODEL_PATH="${BASE_MODEL_PATH:-Qwen/Qwen3-4B-Instruct-2507}"
 TRAINED_MODEL_PATH="${TRAINED_MODEL_PATH:-}"
 AXIOM_DIR="${AXIOM_DIR:-${ROOT}/datasets/axiom-llm-judge/axiombench}"
-TRAIN_DATA="${TRAIN_DATA:-${ROOT}/model_training/review_mcts_train_data/principle_generalization_qwen3_4b_full_context_no_axiom0_20260422.jsonl}"
+TRAIN_DATA="${TRAIN_DATA:-}"
 RUN_DIR="${ROOT}/data_collection/review_mcts_runs/${RUN_NAME}"
 LOG_DIR="${RUN_DIR}/logs"
 EVAL_ROOT="${ROOT}/model_training/src/output/review-eval-${RUN_NAME}"
@@ -66,14 +67,15 @@ from collections import Counter, defaultdict
 from pathlib import Path
 
 axiom_dir = Path("${AXIOM_DIR}")
-train_data = Path("${TRAIN_DATA}")
+train_data_text = "${TRAIN_DATA}".strip()
+train_data = Path(train_data_text) if train_data_text else None
 out_file = Path("${EVAL_FILE}")
 indices_file = Path("${INDICES_FILE}")
 per_grade = int("${PER_GRADE}")
 drop_zero = "${DROP_AXIOM_GRADE_ZERO}".strip().lower() not in {"0", "false", "no", "off"}
 
 used = set()
-if train_data.exists():
+if train_data is not None and train_data.exists():
     for line in train_data.open(encoding="utf-8"):
         if not line.strip():
             continue

@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT="${ROOT:-/data1/xianzhiwei/mcts-code-review}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT="${ROOT:-$(cd "${SCRIPT_DIR}/../.." && pwd)}"
 RUN_NAME="${RUN_NAME:-bootstrap_comparison_qwen3_4b_20260424}"
 CFG="${CFG:-${ROOT}/data_collection/configs/mcts_code_review_qwen3_4b.yaml}"
 MODEL_KEY="${MODEL_KEY:-Qwen/Qwen3-4B-Instruct-2507}"

@@ -1,4 +1,5 @@
 datasets/
+benchmarks/
 reference/
 data_collection/review_mcts_runs/
 data_collection/review_api_runs/
@@ -8,3 +9,5 @@ model_training/src/output/
 __pycache__/
 *.py[cod]
 .agents/
+.venv/
+*.log

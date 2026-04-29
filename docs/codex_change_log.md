@@ -2,6 +2,15 @@
 
 This file records Codex-made project changes so work can be resumed safely across forks and sessions. Each future code or workflow change should update this log and be followed by a git commit.
 
+## 2026-04-29
+
+- Slimmed the tracked repository for server migration: removed original SEER code-generation data/assets, Open-R1 reproduction files, cached CodeJudgeBench Arrow files, legacy Magicoder code-generation preprocessing/training scripts, and stale ablation wrappers.
+- Replaced the root README with the current code-scoring project layout, active workflows, dataset placement, uv install notes, and tmux usage.
+- Rewrote `data_collection/README.md` and `model_training/src/README.md` to document only the maintained review-MCTS/direct-bootstrap/training/evaluation paths.
+- Added `docs/server_migration.md` with clone, environment, dataset, model-cache, smoke-test, and tmux checklist for moving to a new GPU server.
+- Made maintained shell wrappers derive `ROOT` from their script path by default and removed hard-coded local model paths from Qwen3.5 smoke scripts.
+- Replaced the old non-portable `requirements.txt` with a review-pipeline dependency list compatible with uv-based installation.
+
 ## 2026-04-28
 
 - Added `run_qwen35_9b_direct_stepwise_vs_review_smoke.sh`, a minimal Qwen3.5-9B Direct-review-only vs Direct-stepwise comparison workflow using vLLM tensor-parallel generation, FSDP dual-4090 LoRA/value training, and small AXIOM stepwise evaluation.
