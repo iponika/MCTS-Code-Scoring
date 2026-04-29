@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT="${ROOT:-/data1/xianzhiwei/mcts-code-review}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT="${ROOT:-$(cd "${SCRIPT_DIR}/../.." && pwd)}"
 BASE_RUN_NAME="${BASE_RUN_NAME:-bootstrap_cmp_4b_stepwise_large_20260428}"
 RUN_NAME="${RUN_NAME:-direct_stepwise_vs_review_20260428}"
 CFG="${CFG:-${ROOT}/data_collection/configs/mcts_code_review_qwen3_4b.yaml}"

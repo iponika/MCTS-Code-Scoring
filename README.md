@@ -1,67 +1,130 @@
-# SEER
+# MCTS Code Scoring
 
-This repository contains the implementation of our ICSE'26 submission: "SEER: Enhancing Chain-of-Thought Code Generation through Self-Exploring Deep Reasoning".
+This repository is a code-evaluation adaptation of the SEER MCTS pipeline. The current target is not code generation: it trains and evaluates models that assign stable AXIOM-style scores to candidate code. Text comments are auxiliary evidence for the score.
 
-## Repository Structure
+## Active Scope
+
+- Generate CodeCriticBench-based review trajectories with direct bootstrap or review-MCTS.
+- Convert trajectories into policy/value training data.
+- Train a policy/value model with LoRA and a value head.
+- Evaluate on AXIOM-style held-out code-scoring tasks.
+
+The original code-generation datasets, Open-R1 reproduction code, old perturbation training, and historical ablation wrappers have been removed from the tracked repository. Large datasets, model checkpoints, and run outputs are intentionally ignored.
+
+## Repository Layout
+
+```text
+data_collection/
+  solver_review.py                         # review-MCTS data generation
+  direct_bootstrap_review.py               # non-MCTS direct bootstrap data
+  prepare_codecritic_axiom_seedset.py      # CodeCriticBench -> AXIOM-aligned seeds
+  prepare_static_review_train_data.py      # static seed -> exact value labels
+  rebalance_review_train_data.py           # balance policy/value samples
+  configs/                                 # review-MCTS configs
+  scripts/                                 # maintained experiment wrappers
+
+model_training/src/magicoder/
+  preprocess_review_mcts_data.py           # MCTS/direct trajectories -> train JSONL
+  preprocess_score_datasets.py             # AXIOM/CodeCritic static score data
+  train_multi.py                           # policy/value LoRA training
+  review_evaluator.py                      # final-only and stepwise eval
+  review_policy_value_inference.py         # value-head inspection
+  review_value_guided_evaluator.py         # value-guided single-sample loop
+
+tests/                                     # regression tests for review path
+tools/mcts_tree_viewer.html                # local MCTS sample viewer
+docs/                                      # current design notes and reports
 ```
-├── data/ 
-├── data_collection/ # Data collection tools and scripts
-│ ├── correction.py
-│ ...
-│ └── README.md 
-├── model_training/ # SPEAR model training code
-│ ├── output/ 
-│ └── src/
-│ └── README.md 
-├── open-r1/ # DeepSeek-R1 reproduction implementation
-│ ├── recipes/
-│ ├── src/
-│ └── README.md 
-├── Template.md # Prompt templates used in experiments
-├── Result.md # Detailed experimental results
-├── requirements.txt #
-└── README.md
+
+## Data Expected After Clone
+
+Datasets are not tracked. Put them under these paths, or override the paths in commands:
+
+```text
+datasets/CodeCriticBench/data/CodeCriticBench.jsonl
+datasets/axiom-llm-judge/axiombench/*.jsonl
 ```
 
-## Installation
+Optional future datasets should also stay outside Git under `datasets/` or `benchmarks/`.
 
-Install all required dependencies with:
+## Environment
 
-```sh
-pip install -r requirements.txt
+Use `uv` in the Python environment provided by the target server. On a cluster, install the CUDA/PyTorch/vLLM stack according to the local driver first, then install project dependencies:
+
+```bash
+uv pip install -r requirements.txt
 ```
 
-## Usage
+For Qwen3.5, the environment must include a Transformers build that recognizes `model_type=qwen3_5`. The default `requirements.txt` uses the Hugging Face main branch for this reason. If the server already has a compatible Transformers version, replacing that line with a pinned release is fine.
 
-1. **Data Collection**: Follow the instructions in `./data_collection/README.md` to build the dataset.
-2. **Model Training**: Refer to `./model_training/README.md` for training the SPEAR model.
+## Smoke Checks
 
-## Resources
+Run these from the repository root:
 
-### Data and Models
-- The seed data is located in the `./data` directory
-- We have uploaded the data collected through MCTS [here](https://zenodo.org/records/15039403)
-- Trained models are available on [Zenodo](https://zenodo.org/records/15042929) (we plan to add them to Huggingface after the anonymous submission period)
+```bash
+PYTHONPATH=data_collection:model_training/src uv run pytest tests
+```
 
+Prepare a tiny CodeCritic seed set:
 
-During MCTS data collection, we analyzed path quality across different models. For DeepSeek-Coder-6.7B-Instruct, 29.5% of samples contained exclusively correct paths, while 11.8% contained only incorrect paths. Similarly, for Qwen2.5-Coder-6.7B-Instruct, 29.4% of samples contained only correct paths, and 13.0% contained only incorrect paths. The following figures present comprehensive statistics of all paths in the MCTS trees, including their step distribution and correct/incorrect classification.
-<table>
-  <tr>
-    <td><img src="step_deepseek.png" width="400"/></td>
-    <td><img src="step_Qwen.png" width="400"/></td>
-  </tr>
-</table>
-<table>
-  <tr>
-    <td><img src="correctness_deepseek.png" width="300"/></td>
-    <td><img src="correctness_qwen.png" width="300"/></td>
-  </tr>
-</table>
+```bash
+PYTHONPATH=data_collection uv run python data_collection/prepare_codecritic_axiom_seedset.py \
+  --output /tmp/codecritic_seed.jsonl \
+  --metadata /tmp/codecritic_seed.meta.json \
+  --per_grade 1 \
+  --min_grade 1 \
+  --max_grade 5
+```
 
+## Maintained Workflows
 
+4B full comparison wrapper:
 
-### Documentation
-- `Template.md`: Contains the prompts used in our experiments
-- `parameter.md`: Provides detailed parameter analysis experimental results and additional findings
-- `results.md`: Contains the results of each run for main results and ablation study
-- `path_perturbation.md`: Provides an example to detail the path perturbation process
+```bash
+tmux new -s review_4b_cmp
+RUN_NAME=bootstrap_cmp_qwen3_4b_server \
+SEED_PER_GRADE=8 \
+MAX_STEPS=120 \
+bash data_collection/scripts/run_bootstrap_comparison_qwen3_4b.sh
+```
+
+Qwen3.5-9B direct-review vs direct-stepwise wrapper for larger-memory servers:
+
+```bash
+tmux new -s qwen35_9b_stepwise
+RUN_NAME=qwen35_9b_direct_stepwise_server \
+SEED_PER_GRADE=8 \
+DIRECT_REPEATS=3 \
+MAX_STEPS=120 \
+MAX_TRAINING_SEQ_LENGTH=2048 \
+bash data_collection/scripts/run_qwen35_9b_direct_stepwise_vs_review_smoke.sh
+```
+
+AXIOM held-out evaluation for an existing checkpoint:
+
+```bash
+RUN_NAME=axiom_eval_server \
+TRAINED_MODEL_PATH=/path/to/review-lora-checkpoint \
+bash data_collection/scripts/run_axiom_clean_eval.sh
+```
+
+All maintained wrappers derive `ROOT` from their own location by default, so they should work after `git clone` without editing absolute paths. Set `ROOT=...` only if you intentionally run scripts from a different checkout.
+
+## Long Jobs
+
+Use `tmux` for long-running data generation and training:
+
+```bash
+tmux new -s mcts_job
+# run the command
+# detach: Ctrl-b d
+tmux attach -t mcts_job
+```
+
+Experiment outputs are written under ignored directories:
+
+```text
+data_collection/review_mcts_runs/
+model_training/review_mcts_train_data/
+model_training/src/output/
+```
