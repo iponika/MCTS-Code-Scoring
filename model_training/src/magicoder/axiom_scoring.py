@@ -4,18 +4,20 @@ from typing import Any
 
 
 AXIOM_GRADE_DESCRIPTIONS: dict[int, str] = {
-    5: "Production-ready; no refinement effort is needed.",
-    4: "Functionally correct; only minor code-quality tweaking is needed.",
-    3: "Functionally correct; major refactoring is needed to improve code quality.",
-    2: "Functionally defective; minor tweaking can repair functionality.",
-    1: "Functionally defective; major refactoring is needed to repair functionality.",
-    0: "Fundamentally flawed or mismatched; rewriting is more efficient than repairing.",
+    5: "Production-ready; no code change is needed for the stated requirement.",
+    4: "Functionally correct; only minor code-quality tweaking is needed, for example clearer naming, clarifying precedence, replacing a magic number, or removing unused/dead code.",
+    3: "Functionally correct; major code-quality refactoring is needed, for example decomposing a long method, removing duplicated or scattered logic, reducing tight coupling, or replacing mutable global state.",
+    2: "Functionally defective; minor localized functionality repair is enough, for example adding a boundary check, fixing an off-by-one error, correcting one operator/index/argument/constant, or returning the intended expression.",
+    1: "Functionally defective; major functional refactoring is needed, for example replacing the required algorithm, restoring a missing processing step, changing an unsuitable data structure, fixing state corruption, or repairing lifecycle/state-machine logic.",
+    0: "Fundamentally flawed or mismatched; rewriting is more efficient than repairing, for example code for an unrelated task, a severe language/API mismatch, empty/non-runnable code, or behavior contradicting the core requirement.",
 }
 
 AXIOM_SCALE_TEXT = (
-    "AXIOM score semantics: 5=production-ready; 4=functionally correct with minor quality tweaks; "
-    "3=functionally correct but major quality refactor needed; 2=functionally defective but minor fix; "
-    "1=functionally defective and major repair; 0=fundamentally flawed or mismatched."
+    "AXIOM score semantics: first decide functional status, then repair scope. "
+    "5=production-ready; 4=functionally correct with minor quality tweaks; "
+    "3=functionally correct but major quality refactor needed; 2=functionally defective but minor localized repair; "
+    "1=functionally defective and major functional refactor; 0=fundamentally flawed or mismatched. "
+    "Examples are illustrative, not exhaustive criteria."
 )
 
 
@@ -109,4 +111,3 @@ def parse_axiom_grade(payload: dict[str, Any]) -> int | None:
 
 def grade_alignment(predicted_grade: int, target_grade: int) -> float:
     return max(0.0, 1.0 - abs(predicted_grade - target_grade) / 5.0)
-

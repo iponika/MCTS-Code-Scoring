@@ -9,13 +9,15 @@ trace_requirement | trace_visible_test | derive_counterexample | static_logic_ch
 </step>"""
 
 AXIOM_REFINEMENT_SCALE = """AXIOM refinement-effort scale:
-- 5/5: Production-ready; no effort needed.
-- 4/5: Perfect functionality; minor tweaking is needed only to enhance code quality.
-- 3/5: Perfect functionality; major refactoring is needed to enhance code quality.
-- 2/5: Functionality needs minor tweaking to be repaired.
-- 1/5: Functionality needs major refactoring to be repaired.
-- 0/5: Fundamentally flawed; rewriting is more efficient than repairing.
-Operational meaning: minor tweaking means a small localized change, such as adding a boundary check; major refactoring means a significant structural change, such as rewriting an entire code block."""
+- First decide functional status. Grades 3-5 require perfect or not-disproven functionality; grades 1-2 require a concrete functional defect; grade 0 means the code is fundamentally mismatched to the task.
+- Then decide repair scope. "minor tweaking" means a small localized change; "major refactoring" means a structural change, for example, rewriting an entire code block, algorithm, state flow, or multiple coordinated sites.
+- 5/5: Production-ready; no code change is needed for the stated requirement.
+- 4/5: Functionally correct, but minor code-quality tweaking is needed, for example, clearer naming, clarifying ambiguous operator precedence, replacing a magic number, removing an unused variable or dead code, or splitting an overlong statement.
+- 3/5: Functionally correct, but major code-quality refactoring is needed, for example, reducing deep nesting, decomposing a long method, removing duplicated/scattered logic, reducing tight coupling, removing speculative generality, or replacing mutable global state.
+- 2/5: Functionally defective, but minor localized functionality repair is enough, for example, adding a boundary check, changing one comparison/logical/arithmetic operator, correcting one initializer/index/argument order/constant, assigning an immutable-method return value, or returning the intended expression. A typical localized defect is, for example, an off-by-one error.
+- 1/5: Functionally defective and requires major functional refactoring, for example, replacing the required algorithm, restoring a missing non-trivial processing step, changing an unsuitable data structure, fixing cross-iteration state corruption, redesigning recursion/base cases, repairing lifecycle/state-machine logic, restoring boundary validation, or correcting a serialization-format interpretation.
+- 0/5: Fundamentally flawed; rewriting is more efficient than repairing, for example, code for an unrelated task, a severe language/API mismatch, empty/non-runnable code that prevents meaningful repair, or behavior that contradicts the core requirement.
+Examples are illustrative, not exhaustive criteria; score by the closest AXIOM repair-effort level supported by concrete evidence."""
 
 
 REVIEW_EVIDENCE_RULES = """Evidence rules:

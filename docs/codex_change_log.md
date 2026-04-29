@@ -19,6 +19,7 @@ This file records Codex-made project changes so work can be resumed safely acros
 - Removed the remaining unused `QWEN_STEP_PROMPT`/`DSC_PROMPT` compatibility templates from `model_training/src/magicoder/prompt_template.py` and made `train_multi.py` explicitly review-only to avoid accidental code-generation prompt fallback.
 - Removed legacy code-generation prompt constants from `data_collection/mcts_math/prompts/prompt_sft.py`, retired the old `react_sft_prompt_wrap` path, and simplified local vLLM generation so review data collection cannot accidentally use code-generation direct-prompt mixing.
 - Reworked maintained review prompts again after auditing the AXIOM paper wording: data generation now uses separate step/final templates instead of `{mode_instruction}` injection, step generation no longer has a 40-word cap, AXIOM grades use refinement-effort wording with localized "minor tweaking" vs structural "major refactoring" examples, and training/evaluation prompt wrappers pass the same AXIOM scale explicitly.
+- Expanded the AXIOM operational rubric in prompts and grade descriptions using AXIOMBench perturbation-rule examples while marking all examples as illustrative rather than exhaustive criteria, so models treat examples as calibration anchors instead of hard scoring rules.
 
 ## 2026-04-28
 

@@ -59,8 +59,9 @@ class ReviewPromptVisibilityTest(unittest.TestCase):
         self.assertNotIn("{mode_instruction}", prompt)
         self.assertNotIn("2. Use completed previous steps", prompt)
         self.assertIn("minor tweaking", prompt)
-        self.assertIn("adding a boundary check", prompt)
-        self.assertIn("rewriting an entire code block", prompt)
+        self.assertIn("Examples are illustrative, not exhaustive criteria", prompt)
+        self.assertIn("for example, adding a boundary check", prompt)
+        self.assertIn("for example, rewriting an entire code block", prompt)
         self.assertNotIn("exceptionally intelligent", prompt)
         self.assertNotIn("coding assistant", prompt)
         self.assertNotIn("problem-solving plan", prompt)
@@ -192,6 +193,19 @@ class ReviewPromptVisibilityTest(unittest.TestCase):
         self.assertIn("each <step> should add one concrete", step_prompt)
         self.assertIn("minor tweaking", final_prompt)
         self.assertIn("major refactoring", final_prompt)
+        self.assertIn("Examples are illustrative, not exhaustive criteria", final_prompt)
+        self.assertIn("for example, an off-by-one error", final_prompt)
+        self.assertIn("for example, replacing the required algorithm", final_prompt)
+
+    def test_axiom_grade_descriptions_keep_example_wording_soft(self) -> None:
+        from magicoder.axiom_scoring import AXIOM_GRADE_DESCRIPTIONS
+
+        self.assertIn("for example", AXIOM_GRADE_DESCRIPTIONS[4])
+        self.assertIn("for example", AXIOM_GRADE_DESCRIPTIONS[3])
+        self.assertIn("for example", AXIOM_GRADE_DESCRIPTIONS[2])
+        self.assertIn("for example", AXIOM_GRADE_DESCRIPTIONS[1])
+        self.assertIn("unrelated task", AXIOM_GRADE_DESCRIPTIONS[0])
+        self.assertNotIn("must be", AXIOM_GRADE_DESCRIPTIONS[2])
 
     def test_review_prompt_template_module_does_not_export_unused_legacy_prompts(self) -> None:
         import magicoder.prompt_template as prompt_template
