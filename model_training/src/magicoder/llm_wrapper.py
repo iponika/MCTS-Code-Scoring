@@ -361,7 +361,7 @@ class SupportedModelKeys(Enum):
 
     QWEN_CODER_7B = "Qwen/Qwen2.5-Coder-7B-Instruct"
     QWEN3_5_9B = "Qwen/Qwen3.5-9B"
-    QWEN3_4B_INSTRUCT_2507 = "Qwen/Qwen3-4B-Instruct-2507"
+    QWEN3_4B = "Qwen/Qwen3-4B"
     QWEN3_8B = "Qwen/Qwen3-8B"
 
     @staticmethod
@@ -407,7 +407,7 @@ class SupportedModelKeys(Enum):
         return [
             SupportedModelKeys.QWEN_CODER_7B.value,
             SupportedModelKeys.QWEN3_5_9B.value,
-            SupportedModelKeys.QWEN3_4B_INSTRUCT_2507.value,
+            SupportedModelKeys.QWEN3_4B.value,
             SupportedModelKeys.QWEN3_8B.value,
         ]
     
