@@ -60,5 +60,6 @@ uv run python data_collection/solver_review.py \
 - `scripts/run_axiom_clean_eval.sh`: AXIOM held-out evaluation.
 - `configs/mcts_code_review_qwen3_4b_thinking.yaml`: Qwen3-4B native `/think` review-MCTS smoke configuration.
 - `configs/mcts_code_review_qwen3_4b_no_think.yaml`: Qwen3-4B `/no_think` comparison configuration.
+- `configs/mcts_code_review_deepseek_r1_distill_qwen_7b.yaml`: DeepSeek-R1-Distill-Qwen-7B reasoning review-MCTS configuration.
 
 All wrappers are resumable at file/stage level where practical and write logs under `data_collection/review_mcts_runs/<RUN_NAME>/logs`.

@@ -13,6 +13,8 @@ This file records Codex-made project changes so work can be resumed safely acros
 - Added `README.zh-CN.md`, linked it from the English README, and documented Codex session migration in `docs/server_migration.md`.
 - Added `Qwen/Qwen3-4B` thinking/no-thinking review-MCTS configs, a vLLM serve helper, and prompt parsing support that turns native `<think>` blocks into review `<step>` nodes.
 - Retired the old non-thinking `Qwen/Qwen3-4B-Instruct-2507` defaults in maintained scripts/configs and removed its dedicated serve helper.
+- Made Qwen3-4B maintained comparison scripts default to the native-thinking config and normalized the legacy `DIRECT_POLICY_RESPONSE_MODE=review` spelling to `final_review`.
+- Added DeepSeek-R1-Distill-Qwen-7B review-MCTS config, vLLM serve helper, model-key support, and README smoke commands.
 - Tightened review step prompts so prior `<step>` blocks are described as completed fixed context, non-final stepwise evaluation no longer advertises the final review JSON schema, and non-final generation explicitly forbids premature `<review>` output or repeated prior reasoning.
 - Rewrote the maintained review prompts around correctness-only AXIOM scoring: removed SEER/code-generation persona noise from review paths, separated step-only/final-only prompt templates, and made review training choose a final-only prompt for review-only responses instead of always asking for stepwise reasoning.
 - Removed unused legacy Magicoder few-shot/codegen prompt constants from `model_training/src/magicoder/prompt_template.py` while retaining the small compatibility templates still imported by non-review training branches.
