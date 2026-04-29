@@ -12,12 +12,12 @@ from mcts_math.axiom_scoring import axiom_functionally_correct, axiom_scalar_sco
 from mcts_math.config import BaseConfig
 from mcts_math.llms.openai_api_llm import OpenAICompatibleGenerator, build_api_sampling_params
 from mcts_math.prompts.prompt_sft import (
-    REVIEW_FINAL_FORMAT_RULE,
     REVIEW_FINAL_FORMAT_SECTION,
-    QWEN_REVIEW_PROMPT,
+    AXIOM_REFINEMENT_SCALE,
+    REVIEW_EVIDENCE_RULES,
+    QWEN_REVIEW_FINAL_PROMPT,
 )
 from mcts_math.review_utils import (
-    DEFAULT_DIMENSION_RUBRIC,
     compute_review_reward,
     load_codecriticbench_dataset,
     parse_review_payload,
@@ -50,21 +50,16 @@ def prompt_tests_text(sample: dict[str, Any], config: Any) -> str:
 
 
 def build_prompt(sample: dict[str, Any], dimension: str, config: Any) -> str:
-    rubric = sample["dimension_rubrics"].get(dimension) or DEFAULT_DIMENSION_RUBRIC.get(dimension, "")
-    return QWEN_REVIEW_PROMPT.format(
-        dimension=dimension,
-        rubric=rubric,
+    return QWEN_REVIEW_FINAL_PROMPT.format(
         question=sample["question"],
         candidate_code=sample["candidate_code"],
         code_language=sample.get("code_language", "python"),
         tests=prompt_tests_text(sample, config),
         partial_solution="None",
-        mode_instruction=(
-            "No previous steps are available. Finish now with exactly one <review> JSON block. "
-            "Do not output <step> blocks."
-        ),
-        format_rule=REVIEW_FINAL_FORMAT_RULE,
-        output_format_section=REVIEW_FINAL_FORMAT_SECTION,
+        axiom_scale=AXIOM_REFINEMENT_SCALE,
+        evidence_rules=REVIEW_EVIDENCE_RULES,
+        step_format_section="",
+        final_format_section=REVIEW_FINAL_FORMAT_SECTION,
     )
 
 

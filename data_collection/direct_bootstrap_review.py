@@ -13,12 +13,14 @@ from mcts_math.config import BaseConfig
 from mcts_math.llms.local_llms import maybe_apply_chat_template
 from mcts_math.llms.local_llm_engine import llm_engine
 from mcts_math.prompts.prompt_sft import (
-    REVIEW_FINAL_FORMAT_RULE,
     REVIEW_FINAL_FORMAT_SECTION,
-    QWEN_REVIEW_PROMPT,
+    REVIEW_STEP_FORMAT_SECTION,
+    AXIOM_REFINEMENT_SCALE,
+    REVIEW_EVIDENCE_RULES,
+    QWEN_REVIEW_FINAL_PROMPT,
+    QWEN_REVIEW_STEP_PROMPT,
 )
 from mcts_math.review_utils import (
-    DEFAULT_DIMENSION_RUBRIC,
     compute_review_reward,
     load_codecriticbench_dataset,
     parse_review_payload,
@@ -72,34 +74,17 @@ def build_prompt(
     partial_solution: str = "None",
     force_final_review: bool = True,
 ) -> str:
-    rubric = sample["dimension_rubrics"].get(dimension) or DEFAULT_DIMENSION_RUBRIC.get(dimension, "")
-    if force_final_review:
-        mode_instruction = (
-            "Use completed previous steps as fixed context. Finish now with exactly one <review> JSON block. "
-            "Do not add more <step> blocks."
-        )
-        format_rule = REVIEW_FINAL_FORMAT_RULE
-        output_format_section = REVIEW_FINAL_FORMAT_SECTION
-    else:
-        mode_instruction = (
-            "Use completed previous steps as fixed context. Continue from the last completed step. "
-            "Output exactly one new <step> block. Do not output <review> yet."
-        )
-        from mcts_math.prompts.prompt_sft import REVIEW_STEP_FORMAT_RULE, REVIEW_STEP_FORMAT_SECTION
-
-        format_rule = REVIEW_STEP_FORMAT_RULE
-        output_format_section = REVIEW_STEP_FORMAT_SECTION
-    prompt = QWEN_REVIEW_PROMPT.format(
-        dimension=dimension,
-        rubric=rubric,
+    template = QWEN_REVIEW_FINAL_PROMPT if force_final_review else QWEN_REVIEW_STEP_PROMPT
+    prompt = template.format(
         question=sample["question"],
         candidate_code=sample["candidate_code"],
         code_language=sample.get("code_language", "python"),
         tests=prompt_tests_text(sample, config),
         partial_solution=partial_solution.strip() if partial_solution else "None",
-        mode_instruction=mode_instruction,
-        format_rule=format_rule,
-        output_format_section=output_format_section,
+        axiom_scale=AXIOM_REFINEMENT_SCALE,
+        evidence_rules=REVIEW_EVIDENCE_RULES,
+        step_format_section=REVIEW_STEP_FORMAT_SECTION,
+        final_format_section=REVIEW_FINAL_FORMAT_SECTION,
     )
     thinking_mode = str(getattr(config, "qwen_thinking_mode", "") or "").strip().lower()
     if force_final_review and getattr(config, "review_native_thinking_steps", False):

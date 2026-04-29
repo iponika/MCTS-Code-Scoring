@@ -7,7 +7,7 @@ from typing import Any
 import torch
 from transformers import AutoTokenizer, set_seed
 
-from magicoder.prompt_template import QWEN_REVIEW_STEP_ONLY_PROMPT, QWEN_REVIEW_STEP_PROMPT
+from magicoder.prompt_template import AXIOM_REFINEMENT_SCALE, QWEN_REVIEW_STEP_ONLY_PROMPT, QWEN_REVIEW_STEP_PROMPT
 from magicoder.review_policy_value_inference import (
     generate_response,
     load_jsonl_item,
@@ -22,18 +22,26 @@ VALUE_SCORE_KEYS = ["last_value", "response_mean_value", "response_min_value", "
 
 def build_prompt(instruction: str, partial_response: str, *, force_final: bool) -> str:
     if force_final:
-        mode_instruction = (
+        final_instruction = (
             instruction
-            + "\n\nCurrent generation mode: completed previous <step> blocks are fixed context. "
-            "Finish now with exactly one <review> JSON block and do not add more <step> blocks."
+            + "\n\nCompleted previous <step> blocks are fixed context. "
+            "Start the next output with <review>, output exactly one valid JSON object, and do not add more <step> blocks."
         )
-        return QWEN_REVIEW_STEP_PROMPT.format(instruction=mode_instruction, response=partial_response)
-    mode_instruction = (
+        return QWEN_REVIEW_STEP_PROMPT.format(
+            instruction=final_instruction,
+            response=partial_response,
+            axiom_scale=AXIOM_REFINEMENT_SCALE,
+        )
+    step_instruction = (
         instruction
-        + "\n\nCurrent generation mode: completed previous <step> blocks are fixed context. "
+        + "\n\nCompleted previous <step> blocks are fixed context. "
         "Continue from the last completed step. Output exactly one new <step> block. Do not output <review> yet."
     )
-    return QWEN_REVIEW_STEP_ONLY_PROMPT.format(instruction=mode_instruction, response=partial_response)
+    return QWEN_REVIEW_STEP_ONLY_PROMPT.format(
+        instruction=step_instruction,
+        response=partial_response,
+        axiom_scale=AXIOM_REFINEMENT_SCALE,
+    )
 
 
 def candidate_sort_key(candidate: dict[str, Any], score_key: str) -> tuple[float, float]:

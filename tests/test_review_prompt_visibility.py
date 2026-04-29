@@ -55,6 +55,12 @@ class ReviewPromptVisibilityTest(unittest.TestCase):
         self.assertIn("Do not output <review> yet", prompt)
         self.assertNotIn("Structured final review format", prompt)
         self.assertNotIn('"axiom_grade"', prompt)
+        self.assertNotIn("under 40 words", prompt)
+        self.assertNotIn("{mode_instruction}", prompt)
+        self.assertNotIn("2. Use completed previous steps", prompt)
+        self.assertIn("minor tweaking", prompt)
+        self.assertIn("adding a boundary check", prompt)
+        self.assertIn("rewriting an entire code block", prompt)
         self.assertNotIn("exceptionally intelligent", prompt)
         self.assertNotIn("coding assistant", prompt)
         self.assertNotIn("problem-solving plan", prompt)
@@ -79,6 +85,8 @@ class ReviewPromptVisibilityTest(unittest.TestCase):
         self.assertIn("Structured final review format", prompt)
         self.assertIn("<review>", prompt)
         self.assertIn('"axiom_grade"', prompt)
+        self.assertNotIn("{mode_instruction}", prompt)
+        self.assertNotIn("2. Use completed previous steps", prompt)
         self.assertNotIn("exceptionally intelligent", prompt)
         self.assertNotIn("coding assistant", prompt)
 
@@ -146,6 +154,7 @@ class ReviewPromptVisibilityTest(unittest.TestCase):
         self.assertIn("completed previous <step> blocks", prompt)
         self.assertIn("Continue from the last completed step", prompt)
         self.assertIn("Do not output <review> yet", prompt)
+        self.assertNotIn("under 40 words", prompt)
         self.assertNotIn("unless the review is already ready", prompt)
         self.assertNotIn('"axiom_grade"', prompt)
         self.assertNotIn("Final review format", prompt)
@@ -176,9 +185,13 @@ class ReviewPromptVisibilityTest(unittest.TestCase):
         step_prompt = review_prompt_for_response(instruction, "<step>\ntrace_requirement: Check return value.\n</step>")
 
         self.assertIn("Output exactly one JSON object wrapped in <review> tags", final_prompt)
-        self.assertNotIn("Reasoning format: write concise <step> blocks", final_prompt)
-        self.assertIn("Reasoning format: write concise <step> blocks", step_prompt)
-        self.assertIn("then finish with exactly one <review> JSON block", step_prompt)
+        self.assertIn("Current generation mode: final AXIOM scoring", final_prompt)
+        self.assertNotIn("stepwise evidence-and-review training", final_prompt)
+        self.assertIn("Current generation mode: stepwise evidence-and-review training", step_prompt)
+        self.assertIn("finish with exactly one <review> JSON block", step_prompt)
+        self.assertIn("each <step> should add one concrete", step_prompt)
+        self.assertIn("minor tweaking", final_prompt)
+        self.assertIn("major refactoring", final_prompt)
 
     def test_review_prompt_template_module_does_not_export_unused_legacy_prompts(self) -> None:
         import magicoder.prompt_template as prompt_template
