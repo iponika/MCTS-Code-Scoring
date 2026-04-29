@@ -4,7 +4,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="${ROOT:-$(cd "${SCRIPT_DIR}/../.." && pwd)}"
 RUN_NAME="${RUN_NAME:-bootstrap_comparison_qwen3_4b_20260424}"
-CFG="${CFG:-${ROOT}/data_collection/configs/mcts_code_review_qwen3_4b.yaml}"
+CFG="${CFG:-${ROOT}/data_collection/configs/mcts_code_review_qwen3_4b_thinking.yaml}"
 MODEL_KEY="${MODEL_KEY:-Qwen/Qwen3-4B}"
 MODEL_PATH="${MODEL_PATH:-Qwen/Qwen3-4B}"
 SEED_PER_GRADE="${SEED_PER_GRADE:-24}"
@@ -20,7 +20,7 @@ MAX_STEPS="${MAX_STEPS:-240}"
 EVAL_PER_GRADE="${EVAL_PER_GRADE:-8}"
 POLICY_MIN_Q="${POLICY_MIN_Q:-0.5}"
 MAX_VALUE_PATHS_PER_DIMENSION="${MAX_VALUE_PATHS_PER_DIMENSION:-0}"
-DIRECT_POLICY_RESPONSE_MODE="${DIRECT_POLICY_RESPONSE_MODE:-path}"
+DIRECT_POLICY_RESPONSE_MODE="${DIRECT_POLICY_RESPONSE_MODE:-final_review}"
 MCTS_POLICY_RESPONSE_MODE="${MCTS_POLICY_RESPONSE_MODE:-path}"
 DIRECT_KEEP_ALL_VALUE_PATHS="${DIRECT_KEEP_ALL_VALUE_PATHS:-1}"
 MCTS_KEEP_ALL_VALUE_PATHS="${MCTS_KEEP_ALL_VALUE_PATHS:-1}"
@@ -163,6 +163,9 @@ prepare_bootstrap_train() {
     policy_response_mode="${DIRECT_POLICY_RESPONSE_MODE}"
   elif [[ "${mode}" == "mcts" ]]; then
     policy_response_mode="${MCTS_POLICY_RESPONSE_MODE}"
+  fi
+  if [[ "${policy_response_mode}" == "review" ]]; then
+    policy_response_mode="final_review"
   fi
   CURRENT_STAGE="prepare_${mode}_train"
   if [[ -f "${output_file}" ]]; then

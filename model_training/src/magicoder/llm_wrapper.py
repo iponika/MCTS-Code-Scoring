@@ -363,6 +363,7 @@ class SupportedModelKeys(Enum):
     QWEN3_5_9B = "Qwen/Qwen3.5-9B"
     QWEN3_4B = "Qwen/Qwen3-4B"
     QWEN3_8B = "Qwen/Qwen3-8B"
+    DEEPSEEK_R1_DISTILL_QWEN_7B = "deepseek-ai/DeepSeek-R1-Distill-Qwen-7B"
 
     @staticmethod
     def all() -> list[str]:
@@ -409,6 +410,7 @@ class SupportedModelKeys(Enum):
             SupportedModelKeys.QWEN3_5_9B.value,
             SupportedModelKeys.QWEN3_4B.value,
             SupportedModelKeys.QWEN3_8B.value,
+            SupportedModelKeys.DEEPSEEK_R1_DISTILL_QWEN_7B.value,
         ]
     
 

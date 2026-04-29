@@ -122,6 +122,22 @@ uv run python data_collection/solver_review.py \
   --output_dir data_collection/review_mcts_runs/qwen3_4b_thinking_smoke/samples
 ```
 
+下载模型后，DeepSeek-R1-Distill-Qwen-7B 的 review-MCTS smoke：
+
+```bash
+CUDA_VISIBLE_DEVICES=0,1 \
+HF_HOME=/data1/xianzhiwei/model/huggingface \
+HF_HUB_OFFLINE=1 \
+PYTHONPATH=data_collection \
+uv run python data_collection/solver_review.py \
+  --custom_cfg data_collection/configs/mcts_code_review_deepseek_r1_distill_qwen_7b.yaml \
+  --dataset datasets/CodeCriticBench/data/CodeCriticBench.jsonl \
+  --start 0 \
+  --limit 1 \
+  --output data_collection/review_mcts_runs/deepseek_r1_distill_qwen_7b_smoke/aggregate.jsonl \
+  --output_dir data_collection/review_mcts_runs/deepseek_r1_distill_qwen_7b_smoke/samples
+```
+
 对已有 checkpoint 进行 AXIOM held-out 评测：
 
 ```bash
