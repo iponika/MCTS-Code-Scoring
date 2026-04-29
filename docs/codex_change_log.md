@@ -13,6 +13,7 @@ This file records Codex-made project changes so work can be resumed safely acros
 - Added `README.zh-CN.md`, linked it from the English README, and documented Codex session migration in `docs/server_migration.md`.
 - Added `Qwen/Qwen3-4B` thinking/no-thinking review-MCTS configs, a vLLM serve helper, and prompt parsing support that turns native `<think>` blocks into review `<step>` nodes.
 - Retired the old non-thinking `Qwen/Qwen3-4B-Instruct-2507` defaults in maintained scripts/configs and removed its dedicated serve helper.
+- Tightened review step prompts so prior `<step>` blocks are described as completed fixed context, non-final stepwise evaluation no longer advertises the final review JSON schema, and non-final generation explicitly forbids premature `<review>` output or repeated prior reasoning.
 
 ## 2026-04-28
 

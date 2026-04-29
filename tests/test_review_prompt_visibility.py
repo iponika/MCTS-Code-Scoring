@@ -5,6 +5,7 @@ from omegaconf import OmegaConf
 from mcts_math.agents.utils import review_prompt_wrap, review_step_result_unwrap
 from mcts_math.config import BaseConfig
 from magicoder.preprocess_review_mcts_data import build_instruction
+from magicoder.review_evaluator import prompt_for_dimension
 
 
 class ReviewPromptVisibilityTest(unittest.TestCase):
@@ -120,6 +121,44 @@ class ReviewPromptVisibilityTest(unittest.TestCase):
         self.assertIn("<step>", step_text)
         self.assertEqual(parsed["action"], step_text)
         self.assertEqual(parsed["final_answer"], "")
+
+    def test_stepwise_eval_step_prompt_marks_prior_steps_as_completed(self) -> None:
+        sample = {
+            "problem": "Return x + 1.",
+            "candidate_code": "def f(x):\n    return x + 1",
+            "tests": ["assert f(1) == 2"],
+            "language": "python",
+        }
+        prompt = prompt_for_dimension(
+            sample,
+            "Correctness Verification",
+            partial_response="<step>\nstatic_logic_check: The function returns x + 1 directly.\n</step>\n",
+            force_final=False,
+        )
+
+        self.assertIn("completed previous <step> blocks", prompt)
+        self.assertIn("Continue from the last completed step", prompt)
+        self.assertIn("Do not output <review> yet", prompt)
+        self.assertNotIn("unless the review is already ready", prompt)
+        self.assertNotIn('"axiom_grade"', prompt)
+
+    def test_stepwise_eval_final_prompt_shows_review_format(self) -> None:
+        sample = {
+            "problem": "Return x + 1.",
+            "candidate_code": "def f(x):\n    return x + 1",
+            "tests": ["assert f(1) == 2"],
+            "language": "python",
+        }
+        prompt = prompt_for_dimension(
+            sample,
+            "Correctness Verification",
+            partial_response="<step>\nstatic_logic_check: The function returns x + 1 directly.\n</step>\n",
+            force_final=True,
+        )
+
+        self.assertIn("completed previous <step> blocks", prompt)
+        self.assertIn("Start your next output with <review>", prompt)
+        self.assertIn('"axiom_grade"', prompt)
 
 
 if __name__ == "__main__":
