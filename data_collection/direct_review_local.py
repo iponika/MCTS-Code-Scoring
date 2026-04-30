@@ -15,6 +15,7 @@ from mcts_math.prompts.prompt_sft import (
     REVIEW_FINAL_FORMAT_SECTION,
     AXIOM_REFINEMENT_SCALE,
     REVIEW_EVIDENCE_RULES,
+    REVIEW_FINAL_CONSISTENCY_RULE,
     QWEN_REVIEW_FINAL_PROMPT,
 )
 from mcts_math.review_utils import (
@@ -59,6 +60,7 @@ def build_prompt(sample: dict[str, Any], dimension: str, config: Any) -> str:
         partial_solution="None",
         axiom_scale=AXIOM_REFINEMENT_SCALE,
         evidence_rules=REVIEW_EVIDENCE_RULES,
+        final_consistency_rule=REVIEW_FINAL_CONSISTENCY_RULE,
         step_format_section="",
         final_format_section=REVIEW_FINAL_FORMAT_SECTION,
     )

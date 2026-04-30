@@ -25,7 +25,9 @@ def build_prompt(instruction: str, partial_response: str, *, force_final: bool) 
         final_instruction = (
             instruction
             + "\n\nCompleted previous <step> blocks are fixed context. "
-            "Start the next output with <review>, output exactly one valid JSON object, and do not add more <step> blocks."
+            "Start the next output with <review>, output exactly one valid JSON object, and do not add more <step> blocks. "
+            "Before choosing axiom_grade, reconcile supported previous-step evidence with the final verdict; "
+            "if a supported counterexample or trace exists, the final review cannot silently contradict it."
         )
         return QWEN_REVIEW_STEP_PROMPT.format(
             instruction=final_instruction,

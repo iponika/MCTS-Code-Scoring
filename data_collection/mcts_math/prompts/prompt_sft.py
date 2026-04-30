@@ -31,6 +31,10 @@ REVIEW_EVIDENCE_RULES = """Evidence rules:
 8. Do not output code fixes."""
 
 
+REVIEW_FINAL_CONSISTENCY_RULE = """Final consistency rule:
+Before choosing axiom_grade, reconcile supported previous-step evidence with the final verdict. If a completed step contains a concrete counterexample or trace supported by the task, code, or visible tests, the final review cannot silently contradict it; either reflect the defect in functional_correctness/axiom_grade or explain why that step is unsupported."""
+
+
 QWEN_REVIEW_STEP_PROMPT = """You are a code scoring model for functional correctness.
 @@ Instruction
 Current generation mode: continue evidence gathering.
@@ -91,6 +95,8 @@ Completed previous review steps:
 {axiom_scale}
 
 {evidence_rules}
+
+{final_consistency_rule}
 
 Use at most 2 short evidence strings in the final JSON.
 

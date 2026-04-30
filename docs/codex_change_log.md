@@ -2,6 +2,11 @@
 
 This file records Codex-made project changes so work can be resumed safely across forks and sessions. Each future code or workflow change should update this log and be followed by a git commit.
 
+## 2026-04-30
+
+- Added a narrow final-review consistency rule to review prompts: final AXIOM scoring now tells the model to reconcile supported previous-step evidence with the final verdict, so a supported counterexample or trace cannot be silently contradicted by the final `<review>`.
+- Mirrored the rule across data-generation MCTS prompts, direct local/API review prompts, review training templates, stepwise evaluation, and value-guided evaluation; added prompt-visibility regression checks.
+
 ## 2026-04-29
 
 - Slimmed the tracked repository for server migration: removed original SEER code-generation data/assets, Open-R1 reproduction files, cached CodeJudgeBench Arrow files, legacy Magicoder code-generation preprocessing/training scripts, and stale ablation wrappers.
