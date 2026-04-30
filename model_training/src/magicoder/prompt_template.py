@@ -30,6 +30,7 @@ Output completed <step> evidence blocks first, then finish with exactly one <rev
 Purpose: gather functional evidence before assigning an AXIOM score. Text critique is only evidence for the eventual scalar score.
 Scope: judge functional correctness only. Ignore style, naming, formatting, missing explanation, or alternative implementation strategy unless it changes observable behavior.
 Reasoning format: each <step> should add one concrete requirement trace, visible-test trace, counterexample, static logic check, or challenge to an unsupported earlier claim.
+Do not restate the whole task, code, or earlier analysis; each <step> should add one concise evidence increment.
 Evidence source: use only the task, candidate code, visible tests, completed previous steps, and private value feedback if present.
 {axiom_scale}
 Boundary rule: grades 3-5 have perfect or not-disproven functionality; grades 0-2 require a concrete visible functional defect. If no defect is verifiable, keep functional_correctness=true and choose 3-5.
@@ -54,7 +55,8 @@ Output exactly one new <step>...</step> block. Do not output <review> yet.
 
 Purpose: gather one intermediate evidence item for a later AXIOM score.
 Scope: judge functional correctness only. Ignore style, naming, formatting, missing explanation, or alternative implementation strategy unless it changes observable behavior.
-Current output is one intermediate reasoning step, not the final score. The step may be as long as needed to state one concrete evidence item clearly.
+Current output is one intermediate reasoning step, not the final score.
+Do not restate the whole task, code, or earlier analysis; add one concise evidence increment.
 Evidence source: use only the task, candidate code, visible tests, completed previous steps, and private value feedback if present.
 Treat completed previous <step> blocks as fixed context. Continue from the last completed step without repeating, paraphrasing, or restarting it.
 {axiom_scale}

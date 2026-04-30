@@ -5,14 +5,14 @@ result_unwrap: "review_sft"
 temperature: 0.6
 top_p: 0.95
 top_k: 20
-max_tokens: 512
+max_tokens: 768
 swap_space: 16
 gpu_memory_utilization: 0.88
 max_model_len: 8192
 enable_prefix_caching: True
 use_chat_template: True
 chat_template_enable_thinking: True
-stop: ["</step>", "</step>\n", "</step>\n\n", "</review>"]
+stop: ["</think>", "</step>", "</step>\n", "</step>\n\n", "</review>"]
 qwen_thinking_mode: "think"
 review_native_thinking_steps: True
 max_depth: 3

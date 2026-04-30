@@ -26,6 +26,76 @@ DEFAULT_DIMENSION_RUBRIC: Dict[str, str] = {
 }
 
 
+def _native_think_sentences(text: str) -> List[str]:
+    matches = re.findall(r"[^.!?\n]+[.!?]", text)
+    return [match.strip() for match in matches if match.strip()]
+
+
+def _is_generic_native_think_sentence(sentence: str) -> bool:
+    lowered = sentence.lower()
+    generic_markers = [
+        "the task is",
+        "the problem is",
+        "the user wants me",
+        "the user is asking",
+        "the user provided",
+        "the candidate code is supposed",
+        "the candidate code for",
+        "the previous step",
+        "previous step was",
+        "previous analysis",
+        "continue evidence",
+        "continue the evidence",
+        "axiom score",
+        "code scoring model",
+        "i need to understand",
+        "first, i need",
+        "let me understand",
+        "figure out what",
+        "let me figure out",
+        "try to figure",
+    ]
+    evidence_markers = [
+        "incorrect",
+        "wrong",
+        "fails",
+        "failure",
+        "flaw",
+        "bug",
+        "counterexample",
+        "overcount",
+        "undercount",
+        "returns",
+        "does not",
+        "cannot",
+        "because",
+    ]
+    return any(marker in lowered for marker in generic_markers) and not any(
+        marker in lowered for marker in evidence_markers
+    )
+
+
+def compact_native_think_body(text: str, max_chars: int = 900) -> str:
+    cleaned = str(text or "").strip()
+    sentences = _native_think_sentences(cleaned)
+    if not sentences:
+        return cleaned[:max_chars].rstrip()
+
+    evidence_sentences = [sentence for sentence in sentences if not _is_generic_native_think_sentence(sentence)]
+    selected = evidence_sentences or sentences
+    output: list[str] = []
+    total = 0
+    for sentence in selected:
+        next_total = total + len(sentence) + (1 if output else 0)
+        if output and next_total > max_chars:
+            break
+        output.append(sentence)
+        total = next_total
+        if total >= max_chars:
+            break
+    return " ".join(output).strip()
+
+
 def _kill_process_tree(proc_pid: int) -> None:
     process = psutil.Process(proc_pid)
     for proc in process.children(recursive=True):

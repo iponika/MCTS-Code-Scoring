@@ -23,6 +23,7 @@ from mcts_math.prompts.prompt_sft import (
     QWEN_REVIEW_STEP_PROMPT,
 )
 from mcts_math.tools.python_tool import PythonInterpreter
+from mcts_math.review_utils import compact_native_think_body
 
 from mcts_math.constants import *
 from subprocess import TimeoutExpired,Popen,PIPE
@@ -144,12 +145,17 @@ def review_prompt_wrap(
     elif thinking_mode in {"no_think", "no-think", "/no_think"}:
         thinking_suffix = "\n\n/no_think"
     template = QWEN_REVIEW_FINAL_PROMPT if force_final else QWEN_REVIEW_STEP_PROMPT
+    partial_response = partial_solution.strip() if partial_solution else ""
+    if partial_response == "None":
+        partial_response = ""
+    if partial_response:
+        partial_response = partial_response.rstrip() + "\n"
     prompt = template.format(
         question=question,
         candidate_code=review_context["candidate_code"],
         code_language=review_context.get("code_language", "python"),
         tests=tests,
-        partial_solution=partial_solution.strip() if partial_solution else "None",
+        partial_solution=partial_response,
         axiom_scale=AXIOM_REFINEMENT_SCALE,
         evidence_rules=REVIEW_EVIDENCE_RULES,
         final_consistency_rule=REVIEW_FINAL_CONSISTENCY_RULE,
@@ -184,7 +190,7 @@ def review_step_result_unwrap(
         think_body = cleaned.split("<think>", 1)[1]
         if "</think>" in think_body:
             think_body = think_body.split("</think>", 1)[0]
-        think_body = think_body.strip()
+        think_body = compact_native_think_body(think_body)
         if think_body:
             step_text = f"<step>\nnative_think: {think_body}\n</step>"
             parser_result["action"] = step_text
