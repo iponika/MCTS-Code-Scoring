@@ -177,3 +177,11 @@ This file records Codex-made project changes so work can be resumed safely acros
 - Kept objective reward labeling and future trained value-head inference paths.
 - Updated score summarization so predictions are no longer parsed from `self_judge`.
 - Added ignore rules for Python bytecode/cache files to avoid committing runtime artifacts.
+
+## 2026-04-30
+
+- Added `data_collection/review_experiment_utils.py` with helpers for normalizing direct-stepwise step-count variants and aligning direct-review policy-sample count to the static baseline without discarding extra value-only samples.
+- Added `tests/test_review_experiment_utils.py` to lock the new step-count and review-alignment behavior with focused unit coverage.
+- Added `data_collection/scripts/run_direct_stepcount_vs_review_qwen3_4b.sh` to run a direct comparison among `static`, `direct-review`, `direct-stepwise-1step`, and `direct-stepwise-2step`.
+- The new workflow fixes the experiment contract for this phase: `static` and `direct-review` are matched only on final `<review>` policy-sample count, while stepwise variants are allowed to keep their extra `<step>` supervision so we can test whether progressive reasoning itself helps.
+- The new workflow records provenance explicitly in `summary.json`: training seeds come from `data_collection/prepare_codecritic_axiom_seedset.py` over `datasets/CodeCriticBench/data/CodeCriticBench.jsonl`, and supervised evaluation seeds come from AXIOM clean held-out sampling in `data_collection/scripts/run_axiom_clean_eval.sh`.
