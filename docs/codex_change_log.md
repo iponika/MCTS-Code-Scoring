@@ -6,6 +6,8 @@ This file records Codex-made project changes so work can be resumed safely acros
 
 - Added a narrow final-review consistency rule to review prompts: final AXIOM scoring now tells the model to reconcile supported previous-step evidence with the final verdict, so a supported counterexample or trace cannot be silently contradicted by the final `<review>`.
 - Mirrored the rule across data-generation MCTS prompts, direct local/API review prompts, review training templates, stepwise evaluation, and value-guided evaluation; added prompt-visibility regression checks.
+- Fixed native-thinking review step generation after sample inspection: previous steps are now placed after `@@ Response` and rendered as assistant history under the chat template, thinking-mode step generation stops on `</think>`, and native `<think>` bodies are compacted to complete evidence sentences instead of storing max-token-cut fragments.
+- Tightened step prompts only around evidence increments and continuation, without adding explicit "do not output Okay" style constraints; a 1-sample Qwen3-4B smoke confirmed no mid-sentence step truncation and no `The user.../previous step...` meta-prefix after the assistant-history fix.
 
 ## 2026-04-29
 

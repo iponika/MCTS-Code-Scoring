@@ -60,6 +60,32 @@ def chat_template_thinking_enabled(prompt: str, config: Any) -> bool:
     return bool(getattr(config, "chat_template_enable_thinking", True))
 
 
+def strip_thinking_switch(prompt: str) -> str:
+    stripped = str(prompt or "").rstrip()
+    lower = stripped.lower()
+    for suffix in ("/no_think", "/think"):
+        if lower.endswith(suffix):
+            return stripped[: -len(suffix)].rstrip()
+    return str(prompt or "")
+
+
+def chat_messages_for_prompt(prompt: str) -> list[dict[str, str]]:
+    content = strip_thinking_switch(prompt)
+    if "@@ Response" not in content:
+        return [{"role": "user", "content": content}]
+
+    instruction, response = content.split("@@ Response", 1)
+    user_content = instruction.rstrip() + "\n\n@@ Response"
+    response_prefix = response.lstrip("\n").rstrip()
+    if not response_prefix:
+        return [{"role": "user", "content": user_content}]
+
+    return [
+        {"role": "user", "content": user_content},
+        {"role": "assistant", "content": response_prefix},
+    ]
+
+
 def maybe_apply_chat_template(prompts: List[str], engine: LLM, config: Any | None) -> List[str]:
     if config is None or not getattr(config, "use_chat_template", False):
         return prompts
@@ -72,10 +98,10 @@ def maybe_apply_chat_template(prompts: List[str], engine: LLM, config: Any | Non
             "enable_thinking": chat_template_thinking_enabled(prompt, config),
         }
         try:
-            rendered.append(tokenizer.apply_chat_template([{"role": "user", "content": prompt}], **kwargs))
+            rendered.append(tokenizer.apply_chat_template(chat_messages_for_prompt(prompt), **kwargs))
         except TypeError:
             kwargs.pop("enable_thinking", None)
-            rendered.append(tokenizer.apply_chat_template([{"role": "user", "content": prompt}], **kwargs))
+            rendered.append(tokenizer.apply_chat_template(chat_messages_for_prompt(prompt), **kwargs))
     return rendered
 
 

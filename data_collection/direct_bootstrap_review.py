@@ -17,10 +17,12 @@ from mcts_math.prompts.prompt_sft import (
     REVIEW_STEP_FORMAT_SECTION,
     AXIOM_REFINEMENT_SCALE,
     REVIEW_EVIDENCE_RULES,
+    REVIEW_FINAL_CONSISTENCY_RULE,
     QWEN_REVIEW_FINAL_PROMPT,
     QWEN_REVIEW_STEP_PROMPT,
 )
 from mcts_math.review_utils import (
+    compact_native_think_body,
     compute_review_reward,
     load_codecriticbench_dataset,
     parse_review_payload,
@@ -75,14 +77,20 @@ def build_prompt(
     force_final_review: bool = True,
 ) -> str:
     template = QWEN_REVIEW_FINAL_PROMPT if force_final_review else QWEN_REVIEW_STEP_PROMPT
+    partial_response = partial_solution.strip() if partial_solution else ""
+    if partial_response == "None":
+        partial_response = ""
+    if partial_response:
+        partial_response = partial_response.rstrip() + "\n"
     prompt = template.format(
         question=sample["question"],
         candidate_code=sample["candidate_code"],
         code_language=sample.get("code_language", "python"),
         tests=prompt_tests_text(sample, config),
-        partial_solution=partial_solution.strip() if partial_solution else "None",
+        partial_solution=partial_response,
         axiom_scale=AXIOM_REFINEMENT_SCALE,
         evidence_rules=REVIEW_EVIDENCE_RULES,
+        final_consistency_rule=REVIEW_FINAL_CONSISTENCY_RULE,
         step_format_section=REVIEW_STEP_FORMAT_SECTION,
         final_format_section=REVIEW_FINAL_FORMAT_SECTION,
     )
@@ -115,7 +123,7 @@ def normalize_step_text(text: str) -> str:
         think_body = cleaned.split("<think>", 1)[1]
         if "</think>" in think_body:
             think_body = think_body.split("</think>", 1)[0]
-        think_body = think_body.strip()
+        think_body = compact_native_think_body(think_body)
         if think_body:
             return f"<step>\nnative_think: {think_body}\n</step>"
     if cleaned.startswith("<step>") and "</step>" not in cleaned:
@@ -125,6 +133,12 @@ def normalize_step_text(text: str) -> str:
     if "</step>" in cleaned:
         cleaned = cleaned.split("</step>", 1)[0].strip()
     return f"<step>\n{cleaned}\n</step>"
+
+
+def direct_bootstrap_stop_tokens(response_mode: str) -> list[str]:
+    if response_mode == "stepwise":
+        return ["</think>", "</step>"]
+    return ["</review>"]
 
 
 def build_react(candidates: list[dict[str, Any]], dimension: str) -> dict[str, dict[str, Any]]:
@@ -252,7 +266,7 @@ def generate_stepwise(
 
     sampling_params.n = 1
     sampling_params.best_of = 1
-    sampling_params.stop = ["</step>"]
+    sampling_params.stop = ["</think>", "</step>"]
     for _ in range(max(0, args.reasoning_steps)):
         prompts = [
             build_prompt(
@@ -300,7 +314,7 @@ def main() -> None:
     args = parse_args()
     config = load_config(args.custom_cfg)
     config.n_generate_sample = max(1, args.repeats)
-    config.stop = ["</review>" if args.response_mode == "review" else "</step>"]
+    config.stop = direct_bootstrap_stop_tokens(args.response_mode)
 
     engine, sampling_params = llm_engine(config)
 

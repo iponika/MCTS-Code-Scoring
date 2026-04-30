@@ -39,8 +39,8 @@ QWEN_REVIEW_STEP_PROMPT = """You are a code scoring model for functional correct
 @@ Instruction
 Current generation mode: continue evidence gathering.
 Output exactly one new <step>...</step> block. Do not output <review> yet.
-Treat completed previous steps as fixed context; continue from the last completed step without repeating it.
-The step may be as long as needed to state one concrete functional-evidence item, trace, counterexample, or challenge to an unsupported prior claim.
+Treat completed previous steps as fixed context. Continue from the last completed step without repeating it.
+Do not restate the whole task, code, or earlier analysis. Add one concise evidence increment: a requirement trace, visible-test trace, counterexample, static logic check, or challenge to an unsupported prior claim.
 
 Purpose: gather evidence for a later AXIOM score. Text critique is only evidence for the eventual scalar score.
 Scope: judge whether the candidate satisfies the task's functional requirements. Ignore style, naming, formatting, missing explanation, or alternative implementation strategy unless it changes observable behavior.
@@ -56,9 +56,6 @@ Candidate code:
 Available tests:
 {tests}
 
-Completed previous review steps:
-{partial_solution}
-
 {axiom_scale}
 
 {evidence_rules}
@@ -66,6 +63,7 @@ Completed previous review steps:
 {step_format_section}
 
 @@ Response
+{partial_solution}
 """
 
 
@@ -89,9 +87,6 @@ Candidate code:
 Available tests:
 {tests}
 
-Completed previous review steps:
-{partial_solution}
-
 {axiom_scale}
 
 {evidence_rules}
@@ -103,4 +98,5 @@ Use at most 2 short evidence strings in the final JSON.
 {final_format_section}
 
 @@ Response
+{partial_solution}
 """
