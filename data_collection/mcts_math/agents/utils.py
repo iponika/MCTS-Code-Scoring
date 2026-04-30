@@ -18,6 +18,7 @@ from mcts_math.prompts.prompt_sft import (
     REVIEW_STEP_FORMAT_SECTION,
     AXIOM_REFINEMENT_SCALE,
     REVIEW_EVIDENCE_RULES,
+    REVIEW_FINAL_CONSISTENCY_RULE,
     QWEN_REVIEW_FINAL_PROMPT,
     QWEN_REVIEW_STEP_PROMPT,
 )
@@ -151,6 +152,7 @@ def review_prompt_wrap(
         partial_solution=partial_solution.strip() if partial_solution else "None",
         axiom_scale=AXIOM_REFINEMENT_SCALE,
         evidence_rules=REVIEW_EVIDENCE_RULES,
+        final_consistency_rule=REVIEW_FINAL_CONSISTENCY_RULE,
         step_format_section=REVIEW_STEP_FORMAT_SECTION,
         final_format_section=REVIEW_FINAL_FORMAT_SECTION,
     )

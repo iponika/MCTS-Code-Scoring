@@ -18,6 +18,10 @@ AXIOM_REFINEMENT_SCALE = """AXIOM refinement-effort scale:
 Examples are illustrative, not exhaustive criteria; score by the closest AXIOM repair-effort level supported by concrete evidence."""
 
 
+REVIEW_FINAL_CONSISTENCY_RULE = """Final consistency rule:
+Before choosing axiom_grade, reconcile supported previous-step evidence with the final verdict. If a completed step contains a concrete counterexample or trace supported by the task, code, or visible tests, the final review cannot silently contradict it; either reflect the defect in functional_correctness/axiom_grade or explain why that step is unsupported."""
+
+
 QWEN_REVIEW_STEP_PROMPT = """You are a code scoring model for functional correctness.
 @@ Instruction
 Current generation mode: stepwise evidence-and-review training.
@@ -30,6 +34,7 @@ Evidence source: use only the task, candidate code, visible tests, completed pre
 {axiom_scale}
 Boundary rule: grades 3-5 have perfect or not-disproven functionality; grades 0-2 require a concrete visible functional defect. If no defect is verifiable, keep functional_correctness=true and choose 3-5.
 Evidence rule: do not claim tests pass or fail unless tests are visible and traced exactly. A low grade needs a syntax/runtime error, missing required I/O, direct requirement contradiction, unrelated code, or a concrete counterexample. Do not output code fixes.
+Final review rule: when finishing with <review>, reconcile supported step evidence with the final verdict. If a prior step gives a supported counterexample or trace, the final review cannot silently contradict it.
 
 {instruction}
 
@@ -72,6 +77,7 @@ Scope: judge functional correctness only. Ignore style, naming, formatting, miss
 {axiom_scale}
 Boundary rule: grades 3-5 have perfect or not-disproven functionality; grades 0-2 require a concrete visible functional defect. If no defect is verifiable, keep functional_correctness=true and choose 3-5.
 Evidence rule: do not claim tests pass or fail unless tests are visible and traced exactly. A low grade needs a syntax/runtime error, missing required I/O, direct requirement contradiction, unrelated code, or a concrete counterexample. Do not output code fixes.
+If prior step blocks are present, {final_consistency_rule}
 
 {instruction}
 
@@ -85,5 +91,10 @@ Use at most 2 short evidence strings. Output no <step> blocks and no prose outsi
 def review_prompt_for_response(instruction: str, response: str = "") -> str:
     stripped = str(response or "").lstrip()
     if stripped.startswith("<review>"):
-        return QWEN_REVIEW_FINAL_ONLY_PROMPT.format(instruction=instruction, response="", axiom_scale=AXIOM_REFINEMENT_SCALE)
+        return QWEN_REVIEW_FINAL_ONLY_PROMPT.format(
+            instruction=instruction,
+            response="",
+            axiom_scale=AXIOM_REFINEMENT_SCALE,
+            final_consistency_rule=REVIEW_FINAL_CONSISTENCY_RULE,
+        )
     return QWEN_REVIEW_STEP_PROMPT.format(instruction=instruction, response="", axiom_scale=AXIOM_REFINEMENT_SCALE)

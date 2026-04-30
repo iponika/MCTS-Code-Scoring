@@ -86,6 +86,8 @@ class ReviewPromptVisibilityTest(unittest.TestCase):
         self.assertIn("Structured final review format", prompt)
         self.assertIn("<review>", prompt)
         self.assertIn('"axiom_grade"', prompt)
+        self.assertIn("reconcile supported previous-step evidence", prompt)
+        self.assertIn("cannot silently contradict it", prompt)
         self.assertNotIn("{mode_instruction}", prompt)
         self.assertNotIn("2. Use completed previous steps", prompt)
         self.assertNotIn("exceptionally intelligent", prompt)
@@ -177,6 +179,8 @@ class ReviewPromptVisibilityTest(unittest.TestCase):
 
         self.assertIn("completed previous <step> blocks", prompt)
         self.assertIn("Start your next output with <review>", prompt)
+        self.assertIn("reconcile supported previous-step evidence", prompt)
+        self.assertIn("cannot silently contradict it", prompt)
         self.assertIn('"axiom_grade"', prompt)
 
     def test_review_training_prompt_matches_response_shape(self) -> None:
@@ -187,10 +191,13 @@ class ReviewPromptVisibilityTest(unittest.TestCase):
 
         self.assertIn("Output exactly one JSON object wrapped in <review> tags", final_prompt)
         self.assertIn("Current generation mode: final AXIOM scoring", final_prompt)
+        self.assertIn("reconcile supported previous-step evidence", final_prompt)
+        self.assertIn("cannot silently contradict it", final_prompt)
         self.assertNotIn("stepwise evidence-and-review training", final_prompt)
         self.assertIn("Current generation mode: stepwise evidence-and-review training", step_prompt)
         self.assertIn("finish with exactly one <review> JSON block", step_prompt)
         self.assertIn("each <step> should add one concrete", step_prompt)
+        self.assertIn("reconcile supported step evidence", step_prompt)
         self.assertIn("minor tweaking", final_prompt)
         self.assertIn("major refactoring", final_prompt)
         self.assertIn("Examples are illustrative, not exhaustive criteria", final_prompt)

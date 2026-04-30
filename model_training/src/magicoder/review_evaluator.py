@@ -20,6 +20,7 @@ from magicoder.review_policy_value_inference import (
 from magicoder.review_value_guided_evaluator import VALUE_SCORE_KEYS
 from magicoder.prompt_template import (
     AXIOM_REFINEMENT_SCALE,
+    REVIEW_FINAL_CONSISTENCY_RULE,
     QWEN_REVIEW_FINAL_ONLY_PROMPT,
     QWEN_REVIEW_STEP_ONLY_PROMPT,
     QWEN_REVIEW_STEP_PROMPT,
@@ -143,6 +144,7 @@ def prompt_for_dimension(
             instruction=instruction,
             response="",
             axiom_scale=AXIOM_REFINEMENT_SCALE,
+            final_consistency_rule=REVIEW_FINAL_CONSISTENCY_RULE,
         )
     if force_final:
         instruction += (
@@ -150,6 +152,8 @@ def prompt_for_dimension(
             "Use them as fixed context and do not repeat them. "
             "Start your next output with <review> and end it with </review>. "
             "Do not add more <step> blocks. Output exactly one valid JSON object inside the review tags. "
+            "Before choosing axiom_grade, reconcile supported previous-step evidence with the final verdict; "
+            "if a supported counterexample or trace exists, the final review cannot silently contradict it. "
             "Required JSON keys: axiom_grade, score, verdict, functional_correctness, repair_effort, summary, evidence. "
             "The evidence value must be a JSON array of strings using square brackets only. "
             "If a previous review block exists, ignore it and output a corrected final review. "
