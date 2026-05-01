@@ -253,25 +253,38 @@ def generate_review_only(
     engine: Any,
     sampling_params: Any,
 ) -> list[tuple[dict[str, Any], list[dict[str, Any]]]]:
-    sampling_params.n = config.n_generate_sample
-    sampling_params.best_of = config.n_generate_sample
+    trajectories = [
+        {
+            "sample": sample,
+            "repeat_index": repeat_index,
+        }
+        for sample in sample_batch
+        for repeat_index in range(max(1, args.repeats))
+    ]
+
+    # Final-review generation now uses greedy decoding for format stability.
+    # To preserve multiple direct rollouts, duplicate prompts instead of using
+    # n>1 / best_of>1, which vLLM rejects for greedy sampling.
+    sampling_params.n = 1
+    sampling_params.best_of = 1
     sampling_params.stop = ["</review>"]
     sampling_params.temperature = 0.0
     sampling_params.top_p = 1.0
     prompts = [
-        build_prompt(sample, args.dimension, config, partial_solution="None", force_final_review=True)
-        for sample in sample_batch
+        build_prompt(item["sample"], args.dimension, config, partial_solution="None", force_final_review=True)
+        for item in trajectories
     ]
     prompts = maybe_apply_chat_template(prompts, engine, config)
     outputs = engine.generate(prompts, sampling_params=sampling_params)
-    result = []
-    for sample, output in zip(sample_batch, outputs):
-        candidates = [
-            evaluated_candidate(index, "<review>\n{" + item.text, sample, args.dimension)
-            for index, item in enumerate(output.outputs)
-        ]
-        result.append((sample, candidates))
-    return result
+    by_sample_index: dict[int, list[dict[str, Any]]] = {index: [] for index in range(len(sample_batch))}
+    sample_position = {id(sample): index for index, sample in enumerate(sample_batch)}
+    for item, output in zip(trajectories, outputs):
+        text = output.outputs[0].text if output.outputs else ""
+        sample = item["sample"]
+        candidate = evaluated_candidate(item["repeat_index"], "<review>\n{" + text, sample, args.dimension)
+        by_sample_index[sample_position[id(sample)]].append(candidate)
+
+    return [(sample, by_sample_index[index]) for index, sample in enumerate(sample_batch)]
 
 
 def generate_stepwise(
