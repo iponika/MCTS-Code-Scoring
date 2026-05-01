@@ -83,6 +83,8 @@ def build_prompt(
         partial_response = ""
     if partial_response:
         partial_response = partial_response.rstrip() + "\n"
+    if force_final_review:
+        partial_response += "<review>\n{"
     prompt = template.format(
         question=sample["question"],
         candidate_code=sample["candidate_code"],
@@ -254,6 +256,8 @@ def generate_review_only(
     sampling_params.n = config.n_generate_sample
     sampling_params.best_of = config.n_generate_sample
     sampling_params.stop = ["</review>"]
+    sampling_params.temperature = 0.0
+    sampling_params.top_p = 1.0
     prompts = [
         build_prompt(sample, args.dimension, config, partial_solution="None", force_final_review=True)
         for sample in sample_batch
@@ -263,7 +267,7 @@ def generate_review_only(
     result = []
     for sample, output in zip(sample_batch, outputs):
         candidates = [
-            evaluated_candidate(index, item.text, sample, args.dimension)
+            evaluated_candidate(index, "<review>\n{" + item.text, sample, args.dimension)
             for index, item in enumerate(output.outputs)
         ]
         result.append((sample, candidates))
@@ -308,6 +312,8 @@ def generate_stepwise(
             item["segments"].append(normalize_step_text(text))
 
     sampling_params.stop = ["</review>"]
+    sampling_params.temperature = 0.0
+    sampling_params.top_p = 1.0
     prompts = [
         build_prompt(
             item["sample"],
@@ -324,7 +330,7 @@ def generate_stepwise(
     sample_position = {id(sample): index for index, sample in enumerate(sample_batch)}
     for item, output in zip(trajectories, outputs):
         text = output.outputs[0].text if output.outputs else ""
-        segments = [*item["segments"], normalize_review_text(text)]
+        segments = [*item["segments"], normalize_review_text("<review>\n{" + text)]
         sample = item["sample"]
         candidate_index = item["repeat_index"]
         candidate = evaluated_stepwise_candidate(candidate_index, segments, sample, args.dimension)

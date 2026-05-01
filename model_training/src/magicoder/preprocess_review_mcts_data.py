@@ -143,6 +143,9 @@ def qwen_review_user_content(instruction: str) -> str:
 def qwen_assistant_content_from_responses(responses: list[str]) -> str:
     steps = [str(segment).strip() for segment in responses if response_segment_type(segment) == "step"]
     reviews = [str(segment).strip() for segment in responses if response_segment_type(segment) == "review"]
+    if not steps:
+        return reviews[-1] if reviews else ""
+
     think_body = "\n".join(segment for segment in steps if segment)
     content = f"<think>\n{think_body}\n</think>"
     if reviews:

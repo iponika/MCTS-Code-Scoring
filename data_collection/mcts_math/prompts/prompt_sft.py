@@ -71,6 +71,8 @@ QWEN_REVIEW_FINAL_PROMPT = """You are a code scoring model for functional correc
 @@ Instruction
 Current generation mode: final AXIOM scoring.
 Output exactly one compact JSON object wrapped in <review> tags. Do not output <step> blocks or prose outside <review>.
+The very first non-whitespace characters of your answer must be <review>.
+After the opening tag, continue immediately with a JSON object, not a natural-language sentence.
 Treat completed previous steps as fixed evidence context. Use them if supported by the task/code/tests; ignore unsupported or repeated claims.
 
 Purpose: assign a stable AXIOM 0-5 grade to the candidate code. Text critique is only evidence for the scalar score.
