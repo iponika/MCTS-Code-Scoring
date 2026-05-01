@@ -83,6 +83,45 @@ def normalize_response_segment(text: str) -> str:
     return f"<step>\n{cleaned}\n</step>"
 
 
+def extract_response_segments(text: str) -> list[str]:
+    cleaned = str(text or "").strip()
+    if not cleaned:
+        return []
+
+    if "<review>" not in cleaned:
+        segment = normalize_response_segment(cleaned)
+        return [segment] if segment else []
+
+    prefix, review_tail = cleaned.split("<review>", 1)
+    segments: list[str] = []
+    prefix = prefix.replace("<think>", "").replace("</think>", "").strip()
+    if prefix:
+        cursor = 0
+        for match in re.finditer(r"<step>.*?</step>", prefix, flags=re.DOTALL):
+            leading = prefix[cursor:match.start()].strip()
+            if leading and not leading.startswith("<step"):
+                segment = normalize_response_segment(leading)
+                if segment:
+                    segments.append(segment)
+            segment = normalize_response_segment(match.group(0))
+            if segment:
+                segments.append(segment)
+            cursor = match.end()
+        trailing = prefix[cursor:].strip()
+        if trailing and not trailing.startswith("<step"):
+            segment = normalize_response_segment(trailing)
+            if segment:
+                segments.append(segment)
+
+    review_body = review_tail
+    if "</review>" in review_body:
+        review_body = review_body.split("</review>", 1)[0]
+    review_segment = normalize_response_segment(f"<review>\n{review_body.strip()}\n</review>")
+    if review_segment:
+        segments.append(review_segment)
+    return segments
+
+
 def truncate_for_review(value: object, max_chars: int, marker: str = "\n... [truncated]") -> tuple[str, bool]:
     text = str(value or "").strip()
     if max_chars <= 0 or len(text) <= max_chars:
@@ -372,14 +411,16 @@ def path_to_training_item(
         node = react.get(node_tag)
         if not isinstance(node, dict):
             continue
-        segment = normalize_response_segment(str(node.get("text") or ""))
-        if not segment:
+        segments = extract_response_segments(str(node.get("text") or ""))
+        if not segments:
             continue
         q_value = float(node.get("q_value", IGNORED_INDEX))
-        responses.append(segment)
-        q_values.append(q_value)
-        q_node_tags.append(node_tag)
-        q_descendant_best.append(best_terminal_descendant_q(react, node_tag, q_value))
+        descendant_best = best_terminal_descendant_q(react, node_tag, q_value)
+        for segment in segments:
+            responses.append(segment)
+            q_values.append(q_value)
+            q_node_tags.append(node_tag)
+            q_descendant_best.append(descendant_best)
 
     if not responses:
         return None
