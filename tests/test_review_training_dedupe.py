@@ -1,7 +1,11 @@
 import json
 import unittest
 
-from magicoder.preprocess_review_mcts_data import convert_records, extract_response_segments
+from magicoder.preprocess_review_mcts_data import (
+    attach_qwen_messages,
+    convert_records,
+    extract_response_segments,
+)
 
 
 def terminal_node(tag: str, final_answer: str) -> tuple[str, dict]:
@@ -130,6 +134,25 @@ class ReviewTrainingDedupeTest(unittest.TestCase):
             [part["q_value"] for part in item["assistant_parts"]],
             item["q_value"],
         )
+
+    def test_attach_qwen_messages_omits_empty_think_for_review_only_items(self) -> None:
+        item = {
+            "instruction": "Return x + 1.",
+            "response": [
+                "<review>\n"
+                '{"axiom_grade":5,"score":100,"verdict":"accept","functional_correctness":true,'
+                '"repair_effort":"none","evidence":["Matches the requirement."]}'
+                "\n</review>"
+            ],
+            "q_value": [1.0],
+        }
+
+        attach_qwen_messages(item)
+
+        assistant_content = item["messages"][1]["content"]
+        self.assertTrue(assistant_content.startswith("<review>"))
+        self.assertNotIn("<think>", assistant_content)
+        self.assertEqual([part["type"] for part in item["assistant_parts"]], ["review"])
 
     def test_same_parent_semantic_duplicate_reviews_export_once(self) -> None:
         first_review = (

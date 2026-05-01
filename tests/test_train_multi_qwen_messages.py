@@ -37,6 +37,22 @@ class FakeQwenTokenizer:
         return rendered
 
 
+class FakeDeepSeekTokenizer(FakeQwenTokenizer):
+    def apply_chat_template(self, messages, tokenize=False, add_generation_prompt=False, **_kwargs):
+        rendered = "<bos>"
+        for message in messages:
+            role = message["role"]
+            content = message["content"]
+            if role == "assistant" and content.startswith("<think>\n\n</think>\n\n"):
+                content = content.split("</think>\n\n", 1)[1]
+            rendered += f"<|{role}|>{content}"
+        if add_generation_prompt:
+            rendered += "<|assistant|><think>\n"
+        if tokenize:
+            return self._ids(rendered)
+        return rendered
+
+
 class QwenMessageTrainingTest(unittest.TestCase):
     def test_qwen_messages_mask_user_tokens_and_label_assistant_parts(self) -> None:
         tokenizer = FakeQwenTokenizer()
@@ -80,6 +96,24 @@ class QwenMessageTrainingTest(unittest.TestCase):
         )
 
         self.assertTrue(all(label == IGNORED_INDEX for label in result["labels"]))
+        self.assertEqual(sum(value != IGNORED_INDEX for value in result["Q"]), 1)
+
+    def test_qwen_messages_accept_assistant_prefix_when_empty_think_is_collapsed(self) -> None:
+        tokenizer = FakeDeepSeekTokenizer()
+        messages = [
+            {"role": "user", "content": "score code"},
+            {"role": "assistant", "content": "<think>\n\n</think>\n\n<review>B</review>"},
+        ]
+        assistant_parts = [{"type": "review", "text": "<review>B</review>", "q_value": -0.5}]
+
+        result = qwen_messages_to_training_ids(
+            tokenizer,
+            messages,
+            assistant_parts,
+            train_lm=True,
+        )
+
+        self.assertEqual(len(result["input_ids"]), len(result["labels"]))
         self.assertEqual(sum(value != IGNORED_INDEX for value in result["Q"]), 1)
 
 

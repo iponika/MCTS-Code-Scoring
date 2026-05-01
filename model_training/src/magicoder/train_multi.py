@@ -83,6 +83,22 @@ def render_chat_template(tokenizer, messages: list[dict[str, str]], *, add_gener
     )
 
 
+def resolve_chat_prefix_text(tokenizer, messages: list[dict[str, Any]], full_text: str) -> str:
+    prompt_text = render_chat_template(tokenizer, messages[:-1], add_generation_prompt=True)
+    if full_text.startswith(prompt_text):
+        return prompt_text
+
+    assistant_prefix_text = render_chat_template(
+        tokenizer,
+        [*messages[:-1], {"role": "assistant", "content": ""}],
+        add_generation_prompt=False,
+    )
+    if full_text.startswith(assistant_prefix_text):
+        return assistant_prefix_text
+
+    raise ValueError("Rendered Qwen chat template is not prefix-aligned.")
+
+
 def qwen_messages_to_training_ids(
     tokenizer,
     messages: list[dict[str, Any]],
@@ -93,15 +109,11 @@ def qwen_messages_to_training_ids(
     if not messages or messages[-1].get("role") != "assistant":
         raise ValueError("Qwen message training samples must end with an assistant message.")
 
-    prompt_text = render_chat_template(tokenizer, messages[:-1], add_generation_prompt=True)
     full_text = render_chat_template(tokenizer, messages, add_generation_prompt=False)
+    prompt_text = resolve_chat_prefix_text(tokenizer, messages, full_text)
     prompt_ids = encode_no_special(tokenizer, prompt_text)
     full_ids = encode_no_special(tokenizer, full_text)
     if full_ids[: len(prompt_ids)] != prompt_ids:
-        # Some tokenizer templates insert a subtly different assistant prefix when the
-        # message is complete. Fall back to the string prefix, which is stable for Qwen.
-        if not full_text.startswith(prompt_text):
-            raise ValueError("Rendered Qwen chat template is not prefix-aligned.")
         prompt_ids = encode_no_special(tokenizer, full_text[: len(prompt_text)])
 
     input_ids = list(full_ids)

@@ -7,6 +7,8 @@ This file records Codex-made project changes so work can be resumed safely acros
 - Set DeepSeek-R1-Distill-Qwen-7B as the default model for current review-scoring workflows by switching the generic review-MCTS config and AXIOM eval base default away from Qwen.
 - Added DeepSeek wrapper scripts for bootstrap comparison, direct review-vs-stepcount comparison, and direct stepwise diagnostics while keeping Qwen wrappers as explicit legacy/reproduction entries.
 - Updated README and data-collection workflow docs so future routine experiments use DeepSeek defaults.
+- Removed empty `<think>` wrappers from review-only training messages, added DeepSeek chat-template prefix fallback in `train_multi.py`, and added regression tests for the new message/render contract.
+- Tightened DeepSeek direct-bootstrap final review formatting by prefilling the final `<review>` JSON prefix and using deterministic final decoding, so the model is pushed to continue a JSON object instead of drifting into prose.
 
 ## 2026-04-30
 

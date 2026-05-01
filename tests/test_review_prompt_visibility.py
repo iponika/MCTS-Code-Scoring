@@ -222,6 +222,9 @@ class ReviewPromptVisibilityTest(unittest.TestCase):
         )
 
         self.assertIn("reconcile supported previous-step evidence", prompt)
+        self.assertIn("very first non-whitespace characters", prompt)
+        self.assertIn("continue immediately with a JSON object", prompt)
+        self.assertIn("@@ Response\n<step>\nstatic_logic_check: The function returns x + 1 directly.\n</step>\n<review>\n{", prompt)
 
     def test_thinking_configs_stop_at_native_think_close(self) -> None:
         for path in [
