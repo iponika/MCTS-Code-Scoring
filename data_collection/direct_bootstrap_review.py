@@ -24,6 +24,7 @@ from mcts_math.prompts.prompt_sft import (
 from mcts_math.review_utils import (
     compact_native_think_body,
     compute_review_reward,
+    extract_reasoning_artifacts,
     load_codecriticbench_dataset,
     parse_review_payload,
 )
@@ -110,6 +111,8 @@ def iter_batches(items: list[dict[str, Any]], batch_size: int):
 
 
 def normalize_review_text(text: str) -> str:
+    artifacts = extract_reasoning_artifacts(text)
+    text = artifacts["content"] or str(text or "")
     if "</review>" not in text and "<review>" in text:
         return text.rstrip() + "\n</review>"
     return text
@@ -148,6 +151,9 @@ def build_react(candidates: list[dict[str, Any]], dimension: str) -> dict[str, d
         tag = f"c{index}"
         react[tag] = {
             "text": candidate["text"],
+            "raw_text": candidate.get("raw_text", candidate["text"]),
+            "reasoning": candidate.get("reasoning", ""),
+            "reasoning_source": candidate.get("reasoning_source", "none"),
             "q_value": candidate["reward"],
             "value": candidate["reward"],
             "prior": round(1.0 / total, 6),
@@ -168,8 +174,14 @@ def build_stepwise_react(candidates: list[dict[str, Any]], dimension: str) -> di
         for segment_index, segment in enumerate(candidate["segments"]):
             tag = f"c{index}" if not parent_tag else f"{parent_tag}.0"
             is_terminal = segment_index == len(candidate["segments"]) - 1
+            segment_reasoning = candidate.get("segment_reasoning") or []
+            segment_reasoning_source = candidate.get("segment_reasoning_source") or []
             node = {
                 "text": segment,
+                "reasoning": segment_reasoning[segment_index] if segment_index < len(segment_reasoning) else "",
+                "reasoning_source": (
+                    segment_reasoning_source[segment_index] if segment_index < len(segment_reasoning_source) else "none"
+                ),
                 "q_value": reward,
                 "value": reward,
                 "prior": round(1.0 / total, 6) if segment_index == 0 else 1.0,
@@ -185,13 +197,17 @@ def build_stepwise_react(candidates: list[dict[str, Any]], dimension: str) -> di
 
 
 def evaluated_candidate(index: int, text: str, sample: dict[str, Any], dimension: str) -> dict[str, Any]:
-    text = normalize_review_text(text)
-    parsed = parse_review_payload(text)
+    artifacts = extract_reasoning_artifacts(text)
+    normalized_text = normalize_review_text(artifacts["content"] or text)
+    parsed = parse_review_payload(normalized_text)
     predicted = parse_axiom_grade(parsed or {})
-    reward, reward_details = compute_review_reward(dimension, text, sample)
+    reward, reward_details = compute_review_reward(dimension, normalized_text, sample)
     return {
         "candidate_index": index,
-        "text": text,
+        "raw_text": str(text or ""),
+        "text": normalized_text,
+        "reasoning": artifacts["reasoning"],
+        "reasoning_source": artifacts["reasoning_source"],
         "parsed": parsed,
         "predicted_axiom_grade": predicted,
         "reward": reward,
@@ -205,15 +221,22 @@ def evaluated_stepwise_candidate(
     sample: dict[str, Any],
     dimension: str,
 ) -> dict[str, Any]:
-    final_review = normalize_review_text(segments[-1] if segments else "")
+    final_artifacts = extract_reasoning_artifacts(segments[-1] if segments else "")
+    final_review = normalize_review_text(final_artifacts["content"] or (segments[-1] if segments else ""))
     parsed = parse_review_payload(final_review)
     predicted = parse_axiom_grade(parsed or {})
     reward, reward_details = compute_review_reward(dimension, final_review, sample)
+    step_artifacts = [extract_reasoning_artifacts(segment) for segment in segments[:-1]]
     normalized_segments = [normalize_step_text(segment) for segment in segments[:-1]] + [final_review]
     return {
         "candidate_index": index,
         "text": "".join(normalized_segments),
         "segments": normalized_segments,
+        "segment_reasoning": [item["reasoning"] for item in step_artifacts] + [final_artifacts["reasoning"]],
+        "segment_reasoning_source": [item["reasoning_source"] for item in step_artifacts] + [final_artifacts["reasoning_source"]],
+        "reasoning": final_artifacts["reasoning"],
+        "reasoning_source": final_artifacts["reasoning_source"],
+        "raw_final_text": str(segments[-1] if segments else ""),
         "parsed": parsed,
         "predicted_axiom_grade": predicted,
         "reward": reward,

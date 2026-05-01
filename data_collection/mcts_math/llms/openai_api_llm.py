@@ -62,24 +62,26 @@ class OpenAICompatibleGenerator:
     def _generate_one(self, prompt: str, sampling_params: ApiSamplingParams) -> RequestOutput:
         n = max(1, int(getattr(sampling_params, "n", 1) or 1))
         try:
-            texts = self._request(prompt, sampling_params, n=n)
+            payloads = self._request(prompt, sampling_params, n=n)
         except RuntimeError:
             if n == 1:
                 raise
-            texts = []
+            payloads = []
             for _ in range(n):
-                texts.extend(self._request(prompt, sampling_params, n=1))
+                payloads.extend(self._request(prompt, sampling_params, n=1))
 
-        outputs = [
-            CompletionOutput(
+        outputs = []
+        for index, payload in enumerate(payloads[:n]):
+            output = CompletionOutput(
                 index=index,
-                text=text,
+                text=payload["text"],
                 token_ids=[],
                 cumulative_logprob=None,
                 logprobs=None,
             )
-            for index, text in enumerate(texts[:n])
-        ]
+            setattr(output, "reasoning", payload.get("reasoning", ""))
+            setattr(output, "reasoning_source", payload.get("reasoning_source", "none"))
+            outputs.append(output)
         return RequestOutput(
             request_id=str(time.time()),
             prompt=prompt,
@@ -89,7 +91,7 @@ class OpenAICompatibleGenerator:
             finished=True,
         )
 
-    def _request(self, prompt: str, sampling_params: ApiSamplingParams, n: int) -> list[str]:
+    def _request(self, prompt: str, sampling_params: ApiSamplingParams, n: int) -> list[dict[str, str]]:
         payload = {
             "model": self.model,
             "messages": [{"role": "user", "content": self._prompt(prompt)}],
@@ -119,9 +121,20 @@ class OpenAICompatibleGenerator:
                 for choice in choices:
                     message = choice.get("message") if isinstance(choice, dict) else None
                     content = message.get("content") if isinstance(message, dict) else None
+                    reasoning = None
+                    if isinstance(message, dict):
+                        reasoning = message.get("reasoning")
+                        if reasoning is None:
+                            reasoning = message.get("reasoning_content")
                     if content is None:
                         content = choice.get("text") if isinstance(choice, dict) else ""
-                    texts.append(str(content or ""))
+                    texts.append(
+                        {
+                            "text": str(content or ""),
+                            "reasoning": str(reasoning or ""),
+                            "reasoning_source": "structured_field" if reasoning else "none",
+                        }
+                    )
                 if texts:
                     return texts
                 raise RuntimeError(f"API response has no choices: {body[:500]}")

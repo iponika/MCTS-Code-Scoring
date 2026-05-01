@@ -20,6 +20,7 @@ from mcts_math.prompts.prompt_sft import (
 )
 from mcts_math.review_utils import (
     compute_review_reward,
+    extract_reasoning_artifacts,
     load_codecriticbench_dataset,
     parse_review_payload,
 )
@@ -104,19 +105,34 @@ def main() -> None:
             api_output = generator([prompt], sampling_params)[0]
             texts = []
             for output in api_output.outputs:
-                text = output.text
+                artifacts = extract_reasoning_artifacts(
+                    output.text,
+                    structured_reasoning=getattr(output, "reasoning", None),
+                )
+                text = artifacts["content"] or output.text
                 if "</review>" not in text and "<review>" in text:
                     text = text.rstrip() + "\n</review>"
-                texts.append(text)
+                texts.append(
+                    {
+                        "text": text,
+                        "raw_text": output.text,
+                        "reasoning": artifacts["reasoning"],
+                        "reasoning_source": artifacts["reasoning_source"],
+                    }
+                )
             evaluated_candidates = []
-            for index, text in enumerate(texts):
+            for index, payload in enumerate(texts):
+                text = payload["text"]
                 parsed = parse_review_payload(text)
                 predicted = parse_axiom_grade(parsed or {})
                 reward, reward_details = compute_review_reward(args.dimension, text, sample)
                 evaluated_candidates.append(
                     {
                         "candidate_index": index,
+                        "raw_text": payload["raw_text"],
                         "text": text,
+                        "reasoning": payload["reasoning"],
+                        "reasoning_source": payload["reasoning_source"],
                         "parsed": parsed,
                         "predicted_axiom_grade": predicted,
                         "reward": reward,

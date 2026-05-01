@@ -96,6 +96,61 @@ def compact_native_think_body(text: str, max_chars: int = 900) -> str:
     return " ".join(output).strip()
 
 
+def extract_reasoning_artifacts(
+    text: str,
+    *,
+    structured_reasoning: str | None = None,
+) -> Dict[str, str]:
+    raw_text = str(text or "")
+    cleaned = raw_text.strip()
+    reasoning = str(structured_reasoning or "").strip()
+    if reasoning:
+        return {
+            "raw_text": raw_text,
+            "content": cleaned,
+            "reasoning": reasoning,
+            "reasoning_source": "structured_field",
+        }
+
+    if not cleaned:
+        return {
+            "raw_text": raw_text,
+            "content": "",
+            "reasoning": "",
+            "reasoning_source": "none",
+        }
+
+    if "<think>" in cleaned:
+        prefix, suffix = cleaned.split("<think>", 1)
+        think_body = suffix
+        trailing = ""
+        if "</think>" in think_body:
+            think_body, trailing = think_body.split("</think>", 1)
+        content = (prefix + trailing).strip()
+        return {
+            "raw_text": raw_text,
+            "content": content,
+            "reasoning": think_body.strip(),
+            "reasoning_source": "text_think_block",
+        }
+
+    if "</think>" in cleaned:
+        think_body, trailing = cleaned.split("</think>", 1)
+        return {
+            "raw_text": raw_text,
+            "content": trailing.strip(),
+            "reasoning": think_body.strip(),
+            "reasoning_source": "text_think_suffix",
+        }
+
+    return {
+        "raw_text": raw_text,
+        "content": cleaned,
+        "reasoning": "",
+        "reasoning_source": "none",
+    }
+
+
 def _kill_process_tree(proc_pid: int) -> None:
     process = psutil.Process(proc_pid)
     for proc in process.children(recursive=True):

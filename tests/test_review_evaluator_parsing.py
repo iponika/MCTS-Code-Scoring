@@ -1,9 +1,28 @@
 import unittest
 
-from magicoder.review_evaluator import parse_final_review
+from magicoder.review_evaluator import extract_reasoning_artifacts, parse_final_review
 
 
 class ReviewEvaluatorParsingTest(unittest.TestCase):
+    def test_extract_reasoning_artifacts_from_text_think_block(self) -> None:
+        artifacts = extract_reasoning_artifacts(
+            "<think>\ncheck the boundary case\n</think>\n<review>{\"axiom_grade\":2}</review>"
+        )
+
+        self.assertEqual(artifacts["reasoning"], "check the boundary case")
+        self.assertEqual(artifacts["content"], '<review>{"axiom_grade":2}</review>')
+        self.assertEqual(artifacts["reasoning_source"], "text_think_block")
+
+    def test_extract_reasoning_artifacts_prefers_structured_reasoning(self) -> None:
+        artifacts = extract_reasoning_artifacts(
+            "<review>{\"axiom_grade\":5}</review>",
+            structured_reasoning="first verify the concrete requirement trace",
+        )
+
+        self.assertEqual(artifacts["reasoning"], "first verify the concrete requirement trace")
+        self.assertEqual(artifacts["content"], '<review>{"axiom_grade":5}</review>')
+        self.assertEqual(artifacts["reasoning_source"], "structured_field")
+
     def test_parse_final_review_uses_last_review_and_ignores_extra_brace(self) -> None:
         text = (
             '<review>{"axiom_grade": 5, "score": 100}</review>\n'
