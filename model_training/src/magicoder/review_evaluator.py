@@ -199,6 +199,61 @@ def should_finish(response: str) -> bool:
     return "<review>" in response and "</review>" in response
 
 
+def extract_reasoning_artifacts(
+    text: str,
+    *,
+    structured_reasoning: str | None = None,
+) -> dict[str, str]:
+    raw_text = str(text or "")
+    cleaned = raw_text.strip()
+    reasoning = str(structured_reasoning or "").strip()
+    if reasoning:
+        return {
+            "raw_text": raw_text,
+            "content": cleaned,
+            "reasoning": reasoning,
+            "reasoning_source": "structured_field",
+        }
+
+    if not cleaned:
+        return {
+            "raw_text": raw_text,
+            "content": "",
+            "reasoning": "",
+            "reasoning_source": "none",
+        }
+
+    if "<think>" in cleaned:
+        prefix, suffix = cleaned.split("<think>", 1)
+        think_body = suffix
+        trailing = ""
+        if "</think>" in think_body:
+            think_body, trailing = think_body.split("</think>", 1)
+        content = (prefix + trailing).strip()
+        return {
+            "raw_text": raw_text,
+            "content": content,
+            "reasoning": think_body.strip(),
+            "reasoning_source": "text_think_block",
+        }
+
+    if "</think>" in cleaned:
+        think_body, trailing = cleaned.split("</think>", 1)
+        return {
+            "raw_text": raw_text,
+            "content": trailing.strip(),
+            "reasoning": think_body.strip(),
+            "reasoning_source": "text_think_suffix",
+        }
+
+    return {
+        "raw_text": raw_text,
+        "content": cleaned,
+        "reasoning": "",
+        "reasoning_source": "none",
+    }
+
+
 def _escape_control_chars_inside_json_strings(text: str) -> str:
     result: list[str] = []
     in_string = False
@@ -466,10 +521,14 @@ def evaluate_dimension(
                     stop=stop,
                 )
                 value_score = score_response(value_model, tokenizer, prompt, continuation) if value_model is not None else neutral_value_score()
+            artifacts = extract_reasoning_artifacts(continuation)
             candidates.append(
                 {
                     "candidate_index": candidate_index,
                     "continuation": continuation,
+                    "content": artifacts["content"],
+                    "reasoning": artifacts["reasoning"],
+                    "reasoning_source": artifacts["reasoning_source"],
                     "value_score": value_score,
                 }
             )
@@ -539,12 +598,16 @@ def evaluate_dimension(
                 stop="</review>",
             )
             retry_value_score = score_response(value_model, tokenizer, retry_prompt, continuation) if value_model is not None else neutral_value_score()
+        retry_artifacts = extract_reasoning_artifacts(continuation)
         partial_response += continuation.strip() + "\n"
         final_review_parse = parse_final_review(partial_response)
         final_retries.append(
             {
                 "retry_index": retry_index,
                 "continuation": continuation,
+                "content": retry_artifacts["content"],
+                "reasoning": retry_artifacts["reasoning"],
+                "reasoning_source": retry_artifacts["reasoning_source"],
                 "value_score": retry_value_score,
                 "final_review_parse": final_review_parse,
             }
@@ -569,6 +632,14 @@ def evaluate_dimension(
     parsed_grade = parsed_review_grade(final_review_parse)
     lenient_grade = lenient_axiom_grade(partial_response)
     parsed_score_delta = score_delta(parsed_score, reference_score)
+    accepted_reasoning_segments = [
+        str(step.get("candidates", [])[step.get("selected_candidate_index", 0)].get("reasoning", "")).strip()
+        for step in trace
+        if step.get("accepted") and step.get("candidates")
+    ]
+    accepted_reasoning_segments = [segment for segment in accepted_reasoning_segments if segment]
+    retry_reasoning_segments = [str(retry.get("reasoning", "")).strip() for retry in final_retries if retry.get("reasoning")]
+    final_reasoning = "\n\n".join([*accepted_reasoning_segments, *retry_reasoning_segments]).strip()
     return {
         "dimension": dimension,
         "score_scale": "axiom_0_5_scalar_0_100",
@@ -586,6 +657,8 @@ def evaluate_dimension(
         "score_delta": parsed_score_delta,
         "abs_score_delta": abs(parsed_score_delta) if parsed_score_delta is not None else None,
         "final_review": partial_response,
+        "final_reasoning": final_reasoning,
+        "final_reasoning_source": "trace_compose" if final_reasoning else "none",
         "final_review_parse": final_review_parse,
         "final_value_score": final_value_score,
         "final_retries": final_retries,

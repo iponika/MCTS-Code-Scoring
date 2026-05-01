@@ -20,6 +20,7 @@ from mcts_math.prompts.prompt_sft import (
 )
 from mcts_math.review_utils import (
     compute_review_reward,
+    extract_reasoning_artifacts,
     load_codecriticbench_dataset,
     parse_review_payload,
 )
@@ -72,19 +73,25 @@ def iter_batches(items: list[dict[str, Any]], batch_size: int):
 
 
 def normalize_review_text(text: str) -> str:
+    artifacts = extract_reasoning_artifacts(text)
+    text = artifacts["content"] or str(text or "")
     if "</review>" not in text and "<review>" in text:
         return text.rstrip() + "\n</review>"
     return text
 
 
 def evaluated_candidate(index: int, text: str, sample: dict[str, Any], dimension: str) -> dict[str, Any]:
-    text = normalize_review_text(text)
-    parsed = parse_review_payload(text)
+    artifacts = extract_reasoning_artifacts(text)
+    normalized_text = normalize_review_text(artifacts["content"] or text)
+    parsed = parse_review_payload(normalized_text)
     predicted = parse_axiom_grade(parsed or {})
-    reward, reward_details = compute_review_reward(dimension, text, sample)
+    reward, reward_details = compute_review_reward(dimension, normalized_text, sample)
     return {
         "candidate_index": index,
-        "text": text,
+        "raw_text": str(text or ""),
+        "text": normalized_text,
+        "reasoning": artifacts["reasoning"],
+        "reasoning_source": artifacts["reasoning_source"],
         "parsed": parsed,
         "predicted_axiom_grade": predicted,
         "reward": reward,

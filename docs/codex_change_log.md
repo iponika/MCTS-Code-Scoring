@@ -193,3 +193,8 @@ This file records Codex-made project changes so work can be resumed safely acros
 - Added `extract_response_segments()` to split mixed terminal text into separate reasoning segments plus the final `<review>`, stripping orphan `<think>` markers while preserving usable pre-review evidence.
 - Updated path-to-training conversion so these extracted prefix segments inherit the terminal node's q-value metadata and enter stepwise training instead of being silently discarded.
 - Added focused unit coverage in `tests/test_review_training_dedupe.py` for mixed terminal `step + review` extraction and export.
+- Added reasoning-artifact extraction for both local text outputs and API structured outputs: `extract_reasoning_artifacts()` now separates visible reasoning from final content using either `reasoning/reasoning_content` fields or fallback `<think>...</think>` parsing.
+- Updated direct review/bootstrap exporters to store `reasoning` and `reasoning_source` alongside cleaned final review text, instead of leaving orphan `</think>` markers mixed into scored review payloads.
+- Extended the OpenAI-compatible API generator so completion objects preserve structured `reasoning` metadata when the backend returns it.
+- Updated `model_training/src/magicoder/review_evaluator.py` to record per-candidate reasoning metadata and a composed `final_reasoning` field in evaluation artifacts.
+- Added focused parser tests for structured-reasoning preference and `<think>`-block fallback extraction in `tests/test_review_evaluator_parsing.py`.
