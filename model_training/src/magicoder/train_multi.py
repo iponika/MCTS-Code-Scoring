@@ -71,6 +71,78 @@ def normalize_q_sequence(value: Any, fallback: list[Any]) -> list[float]:
     return normalized
 
 
+def encode_no_special(tokenizer, text: str) -> list[int]:
+    return tokenizer([text], add_special_tokens=False)["input_ids"][0]
+
+
+def render_chat_template(tokenizer, messages: list[dict[str, str]], *, add_generation_prompt: bool) -> str:
+    return tokenizer.apply_chat_template(
+        messages,
+        tokenize=False,
+        add_generation_prompt=add_generation_prompt,
+    )
+
+
+def qwen_messages_to_training_ids(
+    tokenizer,
+    messages: list[dict[str, Any]],
+    assistant_parts: list[dict[str, Any]],
+    *,
+    train_lm: bool,
+) -> dict[str, list[int] | list[float]]:
+    if not messages or messages[-1].get("role") != "assistant":
+        raise ValueError("Qwen message training samples must end with an assistant message.")
+
+    prompt_text = render_chat_template(tokenizer, messages[:-1], add_generation_prompt=True)
+    full_text = render_chat_template(tokenizer, messages, add_generation_prompt=False)
+    prompt_ids = encode_no_special(tokenizer, prompt_text)
+    full_ids = encode_no_special(tokenizer, full_text)
+    if full_ids[: len(prompt_ids)] != prompt_ids:
+        # Some tokenizer templates insert a subtly different assistant prefix when the
+        # message is complete. Fall back to the string prefix, which is stable for Qwen.
+        if not full_text.startswith(prompt_text):
+            raise ValueError("Rendered Qwen chat template is not prefix-aligned.")
+        prompt_ids = encode_no_special(tokenizer, full_text[: len(prompt_text)])
+
+    input_ids = list(full_ids)
+    labels = [IGNORED_INDEX] * len(input_ids)
+    if train_lm:
+        labels[len(prompt_ids) :] = input_ids[len(prompt_ids) :]
+
+    Q = [IGNORED_INDEX] * len(input_ids)
+    Q_MIN = [IGNORED_INDEX] * len(input_ids)
+    Q_MAX = [IGNORED_INDEX] * len(input_ids)
+    response_text = full_text[len(prompt_text) :] if full_text.startswith(prompt_text) else ""
+    cursor = 0
+    for part in assistant_parts:
+        part_text = str(part.get("text") or "").strip()
+        if not part_text:
+            continue
+        position = response_text.find(part_text, cursor)
+        if position < 0:
+            position = response_text.find(part_text)
+        if position < 0:
+            continue
+        end_position = position + len(part_text)
+        boundary = len(prompt_ids) + len(encode_no_special(tokenizer, response_text[:end_position])) - 1
+        if 0 <= boundary < len(Q):
+            q_value = optional_float(part.get("q_value"), float(IGNORED_INDEX))
+            q_min = optional_float(part.get("q_min"), q_value)
+            q_max = optional_float(part.get("q_max"), q_value)
+            Q[boundary] = q_value
+            Q_MIN[boundary] = q_min
+            Q_MAX[boundary] = q_max
+        cursor = end_position
+
+    return {
+        "input_ids": input_ids,
+        "labels": labels,
+        "Q": Q,
+        "Q_MIN": Q_MIN,
+        "Q_MAX": Q_MAX,
+    }
+
+
 
 @dataclass(frozen=True)
 class ModelArguments:
@@ -156,10 +228,51 @@ def map_dataset(
         pair_roles = examples.get("pair_role")
         pair_id = "" if pair_ids is None or pair_ids[i] is None else str(pair_ids[i])
         pair_role = "" if pair_roles is None or pair_roles[i] is None else str(pair_roles[i])
+        messages_batch = examples.get("messages")
+        assistant_parts_batch = examples.get("assistant_parts")
 
  
         if args.task != "review":
             raise ValueError("train_multi.py only supports --task review in this code-scoring project.")
+        if messages_batch is not None and assistant_parts_batch is not None and messages_batch[i] and assistant_parts_batch[i]:
+            if train_lm is None:
+                response_state = optional_float(
+                    assistant_parts_batch[i][-1].get("q_value") if assistant_parts_batch[i] else None,
+                    optional_float(q_value[-1] if q_value else None, float(IGNORED_INDEX)),
+                )
+                train_lm = response_state == 1 or all(x == IGNORED_INDEX for x in q_value)
+            encoded = qwen_messages_to_training_ids(
+                context.tokenizer,
+                messages_batch[i],
+                assistant_parts_batch[i],
+                train_lm=bool(train_lm),
+            )
+            input_ids = list(encoded["input_ids"])
+            labels = list(encoded["labels"])
+            Q = list(encoded["Q"])
+            Q_MIN = list(encoded["Q_MIN"])
+            Q_MAX = list(encoded["Q_MAX"])
+            if len(input_ids) > args.max_training_seq_length:
+                input_ids = input_ids[:args.max_training_seq_length]
+                labels = labels[:args.max_training_seq_length]
+                Q = Q[:args.max_training_seq_length]
+                Q_MIN = Q_MIN[:args.max_training_seq_length]
+                Q_MAX = Q_MAX[:args.max_training_seq_length]
+                model_inputs["exceeding_length"].append(True)
+            else:
+                model_inputs["exceeding_length"].append(False)
+
+            model_inputs["input_ids"].append(input_ids)
+            model_inputs["attention_mask"].append([1] * len(input_ids))
+            model_inputs["Q"].append(np.array(Q, dtype=np.float32))
+            model_inputs["Q_MIN"].append(np.array(Q_MIN, dtype=np.float32))
+            model_inputs["Q_MAX"].append(np.array(Q_MAX, dtype=np.float32))
+            model_inputs["labels"].append(labels)
+            model_inputs["value_loss_weight"].append(value_loss_weight)
+            model_inputs["lm_loss_weight"].append(lm_loss_weight)
+            model_inputs["pair_id"].append(pair_id)
+            model_inputs["pair_role"].append(pair_role)
+            continue
         first_response = str(responses[0] if responses else "")
         prompt = review_prompt_for_response(instruction, first_response)
         prompt_config = EncodingConfig(add_bos=True, add_eos=False)

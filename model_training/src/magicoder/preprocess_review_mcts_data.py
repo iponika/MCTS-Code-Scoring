@@ -122,6 +122,83 @@ def extract_response_segments(text: str) -> list[str]:
     return segments
 
 
+def response_segment_type(segment: str) -> str:
+    stripped = str(segment or "").lstrip()
+    if stripped.startswith("<review>"):
+        return "review"
+    return "step"
+
+
+def qwen_review_user_content(instruction: str) -> str:
+    return (
+        "You are a code scoring model for functional correctness.\n"
+        "Use the task, candidate code, and AXIOM refinement-effort scale to assign one stable score.\n"
+        "Put intermediate evidence inside <think> as concise <step>...</step> blocks, then finish with exactly one "
+        "<review> JSON block.\n"
+        "Do not put q_value, reward, or training metadata in the answer.\n\n"
+        f"{instruction.strip()}"
+    )
+
+
+def qwen_assistant_content_from_responses(responses: list[str]) -> str:
+    steps = [str(segment).strip() for segment in responses if response_segment_type(segment) == "step"]
+    reviews = [str(segment).strip() for segment in responses if response_segment_type(segment) == "review"]
+    think_body = "\n".join(segment for segment in steps if segment)
+    content = f"<think>\n{think_body}\n</think>"
+    if reviews:
+        content += "\n\n" + reviews[-1]
+    return content
+
+
+def build_assistant_parts(item: dict[str, Any]) -> list[dict[str, Any]]:
+    responses = [str(segment or "").strip() for segment in item.get("response", [])]
+    q_values = item.get("q_value", [])
+    q_min_values = item.get("q_min", q_values)
+    q_max_values = item.get("q_max", q_values)
+    parts: list[dict[str, Any]] = []
+    for index, segment in enumerate(responses):
+        part = {
+            "type": response_segment_type(segment),
+            "text": segment,
+            "q_value": q_values[index] if isinstance(q_values, list) and index < len(q_values) else IGNORED_INDEX,
+        }
+        if isinstance(q_min_values, list) and index < len(q_min_values):
+            part["q_min"] = q_min_values[index]
+        if isinstance(q_max_values, list) and index < len(q_max_values):
+            part["q_max"] = q_max_values[index]
+        parts.append(part)
+    return parts
+
+
+def attach_qwen_messages(item: dict[str, Any]) -> dict[str, Any]:
+    responses = [str(segment or "").strip() for segment in item.get("response", []) if str(segment or "").strip()]
+    if not responses:
+        return item
+    assistant_content = qwen_assistant_content_from_responses(responses)
+    item["messages"] = [
+        {"role": "user", "content": qwen_review_user_content(str(item.get("instruction") or ""))},
+        {"role": "assistant", "content": assistant_content},
+    ]
+    item["assistant_parts"] = build_assistant_parts(item)
+    item["training_format"] = "qwen_messages_think_review"
+    return item
+
+
+def refresh_qwen_message_fields(items: Iterable[dict[str, Any]]) -> dict[str, int]:
+    stats = defaultdict(int)
+    for item in items:
+        before = bool(item.get("messages") and item.get("assistant_parts"))
+        attach_qwen_messages(item)
+        after = bool(item.get("messages") and item.get("assistant_parts"))
+        if after:
+            stats["qwen_message_items"] += 1
+            if not before:
+                stats["qwen_message_items_created"] += 1
+        else:
+            stats["qwen_message_items_missing"] += 1
+    return dict(stats)
+
+
 def truncate_for_review(value: object, max_chars: int, marker: str = "\n... [truncated]") -> tuple[str, bool]:
     text = str(value or "").strip()
     if max_chars <= 0 or len(text) <= max_chars:
@@ -364,7 +441,7 @@ def verifier_correction_training_item(
     train_lm = mode in {"policy", "paired_repair"}
     synthetic_type = "verifier_correction" if mode == "policy" else f"verifier_correction_{mode}"
     terminal_suffix = f"verifier_correction_{mode}"
-    return {
+    item = {
         "instruction": build_verifier_correction_instruction(record, dimension, str(terminal.get("text") or ""), messages),
         "response": response,
         "q_value": [q_value for _ in response],
@@ -388,6 +465,8 @@ def verifier_correction_training_item(
         "force_value_only": not train_lm,
         "allow_verifier_policy": train_lm,
     }
+    attach_qwen_messages(item)
+    return item
 
 
 def path_to_training_item(
@@ -458,6 +537,7 @@ def path_to_training_item(
         item["verifier_feedback"] = verifier_feedback
         item["force_value_only"] = True
         item["lm_loss_weight"] = 0.0
+    attach_qwen_messages(item)
     return item
 
 
@@ -890,6 +970,7 @@ def convert_records(
     else:
         stats["stage_value_label_enabled"] = 0
 
+    stats.update(refresh_qwen_message_fields(items))
     return items, dict(stats)
 
 
@@ -1208,6 +1289,7 @@ def collapse_policy_responses_to_final_review(items: list[dict[str, Any]]) -> di
                 item[key] = [values[final_index]]
         item["response"] = [responses[final_index]]
         item["policy_response_mode"] = "final_review"
+        attach_qwen_messages(item)
         stats["policy_final_review_collapsed"] += 1
     return dict(stats)
 
@@ -1454,6 +1536,7 @@ def main() -> None:
     stats.update({f"final_{key}": value for key, value in refresh_policy_flags(items, args.policy_min_q).items()})
     if args.policy_response_mode == "final_review":
         stats.update(collapse_policy_responses_to_final_review(items))
+    stats.update(refresh_qwen_message_fields(items))
 
     if args.shuffle:
         random.Random(args.shuffle_seed).shuffle(items)
