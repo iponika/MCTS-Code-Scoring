@@ -185,3 +185,11 @@ This file records Codex-made project changes so work can be resumed safely acros
 - Added `data_collection/scripts/run_direct_stepcount_vs_review_qwen3_4b.sh` to run a direct comparison among `static`, `direct-review`, `direct-stepwise-1step`, and `direct-stepwise-2step`.
 - The new workflow fixes the experiment contract for this phase: `static` and `direct-review` are matched only on final `<review>` policy-sample count, while stepwise variants are allowed to keep their extra `<step>` supervision so we can test whether progressive reasoning itself helps.
 - The new workflow records provenance explicitly in `summary.json`: training seeds come from `data_collection/prepare_codecritic_axiom_seedset.py` over `datasets/CodeCriticBench/data/CodeCriticBench.jsonl`, and supervised evaluation seeds come from AXIOM clean held-out sampling in `data_collection/scripts/run_axiom_clean_eval.sh`.
+
+## 2026-05-01
+
+- Inspected recent stepwise evaluation artifacts and confirmed that many final `<review>` blocks restate or refine evidence already introduced in preceding `<step>` blocks, so the pre-review reasoning path is sometimes genuinely used rather than being pure noise.
+- Fixed `model_training/src/magicoder/preprocess_review_mcts_data.py` so a mixed terminal node containing `step/thinking prefix + <review>` is no longer collapsed to just the `<review>` body during preprocessing.
+- Added `extract_response_segments()` to split mixed terminal text into separate reasoning segments plus the final `<review>`, stripping orphan `<think>` markers while preserving usable pre-review evidence.
+- Updated path-to-training conversion so these extracted prefix segments inherit the terminal node's q-value metadata and enter stepwise training instead of being silently discarded.
+- Added focused unit coverage in `tests/test_review_training_dedupe.py` for mixed terminal `step + review` extraction and export.

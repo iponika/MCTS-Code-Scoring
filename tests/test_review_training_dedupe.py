@@ -1,7 +1,7 @@
 import json
 import unittest
 
-from magicoder.preprocess_review_mcts_data import convert_records
+from magicoder.preprocess_review_mcts_data import convert_records, extract_response_segments
 
 
 def terminal_node(tag: str, final_answer: str) -> tuple[str, dict]:
@@ -21,6 +21,69 @@ def terminal_node(tag: str, final_answer: str) -> tuple[str, dict]:
 
 
 class ReviewTrainingDedupeTest(unittest.TestCase):
+    def test_extract_response_segments_preserves_prefix_reasoning_before_review(self) -> None:
+        mixed = (
+            "<step>\nTrace x=1: the code returns 2.\n</step>\n"
+            "</think>\n\n"
+            "<review>\n"
+            '{"axiom_grade":5,"score":100,"verdict":"accept","functional_correctness":true,'
+            '"repair_effort":"none","evidence_type":"deduced_counterexample",'
+            '"summary":"The code returns x plus one.","evidence":["For x=1, code returns 2."]}'
+            "\n</review>"
+        )
+
+        segments = extract_response_segments(mixed)
+
+        self.assertEqual(len(segments), 2)
+        self.assertTrue(segments[0].startswith("<step>"))
+        self.assertIn("Trace x=1", segments[0])
+        self.assertTrue(segments[1].startswith("<review>"))
+        self.assertNotIn("</think>", "".join(segments))
+
+    def test_convert_records_splits_mixed_terminal_reasoning_and_review(self) -> None:
+        review = (
+            '{"axiom_grade":5,"score":100,"verdict":"accept",'
+            '"functional_correctness":true,"repair_effort":"none",'
+            '"evidence_type":"deduced_counterexample","summary":"Code returns x plus one.",'
+            '"evidence":["For x=1, code returns 2, matching the requirement."]}'
+        )
+        tag, terminal = terminal_node(
+            "0.0.0.0",
+            review,
+        )
+        terminal["text"] = (
+            "<step>\nTrace x=1: the code returns 2, matching the requirement.\n</step>\n"
+            "<review>\n"
+            f"{review}\n"
+            "</review>"
+        )
+        record = {
+            "dataset_index": 6,
+            "source": "unit",
+            "subset": "unit",
+            "problem": "Return x + 1.",
+            "candidate_code": "def f(x):\n    return x + 1",
+            "tests": [],
+            "language": "python",
+            "best_reviews_by_dimension": {"Correctness Verification": {"tag": tag}},
+            "react": {
+                "0": {},
+                "0.0": {"target_dimension": "Correctness Verification"},
+                tag: terminal,
+            },
+        }
+
+        items, _stats = convert_records(
+            [record],
+            policy_min_q=0.5,
+            max_value_paths_per_dimension=0,
+        )
+
+        self.assertEqual(len(items), 1)
+        self.assertEqual(len(items[0]["response"]), 2)
+        self.assertTrue(items[0]["response"][0].startswith("<step>"))
+        self.assertTrue(items[0]["response"][1].startswith("<review>"))
+
     def test_same_parent_semantic_duplicate_reviews_export_once(self) -> None:
         first_review = (
             '{"axiom_grade":5,"score":100,"verdict":"accept",'
