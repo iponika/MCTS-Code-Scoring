@@ -211,3 +211,5 @@ This file records Codex-made project changes so work can be resumed safely acros
 - Updated `train_multi.py` to prefer `messages + assistant_parts`, render them through the tokenizer chat template, mask non-assistant tokens for LM loss, and place value labels at the corresponding assistant part boundaries.
 - Updated static exact-label data, AXIOM/CodeCritic score preprocessing, and token-budget filtering to emit or consume the same Qwen message format.
 - Added `tests/test_train_multi_qwen_messages.py` plus expanded preprocessing tests to verify chat-template masking, value-only behavior, and `assistant_parts` synchronization.
+- Fixed `data_collection/direct_bootstrap_review.py` so direct final-review repeats no longer use `n>1` under greedy decoding. Review-only repeats are now expanded into duplicated prompts with `n=1`, which preserves multiple rollouts while staying compatible with vLLM's greedy-sampling constraints.
+- Added `tests/test_direct_bootstrap_review.py` to lock the direct-review repeat behavior and prevent regressions where `temperature=0` is paired with `n>1`.
