@@ -53,10 +53,17 @@ uv run python data_collection/solver_review.py \
 
 ## Maintained Wrappers
 
-- `scripts/run_bootstrap_comparison_qwen3_4b.sh`: current 4B static/direct/MCTS comparison.
+DeepSeek-R1-Distill-Qwen-7B is the default model for current experiments. The
+Qwen-specific wrappers remain for reproducing old runs, but new runs should use
+the DeepSeek wrappers unless a comparison explicitly requires another model.
+
+- `scripts/run_bootstrap_comparison_deepseek7b.sh`: default static/direct/MCTS comparison.
+- `scripts/run_direct_stepcount_vs_review_deepseek7b.sh`: default direct-review vs 1-step/2-step comparison.
+- `scripts/run_direct_stepwise_vs_review_deepseek7b.sh`: default diagnostic comparing final-review SFT and stepwise SFT.
+- `scripts/run_bootstrap_comparison_qwen3_4b.sh`: legacy Qwen3-4B static/direct/MCTS comparison.
 - `scripts/run_qwen35_9b_direct_stepwise_vs_review_smoke.sh`: 9B direct-review vs direct-stepwise comparison, intended for larger-memory servers.
 - `scripts/run_qwen35_9b_fsdp_smoke.sh`: isolated 9B training smoke.
-- `scripts/run_direct_stepwise_vs_review_qwen3_4b.sh`: 4B diagnostic comparing direct final-review SFT and non-MCTS stepwise SFT.
+- `scripts/run_direct_stepwise_vs_review_qwen3_4b.sh`: legacy 4B diagnostic comparing direct final-review SFT and non-MCTS stepwise SFT.
 - `scripts/run_axiom_clean_eval.sh`: AXIOM held-out evaluation.
 - `configs/mcts_code_review_qwen3_4b_thinking.yaml`: Qwen3-4B native `/think` review-MCTS smoke configuration.
 - `configs/mcts_code_review_qwen3_4b_no_think.yaml`: Qwen3-4B `/no_think` comparison configuration.

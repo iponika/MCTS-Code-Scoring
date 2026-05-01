@@ -80,40 +80,29 @@ PYTHONPATH=data_collection uv run python data_collection/prepare_codecritic_axio
 
 ## Maintained Workflows
 
-4B full comparison wrapper:
+DeepSeek-R1-Distill-Qwen-7B is the default model for current experiments. The
+Qwen wrappers are retained for explicit legacy comparisons, but routine runs
+should use the DeepSeek wrappers.
+
+DeepSeek direct-review vs 1-step/2-step wrapper:
 
 ```bash
-tmux new -s review_4b_cmp
-RUN_NAME=bootstrap_cmp_qwen3_4b_server \
+tmux new -s deepseek_stepcount
+RUN_NAME=direct_stepcount_vs_review_deepseek7b_server \
 SEED_PER_GRADE=8 \
+DIRECT_REPEATS=2 \
 MAX_STEPS=120 \
-bash data_collection/scripts/run_bootstrap_comparison_qwen3_4b.sh
+bash data_collection/scripts/run_direct_stepcount_vs_review_deepseek7b.sh
 ```
 
-Qwen3.5-9B direct-review vs direct-stepwise wrapper for larger-memory servers:
+DeepSeek static/direct/MCTS comparison wrapper:
 
 ```bash
-tmux new -s qwen35_9b_stepwise
-RUN_NAME=qwen35_9b_direct_stepwise_server \
+tmux new -s deepseek_cmp
+RUN_NAME=bootstrap_cmp_deepseek7b_server \
 SEED_PER_GRADE=8 \
-DIRECT_REPEATS=3 \
 MAX_STEPS=120 \
-MAX_TRAINING_SEQ_LENGTH=2048 \
-bash data_collection/scripts/run_qwen35_9b_direct_stepwise_vs_review_smoke.sh
-```
-
-Qwen3-4B native-thinking review-MCTS smoke:
-
-```bash
-CUDA_VISIBLE_DEVICES=0 \
-PYTHONPATH=data_collection \
-uv run python data_collection/solver_review.py \
-  --custom_cfg data_collection/configs/mcts_code_review_qwen3_4b_thinking.yaml \
-  --dataset datasets/CodeCriticBench/data/CodeCriticBench.jsonl \
-  --start 0 \
-  --limit 1 \
-  --output data_collection/review_mcts_runs/qwen3_4b_thinking_smoke/aggregate.jsonl \
-  --output_dir data_collection/review_mcts_runs/qwen3_4b_thinking_smoke/samples
+bash data_collection/scripts/run_bootstrap_comparison_deepseek7b.sh
 ```
 
 DeepSeek-R1-Distill-Qwen-7B review-MCTS smoke after downloading the model:

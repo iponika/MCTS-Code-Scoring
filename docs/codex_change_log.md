@@ -2,6 +2,12 @@
 
 This file records Codex-made project changes so work can be resumed safely across forks and sessions. Each future code or workflow change should update this log and be followed by a git commit.
 
+## 2026-05-01
+
+- Set DeepSeek-R1-Distill-Qwen-7B as the default model for current review-scoring workflows by switching the generic review-MCTS config and AXIOM eval base default away from Qwen.
+- Added DeepSeek wrapper scripts for bootstrap comparison, direct review-vs-stepcount comparison, and direct stepwise diagnostics while keeping Qwen wrappers as explicit legacy/reproduction entries.
+- Updated README and data-collection workflow docs so future routine experiments use DeepSeek defaults.
+
 ## 2026-04-30
 
 - Added a narrow final-review consistency rule to review prompts: final AXIOM scoring now tells the model to reconcile supported previous-step evidence with the final verdict, so a supported counterexample or trace cannot be silently contradicted by the final `<review>`.

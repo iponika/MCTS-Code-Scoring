@@ -4,7 +4,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="${ROOT:-$(cd "${SCRIPT_DIR}/../.." && pwd)}"
 RUN_NAME="${RUN_NAME:-axiom_clean_eval_no0_20260422}"
-BASE_MODEL_PATH="${BASE_MODEL_PATH:-Qwen/Qwen3-4B}"
+BASE_MODEL_PATH="${BASE_MODEL_PATH:-deepseek-ai/DeepSeek-R1-Distill-Qwen-7B}"
 TRAINED_MODEL_PATH="${TRAINED_MODEL_PATH:-}"
 AXIOM_DIR="${AXIOM_DIR:-${ROOT}/datasets/axiom-llm-judge/axiombench}"
 TRAIN_DATA="${TRAIN_DATA:-}"
