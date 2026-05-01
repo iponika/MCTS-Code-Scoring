@@ -84,6 +84,53 @@ class ReviewTrainingDedupeTest(unittest.TestCase):
         self.assertTrue(items[0]["response"][0].startswith("<step>"))
         self.assertTrue(items[0]["response"][1].startswith("<review>"))
 
+    def test_convert_records_exports_qwen_messages_and_assistant_parts(self) -> None:
+        review = (
+            '{"axiom_grade":5,"score":100,"verdict":"accept",'
+            '"functional_correctness":true,"repair_effort":"none",'
+            '"evidence_type":"deduced_counterexample","summary":"Code returns x plus one.",'
+            '"evidence":["For x=1, code returns 2, matching the requirement."]}'
+        )
+        tag, terminal = terminal_node("0.0.0.0", review)
+        record = {
+            "dataset_index": 10,
+            "source": "unit",
+            "subset": "unit",
+            "problem": "Return x + 1.",
+            "candidate_code": "def f(x):\n    return x + 1",
+            "tests": [],
+            "language": "python",
+            "best_reviews_by_dimension": {"Correctness Verification": {"tag": tag}},
+            "react": {
+                "0": {},
+                "0.0": {"target_dimension": "Correctness Verification"},
+                "0.0.0": {
+                    "text": "<step>\nTrace x=1: code returns 2.\n</step>",
+                    "target_dimension": "Correctness Verification",
+                    "q_value": 0.7,
+                },
+                tag: terminal,
+            },
+        }
+
+        items, _stats = convert_records(
+            [record],
+            policy_min_q=0.5,
+            max_value_paths_per_dimension=0,
+        )
+
+        item = items[0]
+        self.assertEqual([message["role"] for message in item["messages"]], ["user", "assistant"])
+        assistant_content = item["messages"][1]["content"]
+        self.assertIn("<think>", assistant_content)
+        self.assertIn("<step>\nTrace x=1: code returns 2.\n</step>", assistant_content)
+        self.assertIn("</think>\n\n<review>", assistant_content)
+        self.assertEqual([part["type"] for part in item["assistant_parts"]], ["step", "review"])
+        self.assertEqual(
+            [part["q_value"] for part in item["assistant_parts"]],
+            item["q_value"],
+        )
+
     def test_same_parent_semantic_duplicate_reviews_export_once(self) -> None:
         first_review = (
             '{"axiom_grade":5,"score":100,"verdict":"accept",'

@@ -198,3 +198,8 @@ This file records Codex-made project changes so work can be resumed safely acros
 - Extended the OpenAI-compatible API generator so completion objects preserve structured `reasoning` metadata when the backend returns it.
 - Updated `model_training/src/magicoder/review_evaluator.py` to record per-candidate reasoning metadata and a composed `final_reasoning` field in evaluation artifacts.
 - Added focused parser tests for structured-reasoning preference and `<think>`-block fallback extraction in `tests/test_review_evaluator_parsing.py`.
+- Added Qwen-official message-format training export: review training items now carry `messages` with a user turn and a single assistant turn whose content is `<think>` step evidence followed by the final `<review>`.
+- Added `assistant_parts` metadata so each step/review part keeps its `q_value`, `q_min`, and `q_max` without exposing those labels to the model text.
+- Updated `train_multi.py` to prefer `messages + assistant_parts`, render them through the tokenizer chat template, mask non-assistant tokens for LM loss, and place value labels at the corresponding assistant part boundaries.
+- Updated static exact-label data, AXIOM/CodeCritic score preprocessing, and token-budget filtering to emit or consume the same Qwen message format.
+- Added `tests/test_train_multi_qwen_messages.py` plus expanded preprocessing tests to verify chat-template masking, value-only behavior, and `assistant_parts` synchronization.

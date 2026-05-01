@@ -13,6 +13,15 @@ from magicoder.prompt_template import review_prompt_for_response
 
 
 def review_item_token_length(item: dict[str, Any], context: TokenizationContext) -> int:
+    messages = item.get("messages")
+    if isinstance(messages, list) and messages:
+        rendered = context.tokenizer.apply_chat_template(
+            messages,
+            tokenize=False,
+            add_generation_prompt=False,
+        )
+        return len(context.encode(EncodingConfig(add_bos=False, add_eos=False), [rendered])[0])
+
     responses = item.get("response") or []
     prompt = review_prompt_for_response(item["instruction"], str(responses[0] if responses else ""))
     prompt_ids = context.encode(EncodingConfig(add_bos=True, add_eos=False), [prompt])[0]

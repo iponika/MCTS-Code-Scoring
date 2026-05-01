@@ -18,6 +18,7 @@ from magicoder.axiom_scoring import (
     axiom_verdict,
     clamp_axiom_grade,
 )
+from magicoder.preprocess_review_mcts_data import attach_qwen_messages
 
 
 REPAIR_EFFORT_BY_GRADE = {
@@ -197,6 +198,7 @@ def make_item(
         for key in ("pair_id", "pair_role"):
             if key in metadata:
                 item[key] = metadata[key]
+    attach_qwen_messages(item)
     return item
 
 

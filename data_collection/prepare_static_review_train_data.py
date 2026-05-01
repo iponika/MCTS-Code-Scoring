@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 
 from magicoder.axiom_scoring import AXIOM_GRADE_DESCRIPTIONS, axiom_scalar_score, axiom_value_target, axiom_verdict, clamp_axiom_grade
-from magicoder.preprocess_review_mcts_data import build_instruction
+from magicoder.preprocess_review_mcts_data import attach_qwen_messages, build_instruction
 from mcts_math.review_utils import load_codecriticbench_dataset
 
 
@@ -79,6 +79,7 @@ def main() -> None:
             "data_split": "static",
             "synthetic_type": "static_exact",
         }
+        attach_qwen_messages(item)
         items.append(item)
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
