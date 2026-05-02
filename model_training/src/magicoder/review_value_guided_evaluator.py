@@ -26,12 +26,24 @@ from magicoder.review_policy_value_inference import (
 VALUE_SCORE_KEYS = ["last_value", "response_mean_value", "response_min_value", "response_conservative_value"]
 
 
+def native_reasoning_note(text: str) -> str:
+    cleaned = str(text or "").strip()
+    if "<think>" in cleaned:
+        body = cleaned.split("<think>", 1)[1]
+        if "</think>" in body:
+            body = body.split("</think>", 1)[0]
+        return body.strip()
+    if "</think>" in cleaned:
+        return cleaned.split("</think>", 1)[0].strip()
+    return cleaned
+
+
 def build_prompt(instruction: str, partial_response: str, *, force_final: bool) -> str:
     if force_final:
         final_instruction = (
             instruction
             + "\n\nThis is the final scoring turn. Output exactly one <review> JSON block. "
-            "Do not add more <step> blocks. "
+            "Do not add more intermediate reasoning notes. "
             "Before choosing axiom_grade, reconcile supported previous analysis notes with the final judgment."
         )
         if partial_response.strip():
@@ -44,8 +56,8 @@ def build_prompt(instruction: str, partial_response: str, *, force_final: bool) 
         )
     step_instruction = (
         instruction
-        + "\n\nThis is an intermediate turn. Output exactly one JSON object wrapped in <step> tags. "
-        "Do not output <review> yet. Each new step must add new evidence."
+        + "\n\nThis is an intermediate turn. Generate one concise native reasoning note. "
+        "Do not output XML tags, JSON, or <review> yet. Each new note must add new evidence."
     )
     return QWEN_REVIEW_STEP_ONLY_PROMPT.format(
         instruction=step_instruction,
@@ -91,7 +103,7 @@ def main() -> None:
     trace: list[dict[str, Any]] = []
     for step_index in range(args.max_steps):
         is_final_step = step_index == args.max_steps - 1
-        stop = "</review>" if is_final_step else "</step>"
+        stop = "</review>" if is_final_step else "</think>"
         prompt = build_prompt(item["instruction"], partial_response, force_final=is_final_step)
         candidates = []
         for candidate_index in range(args.num_candidates):
@@ -114,7 +126,7 @@ def main() -> None:
                 }
             )
         best = max(candidates, key=lambda candidate: candidate_sort_key(candidate, args.score_key))
-        partial_response += best["continuation"].strip() + "\n"
+        partial_response += (best["continuation"].strip() if is_final_step else native_reasoning_note(best["continuation"])) + "\n"
         trace.append(
             {
                 "step_index": step_index,

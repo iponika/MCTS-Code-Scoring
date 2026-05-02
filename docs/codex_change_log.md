@@ -237,3 +237,6 @@ This file records Codex-made project changes so work can be resumed safely acros
 - Backed up the pre-rewrite step prompts in `docs/prompt_backups/review_step_prompts_before_rewrite_20260502.md`.
 - Rewrote data-generation, training, and stepwise-evaluation step prompts to match the new final-review prompt style: step outputs are now JSON objects wrapped in `<step>` tags with `step_type`, `evidence_type`, `claim`, and `functional_implication`.
 - Updated direct/bootstrap and value-guided stepwise prompts so previous steps are described as `Previous analysis notes` when placed in the instruction body, while assistant-prefix mode still treats already emitted steps as response history.
+- Replaced new intermediate `<step>` generation with native reasoning notes to avoid nested `<think>` / `<step>` ambiguity in thinking models.
+- Updated direct bootstrap, review MCTS parsing, stepwise evaluators, and Qwen-message training export so intermediate nodes are stored as plain reasoning text inside `<think>`, while old `<step>...</step>` samples remain readable as legacy input.
+- Removed `</step>` from thinking-model stop lists; intermediate generation now stops on `</think>` so one model call corresponds to one native reasoning node.

@@ -12,7 +12,7 @@ max_model_len: 8192
 enable_prefix_caching: True
 use_chat_template: True
 chat_template_enable_thinking: True
-stop: ["</think>", "</step>", "</step>\n", "</step>\n\n", "</review>"]
+stop: ["</think>", "</review>"]
 qwen_thinking_mode: "think"
 review_native_thinking_steps: True
 max_depth: 3

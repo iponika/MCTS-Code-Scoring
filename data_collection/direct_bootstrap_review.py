@@ -61,19 +61,19 @@ def parse_args() -> argparse.Namespace:
         "--response_mode",
         choices=["review", "stepwise"],
         default="review",
-        help="Generate direct final <review> only, or non-MCTS sequential <step> reasoning followed by <review>.",
+        help="Generate direct final <review> only, or non-MCTS sequential native reasoning followed by <review>.",
     )
     parser.add_argument(
         "--reasoning_steps",
         type=int,
         default=3,
-        help="Number of sequential <step> blocks to generate when --response_mode stepwise.",
+        help="Number of sequential native reasoning notes to generate when --response_mode stepwise.",
     )
     parser.add_argument(
         "--step_context_mode",
         choices=["assistant_prefix", "instruction_context"],
         default="instruction_context",
-        help="How prior <step> blocks are exposed during stepwise reasoning. instruction_context avoids assistant-prefix continuation.",
+        help="How prior reasoning notes are exposed during stepwise reasoning. instruction_context avoids assistant-prefix continuation.",
     )
     return parser.parse_args()
 
@@ -135,9 +135,9 @@ def build_prompt(
         )
     if (not force_final_review) and steps_as_instruction_context and completed_steps:
         prompt = prompt.replace(
-            "\n\nStep evidence format:\n",
+            "\n\nIntermediate reasoning format:\n",
             "\n\nPrevious analysis notes:\n"
-            f"{completed_steps}\n\nStep evidence format:\n",
+            f"{completed_steps}\n\nIntermediate reasoning format:\n",
             1,
         )
         prompt = prompt.replace(
@@ -177,28 +177,22 @@ def normalize_review_text(text: str) -> str:
 
 
 def normalize_step_text(text: str) -> str:
-    cleaned = text.strip()
+    artifacts = extract_reasoning_artifacts(text)
+    cleaned = (artifacts["reasoning"] or artifacts["content"] or str(text or "")).strip()
     if "<review>" in cleaned:
         cleaned = cleaned.split("<review>", 1)[0].strip()
-    if "<think>" in cleaned:
-        think_body = cleaned.split("<think>", 1)[1]
-        if "</think>" in think_body:
-            think_body = think_body.split("</think>", 1)[0]
-        think_body = compact_native_think_body(think_body)
-        if think_body:
-            return f"<step>\nnative_think: {think_body}\n</step>"
-    if cleaned.startswith("<step>") and "</step>" not in cleaned:
-        return cleaned.rstrip() + "\n</step>"
+    cleaned = cleaned.replace("<think>", "").replace("</think>", "").strip()
     if cleaned.startswith("<step>"):
-        return cleaned
+        cleaned = cleaned[len("<step>"):].lstrip()
     if "</step>" in cleaned:
         cleaned = cleaned.split("</step>", 1)[0].strip()
-    return f"<step>\n{cleaned}\n</step>"
+    cleaned = compact_native_think_body(cleaned) or cleaned
+    return cleaned
 
 
 def direct_bootstrap_stop_tokens(response_mode: str) -> list[str]:
     if response_mode == "stepwise":
-        return ["</think>", "</step>"]
+        return ["</think>"]
     return ["</review>"]
 
 
@@ -369,7 +363,7 @@ def generate_stepwise(
 
     sampling_params.n = 1
     sampling_params.best_of = 1
-    sampling_params.stop = ["</think>", "</step>"]
+    sampling_params.stop = ["</think>"]
     for _ in range(max(0, args.reasoning_steps)):
         prompts = [
             build_prompt(
