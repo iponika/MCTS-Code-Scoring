@@ -104,10 +104,16 @@ def build_prompt(
     partial_solution: str = "None",
     force_final_review: bool = True,
     freeform_final_review: bool = False,
+    steps_as_instruction_context: bool = False,
 ) -> str:
     template = QWEN_REVIEW_FINAL_PROMPT if force_final_review else QWEN_REVIEW_STEP_PROMPT
-    partial_response = partial_solution.strip() if partial_solution else ""
+    completed_steps = partial_solution.strip() if partial_solution else ""
+    partial_response = completed_steps
     if partial_response == "None":
+        partial_response = ""
+    if completed_steps == "None":
+        completed_steps = ""
+    if force_final_review and steps_as_instruction_context:
         partial_response = ""
     if partial_response:
         partial_response = partial_response.rstrip() + "\n"
@@ -125,6 +131,13 @@ def build_prompt(
         step_format_section=REVIEW_STEP_FORMAT_SECTION,
         final_format_section=REVIEW_FINAL_FORMAT_SECTION,
     )
+    if force_final_review and steps_as_instruction_context and completed_steps:
+        prompt = prompt.replace(
+            "\n\nStructured final review format:\n",
+            "\n\nCompleted previous steps to use as evidence context:\n"
+            f"{completed_steps}\n\nStructured final review format:\n",
+            1,
+        )
     if force_final_review and freeform_final_review:
         prompt = relax_freeform_final_prompt(prompt)
     thinking_mode = str(getattr(config, "qwen_thinking_mode", "") or "").strip().lower()
@@ -378,6 +391,7 @@ def generate_stepwise(
             config,
             partial_solution="".join(item["segments"]) or "None",
             force_final_review=True,
+            steps_as_instruction_context=True,
         )
         for item in trajectories
     ]
