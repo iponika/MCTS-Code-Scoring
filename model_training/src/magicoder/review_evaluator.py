@@ -152,7 +152,7 @@ def prompt_for_dimension(
     if force_final:
         instruction += (
             "\n\nThis is the final scoring turn. Output exactly one <review> JSON block. "
-            "Do not add more <step> blocks. "
+            "Do not add more intermediate reasoning notes. "
             "Before choosing axiom_grade, reconcile supported previous analysis notes with the final judgment. "
             "The evidence value must be a JSON array of strings using square brackets only. "
             "Use any <value_feedback> blocks as private guidance; do not quote or repeat them in the review."
@@ -173,8 +173,8 @@ def prompt_for_dimension(
             instruction += (
                 "\n\nThis is an intermediate scoring turn. "
                 "Use previous analysis notes as fixed context and do not repeat them. "
-                "Output exactly one JSON object wrapped in <step> tags. Do not output <review> yet. "
-                "Each new step must add new evidence instead of continuing the wording of a previous step. "
+                "Generate one concise native reasoning note. Do not output XML tags, JSON, or <review> yet. "
+                "Each new reasoning note must add new evidence instead of continuing the wording of a previous note. "
                 "Use any <value_feedback> blocks as private guidance; do not quote or repeat them."
             )
             if completed_steps:
@@ -187,7 +187,7 @@ def prompt_for_dimension(
             instruction += (
                 "\n\nThe text already present after @@ Response contains previous analysis notes. "
                 "Use them as fixed context and continue the analysis. "
-                "Output exactly one JSON object wrapped in <step> tags. Do not output <review> yet. "
+                "Generate one concise native reasoning note. Do not output XML tags, JSON, or <review> yet. "
                 "Do not repeat, paraphrase, or restart previous steps. "
                 "Use any <value_feedback> blocks as private guidance; do not quote or repeat them."
             )
@@ -523,7 +523,7 @@ def evaluate_dimension(
     for step_index in range(args.max_steps):
         force_final = args.final_only_json or step_index == args.max_steps - 1
         max_new_tokens = (args.final_max_new_tokens or args.max_new_tokens) if force_final else args.max_new_tokens
-        stop = "</review>" if force_final else ["</step>", "</review>"]
+        stop = "</review>" if force_final else ["</think>", "</review>"]
         prompt = prompt_for_dimension(
             sample,
             dimension,
@@ -575,7 +575,11 @@ def evaluate_dimension(
             rethink_count += 1
             partial_response += rethink_feedback(best, args.rethink_threshold, args.score_key)
         else:
-            partial_response += best["continuation"].strip() + "\n"
+            if force_final:
+                partial_response += best["continuation"].strip() + "\n"
+            else:
+                reasoning_note = (best.get("reasoning") or best.get("content") or best["continuation"]).strip()
+                partial_response += reasoning_note + "\n"
 
         trace.append(
             {
@@ -756,7 +760,7 @@ def main() -> None:
         "--step_context_mode",
         choices=["assistant_prefix", "instruction_context"],
         default="instruction_context",
-        help="How prior <step> blocks are exposed during stepwise reasoning. instruction_context avoids assistant-prefix continuation.",
+        help="How prior reasoning notes are exposed during stepwise reasoning. instruction_context avoids assistant-prefix continuation.",
     )
     parser.add_argument("--show_tests_in_prompt", action="store_true", help="Expose dataset tests to the reviewer prompt for oracle diagnostics. Default hides tests.")
     parser.add_argument("--max_problem_chars", type=int, default=3500, help="Maximum task-description characters included in review prompts. 0 keeps full text.")

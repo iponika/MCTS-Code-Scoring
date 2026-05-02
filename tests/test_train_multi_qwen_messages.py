@@ -74,10 +74,10 @@ class QwenMessageTrainingTest(unittest.TestCase):
         tokenizer = FakeQwenTokenizer()
         messages = [
             {"role": "user", "content": "score code"},
-            {"role": "assistant", "content": "<think>\n<step>A</step>\n</think>\n\n<review>B</review>"},
+            {"role": "assistant", "content": "<think>\nA\n</think>\n\n<review>B</review>"},
         ]
         assistant_parts = [
-            {"type": "step", "text": "<step>A</step>", "q_value": 0.25},
+            {"type": "reasoning", "text": "A", "q_value": 0.25},
             {"type": "review", "text": "<review>B</review>", "q_value": 0.75},
         ]
 

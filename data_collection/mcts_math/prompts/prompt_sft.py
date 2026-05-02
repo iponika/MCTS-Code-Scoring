@@ -3,10 +3,8 @@ REVIEW_FINAL_FORMAT_SECTION = """Structured final review format:
 {{"axiom_grade": <0-5 integer>, "functional_correctness": true|false, "repair_effort": "none|minor_quality|major_quality|minor_functional|major_functional|rewrite", "evidence_type": "provided_test_failure|deduced_counterexample|static_logic_contradiction|uncertain", "summary": "...", "evidence": ["...", "..."]}}
 </review>"""
 
-REVIEW_STEP_FORMAT_SECTION = """Step evidence format:
-<step>
-{{"step_type": "trace_requirement|trace_visible_test|derive_counterexample|static_logic_check|challenge_previous_claim", "evidence_type": "provided_test_failure|deduced_counterexample|static_logic_contradiction|uncertain", "claim": "...", "functional_implication": "supports_correct|supports_defect|uncertain"}}
-</step>"""
+REVIEW_STEP_FORMAT_SECTION = """Intermediate reasoning format:
+Write one concise functional-correctness evidence note in the model's native reasoning channel. Do not output XML tags, JSON, markdown fences, code fixes, or the final <review> block in this intermediate turn."""
 
 AXIOM_REFINEMENT_SCALE = """AXIOM refinement-effort scale:
 - First decide functional status. Grades 3-5 require perfect or not-disproven functionality; grades 1-2 require a concrete functional defect; grade 0 means the code is fundamentally mismatched to the task.
@@ -29,26 +27,24 @@ REVIEW_EVIDENCE_RULES = """Evidence rules:
 
 
 REVIEW_FINAL_CONSISTENCY_RULE = """Final consistency rule:
-Before choosing axiom_grade, reconcile supported previous-step evidence with the final judgment. If a completed step contains a concrete counterexample or trace supported by the task, code, or visible tests, the final review cannot silently contradict it; either reflect the defect in functional_correctness/axiom_grade or explain why that step is unsupported."""
+Before choosing axiom_grade, reconcile supported previous reasoning evidence with the final judgment. If an earlier reasoning note contains a concrete counterexample or trace supported by the task, code, or visible tests, the final review cannot silently contradict it; either reflect the defect in functional_correctness/axiom_grade or explain why that note is unsupported."""
 
 
 QWEN_REVIEW_STEP_PROMPT = """You are a code scoring model for functional correctness.
 @@ Instruction
 This is an intermediate turn of a multi-step code review. Earlier turns may have already analyzed the candidate code. If previous analysis notes are provided below or already present after @@ Response, use them as fixed context and add one new evidence item.
 
-You are not assigning the final score in this turn. Output exactly one JSON object wrapped in <step> tags. Do not output <review> yet; do not output markdown fences, code fixes, or natural-language text outside the tags.
+You are not assigning the final score in this turn. Generate one concise native reasoning note. Do not output XML tags, JSON, markdown fences, code fixes, or the final <review> block in this intermediate turn.
 
 You must gather evidence for the AXIOM 0-5 refinement-effort scale:
 
 {axiom_scale}
 
-Field rules:
-- step_type must be one of trace_requirement, trace_visible_test, derive_counterexample, static_logic_check, challenge_previous_claim.
-- evidence_type must be one of provided_test_failure, deduced_counterexample, static_logic_contradiction, uncertain.
-- claim should be one short concrete evidence statement about functional behavior.
-- functional_implication must be supports_correct, supports_defect, or uncertain.
-- Each new step must add new evidence and must not restate the whole task, code, or earlier analysis.
+Reasoning rules:
+- Focus on one new evidence point: requirement trace, visible-test trace, counterexample, static logic check, or challenge to an unsupported prior claim.
+- Each new reasoning note must add new evidence and must not restate the whole task, code, or earlier analysis.
 - If previous analysis notes conflict, challenge only the claim best contradicted by the task, code, or visible tests.
+- Do not decide the final AXIOM grade yet.
 
 Task description:
 {question}

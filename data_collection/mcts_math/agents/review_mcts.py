@@ -158,10 +158,8 @@ class ReviewMCTS(MCTS):
         if "</review>" in draft:
             draft = draft.split("</review>", 1)[0].strip()
         return (
-            "<step>\n"
             "Premature final review draft retained as a reasoning note, not as the final scored review:\n"
-            f"{draft}\n"
-            "</step>"
+            f"{draft}"
         )
 
     def _has_duplicate_review_child(self, node: Type[MCTSNode], final_answer: str) -> bool:

@@ -76,11 +76,13 @@ def normalize_response_segment(text: str) -> str:
         return f"<review>\n{review_body.strip()}\n</review>"
 
     if cleaned.startswith("<step>"):
-        if cleaned.endswith("</step>"):
-            return cleaned
-        return f"{cleaned}\n</step>"
+        cleaned = cleaned[len("<step>"):].lstrip()
+    if "</step>" in cleaned:
+        cleaned = cleaned.split("</step>", 1)[0].strip()
+    cleaned = cleaned.replace("<think>", "").replace("</think>", "").strip()
+    return cleaned
 
-    return f"<step>\n{cleaned}\n</step>"
+    return cleaned
 
 
 def extract_response_segments(text: str) -> list[str]:
@@ -126,14 +128,14 @@ def response_segment_type(segment: str) -> str:
     stripped = str(segment or "").lstrip()
     if stripped.startswith("<review>"):
         return "review"
-    return "step"
+    return "reasoning"
 
 
 def qwen_review_user_content(instruction: str) -> str:
     return (
         "You are a code scoring model for functional correctness.\n"
         "Use the task, candidate code, and AXIOM refinement-effort scale to assign one stable score.\n"
-        "Put intermediate evidence inside <think> as concise <step>...</step> blocks, then finish with exactly one "
+        "Put intermediate evidence inside <think> as concise native reasoning notes, then finish with exactly one "
         "<review> JSON block.\n"
         "Do not put q_value, reward, or training metadata in the answer.\n\n"
         f"{instruction.strip()}"
@@ -141,7 +143,7 @@ def qwen_review_user_content(instruction: str) -> str:
 
 
 def qwen_assistant_content_from_responses(responses: list[str]) -> str:
-    steps = [str(segment).strip() for segment in responses if response_segment_type(segment) == "step"]
+    steps = [str(segment).strip() for segment in responses if response_segment_type(segment) == "reasoning"]
     reviews = [str(segment).strip() for segment in responses if response_segment_type(segment) == "review"]
     if not steps:
         return reviews[-1] if reviews else ""
@@ -381,11 +383,9 @@ def build_verifier_correction_response(details: dict[str, Any], dimension: str, 
 
     feedback_summary = "; ".join(messages[:3])
     step = (
-        "<step>\n"
         "Verifier correction: the previous review used unsupported evidence. "
         f"{feedback_summary} "
         "I will discard that claim and anchor the score to the verified AXIOM correctness boundary.\n"
-        "</step>"
     )
     payload = {
         "axiom_grade": target_grade,

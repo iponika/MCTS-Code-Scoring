@@ -192,9 +192,8 @@ def review_step_result_unwrap(
             think_body = think_body.split("</think>", 1)[0]
         think_body = compact_native_think_body(think_body)
         if think_body:
-            step_text = f"<step>\nnative_think: {think_body}\n</step>"
-            parser_result["action"] = step_text
-            return step_text, parser_result
+            parser_result["action"] = think_body
+            return think_body, parser_result
 
     parser_result["action"] = cleaned
     return cleaned, parser_result

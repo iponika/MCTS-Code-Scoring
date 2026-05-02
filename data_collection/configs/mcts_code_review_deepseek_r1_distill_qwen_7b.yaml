@@ -14,7 +14,7 @@ use_chat_template: True
 chat_template_enable_thinking: True
 qwen_thinking_mode: "think"
 review_native_thinking_steps: True
-stop: ["</think>", "</step>", "</step>\n", "</step>\n\n", "</review>"]
+stop: ["</think>", "</review>"]
 max_depth: 3
 n_generate_sample: 3
 iterations: 18

@@ -27,7 +27,7 @@ def terminal_node(tag: str, final_answer: str) -> tuple[str, dict]:
 class ReviewTrainingDedupeTest(unittest.TestCase):
     def test_extract_response_segments_preserves_prefix_reasoning_before_review(self) -> None:
         mixed = (
-            "<step>\nTrace x=1: the code returns 2.\n</step>\n"
+            "Trace x=1: the code returns 2.\n"
             "</think>\n\n"
             "<review>\n"
             '{"axiom_grade":5,"score":100,"verdict":"accept","functional_correctness":true,'
@@ -39,7 +39,7 @@ class ReviewTrainingDedupeTest(unittest.TestCase):
         segments = extract_response_segments(mixed)
 
         self.assertEqual(len(segments), 2)
-        self.assertTrue(segments[0].startswith("<step>"))
+        self.assertFalse(segments[0].startswith("<step>"))
         self.assertIn("Trace x=1", segments[0])
         self.assertTrue(segments[1].startswith("<review>"))
         self.assertNotIn("</think>", "".join(segments))
@@ -56,7 +56,7 @@ class ReviewTrainingDedupeTest(unittest.TestCase):
             review,
         )
         terminal["text"] = (
-            "<step>\nTrace x=1: the code returns 2, matching the requirement.\n</step>\n"
+            "Trace x=1: the code returns 2, matching the requirement.\n"
             "<review>\n"
             f"{review}\n"
             "</review>"
@@ -85,7 +85,7 @@ class ReviewTrainingDedupeTest(unittest.TestCase):
 
         self.assertEqual(len(items), 1)
         self.assertEqual(len(items[0]["response"]), 2)
-        self.assertTrue(items[0]["response"][0].startswith("<step>"))
+        self.assertFalse(items[0]["response"][0].startswith("<step>"))
         self.assertTrue(items[0]["response"][1].startswith("<review>"))
 
     def test_convert_records_exports_qwen_messages_and_assistant_parts(self) -> None:
@@ -109,7 +109,7 @@ class ReviewTrainingDedupeTest(unittest.TestCase):
                 "0": {},
                 "0.0": {"target_dimension": "Correctness Verification"},
                 "0.0.0": {
-                    "text": "<step>\nTrace x=1: code returns 2.\n</step>",
+                    "text": "Trace x=1: code returns 2.",
                     "target_dimension": "Correctness Verification",
                     "q_value": 0.7,
                 },
@@ -127,9 +127,10 @@ class ReviewTrainingDedupeTest(unittest.TestCase):
         self.assertEqual([message["role"] for message in item["messages"]], ["user", "assistant"])
         assistant_content = item["messages"][1]["content"]
         self.assertIn("<think>", assistant_content)
-        self.assertIn("<step>\nTrace x=1: code returns 2.\n</step>", assistant_content)
+        self.assertIn("Trace x=1: code returns 2.", assistant_content)
+        self.assertNotIn("<step>", assistant_content)
         self.assertIn("</think>\n\n<review>", assistant_content)
-        self.assertEqual([part["type"] for part in item["assistant_parts"]], ["step", "review"])
+        self.assertEqual([part["type"] for part in item["assistant_parts"]], ["reasoning", "review"])
         self.assertEqual(
             [part["q_value"] for part in item["assistant_parts"]],
             item["q_value"],
