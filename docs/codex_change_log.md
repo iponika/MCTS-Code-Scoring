@@ -230,3 +230,7 @@ This file records Codex-made project changes so work can be resumed safely acros
 - On branch `direct-final-free-review`, changed data-generation `stepwise -> final review` prompting so accumulated `<step>` blocks move into instruction-side evidence context instead of staying in `@@ Response` as assistant-prefix text.
 - The data-generation stepwise final prompt now keeps `@@ Response` for only the final `<review>` opening / JSON prefix, matching the evaluator-side structure and reducing continuation pressure from prior `<step>` text.
 - Added prompt-visibility coverage to lock the new data-generation stepwise-final placement behavior.
+- Backed up the pre-rewrite final-review prompts in `docs/prompt_backups/review_final_prompts_before_rewrite_20260502.md`.
+- Rewrote data-generation and evaluator final-review prompts around functional-correctness AXIOM scoring: the task/code/tests appear before previous analysis notes, the final review synthesizes prior steps from instruction-side context, and the required JSON keeps `evidence_type` while dropping legacy `score` and `verdict` fields.
+- Shortened the evidence rules so they preserve the core constraints, no unsupported test claims, low grades need concrete functional defects, 1-2 grounded evidence strings, without the older bulky evidence-system wording.
+- Updated reward parsing to derive the legacy verdict alignment from `axiom_grade` when a new-format review omits `verdict`.

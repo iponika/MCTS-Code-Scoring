@@ -120,6 +120,7 @@ def prompt_for_dimension(
     force_final: bool = False,
     parse_error: dict[str, Any] | None = None,
     final_only: bool = False,
+    step_context_mode: str = "assistant_prefix",
     max_problem_chars: int = 3500,
     max_code_chars: int = 3500,
     mark_code_truncation_inside_block: bool = True,
@@ -149,20 +150,15 @@ def prompt_for_dimension(
         )
     if force_final:
         instruction += (
-            "\n\nCompleted previous <step> blocks are fixed evidence context. "
-            "Use them as fixed context and do not repeat them. "
-            "Start your next output with <review> and end it with </review>. "
-            "Do not add more <step> blocks. Output exactly one valid JSON object inside the review tags. "
-            "Before choosing axiom_grade, reconcile supported previous-step evidence with the final verdict; "
-            "if a supported counterexample or trace exists, the final review cannot silently contradict it. "
-            "Required JSON keys: axiom_grade, score, verdict, functional_correctness, repair_effort, summary, evidence. "
+            "\n\nThis is the final scoring turn. Output exactly one <review> JSON block. "
+            "Do not add more <step> blocks. "
+            "Before choosing axiom_grade, reconcile supported previous analysis notes with the final judgment. "
             "The evidence value must be a JSON array of strings using square brackets only. "
-            "If a previous review block exists, ignore it and output a corrected final review. "
             "Use any <value_feedback> blocks as private guidance; do not quote or repeat them in the review."
         )
         if completed_steps:
             instruction += (
-                "\n\nCompleted previous steps to use as evidence context:\n"
+                "\n\nPrevious analysis notes:\n"
                 f"{completed_steps}"
             )
         if parse_error:
@@ -172,22 +168,45 @@ def prompt_for_dimension(
                 "Correct the JSON syntax in the next review block."
             )
     else:
-        instruction += (
-            "\n\nThe text already present after @@ Response contains completed previous <step> blocks. "
-            "Use them as fixed context. Continue from the last completed step. "
-            "Output exactly one new <step>...</step> reasoning block. Do not output <review> yet. "
-            "Do not repeat, paraphrase, or restart previous steps. "
-            "Use any <value_feedback> blocks as private guidance; do not quote or repeat them."
-        )
-        return QWEN_REVIEW_STEP_ONLY_PROMPT.format(
+        if step_context_mode == "instruction_context":
+            instruction += (
+                "\n\nCompleted previous <step> blocks are fixed evidence context. "
+                "Use them as fixed context and do not repeat them. "
+                "Output exactly one new <step>...</step> reasoning block. Do not output <review> yet. "
+                "Each new step must add one new evidence increment instead of continuing the wording of a previous step. "
+                "Use any <value_feedback> blocks as private guidance; do not quote or repeat them."
+            )
+            if completed_steps:
+                instruction += (
+                    "\n\nCompleted previous steps to use as evidence context:\n"
+                    f"{completed_steps}"
+                )
+            response = ""
+        else:
+            instruction += (
+                "\n\nThe text already present after @@ Response contains completed previous <step> blocks. "
+                "Use them as fixed context. Continue from the last completed step. "
+                "Output exactly one new <step>...</step> reasoning block. Do not output <review> yet. "
+                "Do not repeat, paraphrase, or restart previous steps. "
+                "Use any <value_feedback> blocks as private guidance; do not quote or repeat them."
+            )
+            response = partial_response
+        prompt = QWEN_REVIEW_STEP_ONLY_PROMPT.format(
             instruction=instruction,
-            response=partial_response,
+            response=response,
             axiom_scale=AXIOM_REFINEMENT_SCALE,
         )
-    return QWEN_REVIEW_STEP_PROMPT.format(
+        if step_context_mode == "instruction_context":
+            prompt = prompt.replace(
+                "Treat completed previous <step> blocks as fixed context. Continue from the last completed step without repeating, paraphrasing, or restarting it.\n",
+                "Treat completed previous <step> blocks as fixed context. Use them as fixed context and do not repeat them.\n",
+            )
+        return prompt
+    return QWEN_REVIEW_FINAL_ONLY_PROMPT.format(
         instruction=instruction,
         response="",
         axiom_scale=AXIOM_REFINEMENT_SCALE,
+        final_consistency_rule=REVIEW_FINAL_CONSISTENCY_RULE,
     )
 
 
@@ -509,6 +528,7 @@ def evaluate_dimension(
             partial_response,
             force_final=force_final,
             final_only=args.final_only_json,
+            step_context_mode=args.step_context_mode,
             max_problem_chars=args.max_problem_chars,
             max_code_chars=args.max_code_chars,
             mark_code_truncation_inside_block=args.mark_code_truncation_inside_block,
@@ -588,6 +608,7 @@ def evaluate_dimension(
             force_final=True,
             parse_error=final_review_parse,
             final_only=args.final_only_json,
+            step_context_mode=args.step_context_mode,
             max_problem_chars=args.max_problem_chars,
             max_code_chars=args.max_code_chars,
             mark_code_truncation_inside_block=args.mark_code_truncation_inside_block,
@@ -625,6 +646,7 @@ def evaluate_dimension(
         "",
         force_final=True,
         final_only=args.final_only_json,
+        step_context_mode=args.step_context_mode,
         max_problem_chars=args.max_problem_chars,
         max_code_chars=args.max_code_chars,
         mark_code_truncation_inside_block=args.mark_code_truncation_inside_block,
@@ -728,6 +750,12 @@ def main() -> None:
     parser.add_argument("--score_key", choices=VALUE_SCORE_KEYS, default="last_value")
     parser.add_argument("--seed", type=int)
     parser.add_argument("--final_only_json", action="store_true", help="Generate only one compact final <review> JSON block; no step reasoning.")
+    parser.add_argument(
+        "--step_context_mode",
+        choices=["assistant_prefix", "instruction_context"],
+        default="instruction_context",
+        help="How prior <step> blocks are exposed during stepwise reasoning. instruction_context avoids assistant-prefix continuation.",
+    )
     parser.add_argument("--show_tests_in_prompt", action="store_true", help="Expose dataset tests to the reviewer prompt for oracle diagnostics. Default hides tests.")
     parser.add_argument("--max_problem_chars", type=int, default=3500, help="Maximum task-description characters included in review prompts. 0 keeps full text.")
     parser.add_argument("--max_code_chars", type=int, default=3500, help="Maximum candidate-code characters included in review prompts. 0 keeps full text.")
