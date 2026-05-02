@@ -37,7 +37,7 @@ def load_indices(args: argparse.Namespace) -> list[int]:
     return deduped
 
 
-def main() -> None:
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Run review_evaluator over multiple records while loading models once.")
     parser.add_argument("--policy_model_path", required=True)
     parser.add_argument("--value_model_path")
@@ -60,6 +60,12 @@ def main() -> None:
     parser.add_argument("--score_key", choices=VALUE_SCORE_KEYS, default="last_value")
     parser.add_argument("--seed", type=int)
     parser.add_argument("--final_only_json", action="store_true", help="Generate only one compact final <review> JSON block; no step reasoning.")
+    parser.add_argument(
+        "--step_context_mode",
+        choices=["assistant_prefix", "instruction_context"],
+        default="instruction_context",
+        help="How prior reasoning notes are exposed during stepwise reasoning.",
+    )
     parser.add_argument("--max_problem_chars", type=int, default=3500, help="Maximum task-description characters included in review prompts. 0 keeps full text.")
     parser.add_argument("--max_code_chars", type=int, default=3500, help="Maximum candidate-code characters included in review prompts. 0 keeps full text.")
     parser.add_argument(
@@ -81,6 +87,11 @@ def main() -> None:
     parser.add_argument("--max_final_retries", type=int, default=1)
     parser.add_argument("--final_temperature", type=float, default=0.0)
     parser.add_argument("--skip_existing", action=argparse.BooleanOptionalAction, default=True)
+    return parser
+
+
+def main() -> None:
+    parser = build_parser()
     args = parser.parse_args()
     if args.seed is not None:
         set_seed(args.seed)
