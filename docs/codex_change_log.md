@@ -224,3 +224,6 @@ This file records Codex-made project changes so work can be resumed safely acros
 - Final stepwise reviews now receive prior `<step>` blocks as explicit evidence context inside the instruction body, while the final assistant response starts empty and must begin the `<review>` block itself.
 - Kept non-final step prompting unchanged: intermediate step generation still continues from the existing assistant-side `<step>` history.
 - Updated `tests/test_review_prompt_visibility.py` to lock the new split between stepwise-final prompting and stepwise-intermediate prompting.
+- On branch `direct-final-free-review`, relaxed direct `review`-mode final prompting so it no longer pre-fills `<review>` / JSON or appends `/no_think`; the model may reason first and then finish with a final `<review>` block.
+- Added a direct-review normalization path that keeps only the last complete `<review>...</review>` block from freeform outputs, so pre-review reasoning does not leak into exported policy text.
+- Added focused unit coverage in `tests/test_direct_bootstrap_review.py` for the freeform direct-final prompt contract and last-review extraction behavior.

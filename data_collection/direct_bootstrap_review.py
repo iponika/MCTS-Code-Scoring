@@ -33,6 +33,31 @@ from solver_review import build_record
 FINAL_REVIEW_PREFILL = '<review>\n{"axiom_grade": '
 
 
+def relax_freeform_final_prompt(prompt: str) -> str:
+    relaxed = prompt
+    relaxed = relaxed.replace(
+        "Output exactly one compact JSON object wrapped in <review> tags. Do not output <step> blocks or prose outside <review>.\n",
+        "You may reason before the final labeled answer, but finish with exactly one complete <review>...</review> block.\n",
+    )
+    relaxed = relaxed.replace(
+        "The very first non-whitespace characters of your answer must be <review>.\n",
+        "The final labeled answer begins at the last complete <review> block in your response.\n",
+    )
+    relaxed = relaxed.replace(
+        "After the opening tag, continue immediately with a JSON object, not a natural-language sentence.\n",
+        "Inside the final <review> block, write a compact JSON object rather than prose.\n",
+    )
+    relaxed = relaxed.replace(
+        'The response is already inside the final JSON object. The first JSON key must be "axiom_grade".\n',
+        'In the final <review> JSON, the first key must be "axiom_grade".\n',
+    )
+    relaxed = relaxed.replace(
+        "Do not output <think>, <step>, markdown fences, or explanatory prose in this final turn.\n",
+        "Do not output <step> blocks or markdown fences. If you reason before the final answer, keep that reasoning outside the final <review> block.\n",
+    )
+    return relaxed
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Direct independent bootstrap exporter for AXIOM code scoring.")
     parser.add_argument("--custom_cfg", default="data_collection/configs/mcts_code_review_qwen3_4b.yaml")
@@ -78,6 +103,7 @@ def build_prompt(
     *,
     partial_solution: str = "None",
     force_final_review: bool = True,
+    freeform_final_review: bool = False,
 ) -> str:
     template = QWEN_REVIEW_FINAL_PROMPT if force_final_review else QWEN_REVIEW_STEP_PROMPT
     partial_response = partial_solution.strip() if partial_solution else ""
@@ -85,7 +111,7 @@ def build_prompt(
         partial_response = ""
     if partial_response:
         partial_response = partial_response.rstrip() + "\n"
-    if force_final_review:
+    if force_final_review and not freeform_final_review:
         partial_response += FINAL_REVIEW_PREFILL
     prompt = template.format(
         question=sample["question"],
@@ -99,8 +125,10 @@ def build_prompt(
         step_format_section=REVIEW_STEP_FORMAT_SECTION,
         final_format_section=REVIEW_FINAL_FORMAT_SECTION,
     )
+    if force_final_review and freeform_final_review:
+        prompt = relax_freeform_final_prompt(prompt)
     thinking_mode = str(getattr(config, "qwen_thinking_mode", "") or "").strip().lower()
-    if force_final_review and getattr(config, "review_native_thinking_steps", False):
+    if force_final_review and getattr(config, "review_native_thinking_steps", False) and not freeform_final_review:
         return prompt + "\n\n/no_think"
     if thinking_mode in {"think", "/think"}:
         return prompt + "\n\n/think"
@@ -117,6 +145,13 @@ def iter_batches(items: list[dict[str, Any]], batch_size: int):
 def normalize_review_text(text: str) -> str:
     artifacts = extract_reasoning_artifacts(text)
     text = artifacts["content"] or str(text or "")
+    if "<review>" in text:
+        review_suffix = text.rsplit("<review>", 1)[1]
+        review_body = review_suffix.split("</review>", 1)[0].strip()
+        normalized = "<review>\n" + review_body
+        if "</review>" in review_suffix:
+            normalized += "\n</review>"
+        return normalized
     if "</review>" not in text and "<review>" in text:
         return text.rstrip() + "\n</review>"
     return text
@@ -273,7 +308,14 @@ def generate_review_only(
     sampling_params.temperature = 0.0
     sampling_params.top_p = 1.0
     prompts = [
-        build_prompt(item["sample"], args.dimension, config, partial_solution="None", force_final_review=True)
+        build_prompt(
+            item["sample"],
+            args.dimension,
+            config,
+            partial_solution="None",
+            force_final_review=True,
+            freeform_final_review=True,
+        )
         for item in trajectories
     ]
     prompts = maybe_apply_chat_template(prompts, engine, config)
@@ -283,7 +325,7 @@ def generate_review_only(
     for item, output in zip(trajectories, outputs):
         text = output.outputs[0].text if output.outputs else ""
         sample = item["sample"]
-        candidate = evaluated_candidate(item["repeat_index"], FINAL_REVIEW_PREFILL + text, sample, args.dimension)
+        candidate = evaluated_candidate(item["repeat_index"], text, sample, args.dimension)
         by_sample_index[sample_position[id(sample)]].append(candidate)
 
     return [(sample, by_sample_index[index]) for index, sample in enumerate(sample_batch)]
