@@ -21,6 +21,7 @@ from magicoder.review_value_guided_evaluator import VALUE_SCORE_KEYS
 from magicoder.prompt_template import (
     AXIOM_REFINEMENT_SCALE,
     REVIEW_FINAL_CONSISTENCY_RULE,
+    REVIEW_STEP_FORMAT_SECTION,
     QWEN_REVIEW_FINAL_ONLY_PROMPT,
     QWEN_REVIEW_STEP_ONLY_PROMPT,
     QWEN_REVIEW_STEP_PROMPT,
@@ -170,23 +171,23 @@ def prompt_for_dimension(
     else:
         if step_context_mode == "instruction_context":
             instruction += (
-                "\n\nCompleted previous <step> blocks are fixed evidence context. "
-                "Use them as fixed context and do not repeat them. "
-                "Output exactly one new <step>...</step> reasoning block. Do not output <review> yet. "
-                "Each new step must add one new evidence increment instead of continuing the wording of a previous step. "
+                "\n\nThis is an intermediate scoring turn. "
+                "Use previous analysis notes as fixed context and do not repeat them. "
+                "Output exactly one JSON object wrapped in <step> tags. Do not output <review> yet. "
+                "Each new step must add new evidence instead of continuing the wording of a previous step. "
                 "Use any <value_feedback> blocks as private guidance; do not quote or repeat them."
             )
             if completed_steps:
                 instruction += (
-                    "\n\nCompleted previous steps to use as evidence context:\n"
+                    "\n\nPrevious analysis notes:\n"
                     f"{completed_steps}"
                 )
             response = ""
         else:
             instruction += (
-                "\n\nThe text already present after @@ Response contains completed previous <step> blocks. "
-                "Use them as fixed context. Continue from the last completed step. "
-                "Output exactly one new <step>...</step> reasoning block. Do not output <review> yet. "
+                "\n\nThe text already present after @@ Response contains previous analysis notes. "
+                "Use them as fixed context and continue the analysis. "
+                "Output exactly one JSON object wrapped in <step> tags. Do not output <review> yet. "
                 "Do not repeat, paraphrase, or restart previous steps. "
                 "Use any <value_feedback> blocks as private guidance; do not quote or repeat them."
             )
@@ -195,11 +196,12 @@ def prompt_for_dimension(
             instruction=instruction,
             response=response,
             axiom_scale=AXIOM_REFINEMENT_SCALE,
+            step_format_section=REVIEW_STEP_FORMAT_SECTION,
         )
         if step_context_mode == "instruction_context":
             prompt = prompt.replace(
-                "Treat completed previous <step> blocks as fixed context. Continue from the last completed step without repeating, paraphrasing, or restarting it.\n",
-                "Treat completed previous <step> blocks as fixed context. Use them as fixed context and do not repeat them.\n",
+                "If previous analysis notes are provided below or already present after @@ Response, use them as fixed context and add one new evidence item.\n",
+                "If previous analysis notes are provided below, use them as fixed context and add one new evidence item without repeating them.\n",
             )
         return prompt
     return QWEN_REVIEW_FINAL_ONLY_PROMPT.format(

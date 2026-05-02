@@ -3,9 +3,9 @@ REVIEW_FINAL_FORMAT_SECTION = """Structured final review format:
 {{"axiom_grade": <0-5 integer>, "functional_correctness": true|false, "repair_effort": "none|minor_quality|major_quality|minor_functional|major_functional|rewrite", "evidence_type": "provided_test_failure|deduced_counterexample|static_logic_contradiction|uncertain", "summary": "...", "evidence": ["...", "..."]}}
 </review>"""
 
-REVIEW_STEP_FORMAT_SECTION = """Next-step format:
+REVIEW_STEP_FORMAT_SECTION = """Step evidence format:
 <step>
-trace_requirement | trace_visible_test | derive_counterexample | static_logic_check | challenge_previous_claim: concise new reasoning
+{{"step_type": "trace_requirement|trace_visible_test|derive_counterexample|static_logic_check|challenge_previous_claim", "evidence_type": "provided_test_failure|deduced_counterexample|static_logic_contradiction|uncertain", "claim": "...", "functional_implication": "supports_correct|supports_defect|uncertain"}}
 </step>"""
 
 AXIOM_REFINEMENT_SCALE = """AXIOM refinement-effort scale:
@@ -34,13 +34,21 @@ Before choosing axiom_grade, reconcile supported previous-step evidence with the
 
 QWEN_REVIEW_STEP_PROMPT = """You are a code scoring model for functional correctness.
 @@ Instruction
-Current generation mode: continue evidence gathering.
-Output exactly one new <step>...</step> block. Do not output <review> yet.
-Treat completed previous steps as fixed context. Continue from the last completed step without repeating it.
-Do not restate the whole task, code, or earlier analysis. Add one concise evidence increment: a requirement trace, visible-test trace, counterexample, static logic check, or challenge to an unsupported prior claim.
+This is an intermediate turn of a multi-step code review. Earlier turns may have already analyzed the candidate code. If previous analysis notes are provided below or already present after @@ Response, use them as fixed context and add one new evidence item.
 
-Purpose: gather evidence for a later AXIOM score. Text critique is only evidence for the eventual scalar score.
-Scope: judge whether the candidate satisfies the task's functional requirements. Ignore style, naming, formatting, missing explanation, or alternative implementation strategy unless it changes observable behavior.
+You are not assigning the final score in this turn. Output exactly one JSON object wrapped in <step> tags. Do not output <review> yet; do not output markdown fences, code fixes, or natural-language text outside the tags.
+
+You must gather evidence for the AXIOM 0-5 refinement-effort scale:
+
+{axiom_scale}
+
+Field rules:
+- step_type must be one of trace_requirement, trace_visible_test, derive_counterexample, static_logic_check, challenge_previous_claim.
+- evidence_type must be one of provided_test_failure, deduced_counterexample, static_logic_contradiction, uncertain.
+- claim should be one short concrete evidence statement about functional behavior.
+- functional_implication must be supports_correct, supports_defect, or uncertain.
+- Each new step must add new evidence and must not restate the whole task, code, or earlier analysis.
+- If previous analysis notes conflict, challenge only the claim best contradicted by the task, code, or visible tests.
 
 Task description:
 {question}
@@ -53,7 +61,7 @@ Candidate code:
 Available tests:
 {tests}
 
-{axiom_scale}
+End of available tests.
 
 {evidence_rules}
 

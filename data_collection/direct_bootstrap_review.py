@@ -135,18 +135,14 @@ def build_prompt(
         )
     if (not force_final_review) and steps_as_instruction_context and completed_steps:
         prompt = prompt.replace(
-            "\n\nNext-step format:\n",
-            "\n\nCompleted previous steps to use as evidence context:\n"
-            f"{completed_steps}\n\nNext-step format:\n",
+            "\n\nStep evidence format:\n",
+            "\n\nPrevious analysis notes:\n"
+            f"{completed_steps}\n\nStep evidence format:\n",
             1,
         )
         prompt = prompt.replace(
-            "Treat completed previous steps as fixed context. Continue from the last completed step without repeating it.\n",
-            "Treat completed previous steps as fixed context. Use them as fixed context and do not repeat them.\n",
-        )
-        prompt = prompt.replace(
-            "Do not restate the whole task, code, or earlier analysis. Add one concise evidence increment: a requirement trace, visible-test trace, counterexample, static logic check, or challenge to an unsupported prior claim.\n",
-            "Do not restate the whole task, code, or earlier analysis. Add one concise evidence increment: a requirement trace, visible-test trace, counterexample, static logic check, or challenge to an unsupported prior claim. Each new step must add new evidence instead of continuing the wording of a previous step.\n",
+            "If previous analysis notes are provided below or already present after @@ Response, use them as fixed context and add one new evidence item.\n",
+            "If previous analysis notes are provided below, use them as fixed context and add one new evidence item without repeating them.\n",
         )
     if force_final_review and freeform_final_review:
         prompt = relax_freeform_final_prompt(prompt)

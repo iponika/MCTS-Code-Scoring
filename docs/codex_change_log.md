@@ -234,3 +234,6 @@ This file records Codex-made project changes so work can be resumed safely acros
 - Rewrote data-generation and evaluator final-review prompts around functional-correctness AXIOM scoring: the task/code/tests appear before previous analysis notes, the final review synthesizes prior steps from instruction-side context, and the required JSON keeps `evidence_type` while dropping legacy `score` and `verdict` fields.
 - Shortened the evidence rules so they preserve the core constraints, no unsupported test claims, low grades need concrete functional defects, 1-2 grounded evidence strings, without the older bulky evidence-system wording.
 - Updated reward parsing to derive the legacy verdict alignment from `axiom_grade` when a new-format review omits `verdict`.
+- Backed up the pre-rewrite step prompts in `docs/prompt_backups/review_step_prompts_before_rewrite_20260502.md`.
+- Rewrote data-generation, training, and stepwise-evaluation step prompts to match the new final-review prompt style: step outputs are now JSON objects wrapped in `<step>` tags with `step_type`, `evidence_type`, `claim`, and `functional_implication`.
+- Updated direct/bootstrap and value-guided stepwise prompts so previous steps are described as `Previous analysis notes` when placed in the instruction body, while assistant-prefix mode still treats already emitted steps as response history.

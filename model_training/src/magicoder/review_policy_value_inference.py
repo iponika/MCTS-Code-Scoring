@@ -9,7 +9,7 @@ import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 from magicoder.llm_wrapper import AutoModelForCausalLMWithValueHead, V_HEAD_WEIGHTS_NAME
-from magicoder.prompt_template import AXIOM_REFINEMENT_SCALE, QWEN_REVIEW_STEP_PROMPT
+from magicoder.prompt_template import AXIOM_REFINEMENT_SCALE, REVIEW_STEP_FORMAT_SECTION, QWEN_REVIEW_STEP_PROMPT
 
 
 def load_jsonl_item(path: str, index: int) -> dict[str, Any]:
@@ -158,6 +158,7 @@ def item_prompt(item: dict[str, Any]) -> str:
         instruction=item["instruction"],
         response="",
         axiom_scale=AXIOM_REFINEMENT_SCALE,
+        step_format_section=REVIEW_STEP_FORMAT_SECTION,
     )
 
 

@@ -55,9 +55,11 @@ class ReviewPromptVisibilityTest(unittest.TestCase):
         )
 
         self.assertIn("<step>", prompt)
-        self.assertIn("Do not output <review> yet", prompt)
-        self.assertIn("Do not restate the whole task", prompt)
-        self.assertIn("one concise evidence increment", prompt)
+        self.assertIn("This is an intermediate turn of a multi-step code review", prompt)
+        self.assertIn("Output exactly one JSON object wrapped in <step> tags", prompt)
+        self.assertIn("Step evidence format", prompt)
+        self.assertIn('"step_type"', prompt)
+        self.assertIn('"functional_implication"', prompt)
         self.assertNotIn("as long as needed", prompt)
         self.assertNotIn("Structured final review format", prompt)
         self.assertNotIn('"axiom_grade"', prompt)
@@ -202,7 +204,8 @@ class ReviewPromptVisibilityTest(unittest.TestCase):
 
         response_tail = prompt.split("@@ Response", 1)[1]
         self.assertIn(partial, response_tail)
-        self.assertIn("Continue from the last completed step", prompt)
+        self.assertIn("already present after @@ Response", prompt)
+        self.assertIn("Output exactly one JSON object wrapped in <step> tags", prompt)
 
     def test_direct_bootstrap_final_prompt_has_consistency_rule(self) -> None:
         config = OmegaConf.structured(BaseConfig)
@@ -274,12 +277,13 @@ class ReviewPromptVisibilityTest(unittest.TestCase):
             steps_as_instruction_context=True,
         )
 
-        self.assertIn("Completed previous steps to use as evidence context:", prompt)
+        self.assertIn("Previous analysis notes:", prompt)
         self.assertIn("static_logic_check: The function returns x + 1 directly.", prompt)
         response_tail = prompt.split("@@ Response", 1)[1]
         self.assertNotIn(prior_step, response_tail)
-        self.assertIn("Output exactly one new <step>...</step> block. Do not output <review> yet.", prompt)
-        self.assertIn("Each new step must add new evidence instead of continuing the wording of a previous step.", prompt)
+        self.assertIn("Output exactly one JSON object wrapped in <step> tags", prompt)
+        self.assertIn("Do not output <review> yet", prompt)
+        self.assertIn("Each new step must add new evidence", prompt)
 
     def test_thinking_configs_stop_at_native_think_close(self) -> None:
         for path in [
@@ -323,8 +327,8 @@ class ReviewPromptVisibilityTest(unittest.TestCase):
             force_final=False,
         )
 
-        self.assertIn("completed previous <step> blocks", prompt)
-        self.assertIn("Continue from the last completed step", prompt)
+        self.assertIn("previous analysis notes", prompt)
+        self.assertIn("This is an intermediate turn of a multi-step code review", prompt)
         self.assertIn("Do not output <review> yet", prompt)
         self.assertNotIn("under 40 words", prompt)
         self.assertNotIn("unless the review is already ready", prompt)
@@ -348,12 +352,12 @@ class ReviewPromptVisibilityTest(unittest.TestCase):
             step_context_mode="instruction_context",
         )
 
-        self.assertIn("Completed previous steps to use as evidence context:", prompt)
+        self.assertIn("Previous analysis notes:", prompt)
         self.assertIn("static_logic_check: The function returns x + 1 directly.", prompt)
         response_tail = prompt.split("@@ Response", 1)[1]
         self.assertNotIn(prior_step.strip(), response_tail)
         self.assertNotIn("Continue from the last completed step", prompt)
-        self.assertIn("Use them as fixed context and do not repeat them", prompt)
+        self.assertIn("Each new step must add new evidence", prompt)
 
     def test_stepwise_eval_final_prompt_shows_review_format(self) -> None:
         sample = {
@@ -394,10 +398,11 @@ class ReviewPromptVisibilityTest(unittest.TestCase):
         self.assertNotIn('"score"', final_prompt)
         self.assertNotIn('"verdict"', final_prompt)
         self.assertNotIn("stepwise evidence-and-review training", final_prompt)
-        self.assertIn("Current generation mode: stepwise evidence-and-review training", step_prompt)
-        self.assertIn("finish with exactly one <review> JSON block", step_prompt)
-        self.assertIn("each <step> should add one concrete", step_prompt)
-        self.assertIn("Do not restate the whole task", step_prompt)
+        self.assertIn("This training response may contain intermediate analysis steps", step_prompt)
+        self.assertIn("Step evidence format", step_prompt)
+        self.assertIn('"step_type"', step_prompt)
+        self.assertIn('"functional_implication"', step_prompt)
+        self.assertIn("Final review format", step_prompt)
         self.assertNotIn("as long as needed", step_prompt)
         self.assertIn("reconcile supported step evidence", step_prompt)
         self.assertIn("minor tweaking", final_prompt)

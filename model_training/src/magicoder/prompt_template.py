@@ -22,22 +22,38 @@ REVIEW_FINAL_CONSISTENCY_RULE = """Final consistency rule:
 Before choosing axiom_grade, reconcile supported previous-step evidence with the final judgment. If a completed step contains a concrete counterexample or trace supported by the task, code, or visible tests, the final review cannot silently contradict it; either reflect the defect in functional_correctness/axiom_grade or explain why that step is unsupported."""
 
 
+REVIEW_STEP_FORMAT_SECTION = """Step evidence format:
+<step>
+{{"step_type": "trace_requirement|trace_visible_test|derive_counterexample|static_logic_check|challenge_previous_claim", "evidence_type": "provided_test_failure|deduced_counterexample|static_logic_contradiction|uncertain", "claim": "...", "functional_implication": "supports_correct|supports_defect|uncertain"}}
+</step>"""
+
+
 QWEN_REVIEW_STEP_PROMPT = """You are a code scoring model for functional correctness.
 @@ Instruction
-Current generation mode: stepwise evidence-and-review training.
-Output completed <step> evidence blocks first, then finish with exactly one <review> JSON block.
+This training response may contain intermediate analysis steps followed by a final code score. Treat every <step> as evidence for the final <review>, not as an independent final answer.
 
-Purpose: gather functional evidence before assigning an AXIOM score. Text critique is only evidence for the eventual scalar score.
-Scope: judge functional correctness only. Ignore style, naming, formatting, missing explanation, or alternative implementation strategy unless it changes observable behavior.
-Reasoning format: each <step> should add one concrete requirement trace, visible-test trace, counterexample, static logic check, or challenge to an unsupported earlier claim.
-Do not restate the whole task, code, or earlier analysis; each <step> should add one concise evidence increment.
-Evidence source: use only the task, candidate code, visible tests, completed previous steps, and private value feedback if present.
+You must score according to the AXIOM 0-5 refinement-effort scale:
+
 {axiom_scale}
-Boundary rule: grades 3-5 have perfect or not-disproven functionality; grades 0-2 require a concrete visible functional defect. If no defect is verifiable, keep functional_correctness=true and choose 3-5.
-Evidence rule: do not claim tests pass or fail unless tests are visible and traced exactly. A low grade needs a syntax/runtime error, missing required I/O, direct requirement contradiction, unrelated code, or a concrete counterexample. Do not output code fixes.
-Final review rule: when finishing with <review>, reconcile supported step evidence with the final verdict. If a prior step gives a supported counterexample or trace, the final review cannot silently contradict it.
+
+Step rules:
+- Each <step> must be one JSON object in the step evidence format below.
+- step_type must be one of trace_requirement, trace_visible_test, derive_counterexample, static_logic_check, challenge_previous_claim.
+- evidence_type must be one of provided_test_failure, deduced_counterexample, static_logic_contradiction, uncertain.
+- claim should be one short concrete evidence statement about functional behavior.
+- functional_implication must be supports_correct, supports_defect, or uncertain.
+- Do not restate the whole task, code, or earlier analysis; each new step must add new evidence.
+
+Review rules:
+- Finish with exactly one <review> JSON block.
+- Do not claim tests pass or fail unless tests are visible and traced exactly.
+- A grade below 3 requires a concrete functional defect, such as a requirement contradiction, runtime/syntax issue, missing required behavior, or specific counterexample.
+- If no functional defect is verifiable, keep functional_correctness=true and choose grade 3-5.
+- When finishing with <review>, reconcile supported step evidence with the final judgment. If a prior step gives a supported counterexample or trace, the final review cannot silently contradict it.
 
 {instruction}
+
+{step_format_section}
 
 Final review format:
 <review>
@@ -50,20 +66,27 @@ Final review format:
 
 QWEN_REVIEW_STEP_ONLY_PROMPT = """You are assisting a code scoring model by gathering functional evidence.
 @@ Instruction
-Current generation mode: continue evidence gathering.
-Output exactly one new <step>...</step> block. Do not output <review> yet.
+This is an intermediate turn of a multi-step code review. Earlier turns may have already analyzed the candidate code. If previous analysis notes are provided below or already present after @@ Response, use them as fixed context and add one new evidence item.
 
-Purpose: gather one intermediate evidence item for a later AXIOM score.
-Scope: judge functional correctness only. Ignore style, naming, formatting, missing explanation, or alternative implementation strategy unless it changes observable behavior.
-Current output is one intermediate reasoning step, not the final score.
-Do not restate the whole task, code, or earlier analysis; add one concise evidence increment.
-Evidence source: use only the task, candidate code, visible tests, completed previous steps, and private value feedback if present.
-Treat completed previous <step> blocks as fixed context. Continue from the last completed step without repeating, paraphrasing, or restarting it.
+You are not assigning the final score in this turn. Output exactly one JSON object wrapped in <step> tags. Do not output <review> yet; do not output markdown fences, code fixes, or natural-language text outside the tags.
+
+You must gather evidence for the AXIOM 0-5 refinement-effort scale:
+
 {axiom_scale}
-AXIOM boundary: grades 3-5 have perfect or not-disproven functionality; grades 0-2 require a concrete visible functional defect.
-Evidence rule: do not claim tests pass or fail unless tests are visible and traced exactly. Do not output code fixes.
+
+Field rules:
+- step_type must be one of trace_requirement, trace_visible_test, derive_counterexample, static_logic_check, challenge_previous_claim.
+- evidence_type must be one of provided_test_failure, deduced_counterexample, static_logic_contradiction, uncertain.
+- claim should be one short concrete evidence statement about functional behavior.
+- functional_implication must be supports_correct, supports_defect, or uncertain.
+- Each new step must add new evidence and must not restate the whole task, code, or earlier analysis.
+- If previous analysis notes conflict, challenge only the claim best contradicted by the task, code, or visible tests.
+- Do not claim tests pass or fail unless tests are visible and traced exactly.
+- Do not output code fixes.
 
 {instruction}
+
+{step_format_section}
 
 @@ Response
 {response}"""
@@ -115,4 +138,9 @@ def review_prompt_for_response(instruction: str, response: str = "") -> str:
             axiom_scale=AXIOM_REFINEMENT_SCALE,
             final_consistency_rule=REVIEW_FINAL_CONSISTENCY_RULE,
         )
-    return QWEN_REVIEW_STEP_PROMPT.format(instruction=instruction, response="", axiom_scale=AXIOM_REFINEMENT_SCALE)
+    return QWEN_REVIEW_STEP_PROMPT.format(
+        instruction=instruction,
+        response="",
+        axiom_scale=AXIOM_REFINEMENT_SCALE,
+        step_format_section=REVIEW_STEP_FORMAT_SECTION,
+    )
