@@ -96,6 +96,14 @@ def resolve_chat_prefix_text(tokenizer, messages: list[dict[str, Any]], full_tex
     if full_text.startswith(assistant_prefix_text):
         return assistant_prefix_text
 
+    # DeepSeek distill templates can render the final assistant review turn
+    # without the generation-prompt <think> prelude and without the empty
+    # assistant sentinel. In that case, the stable prefix is just the
+    # conversation history before the assistant turn.
+    history_text = render_chat_template(tokenizer, messages[:-1], add_generation_prompt=False)
+    if full_text.startswith(history_text):
+        return history_text
+
     raise ValueError("Rendered Qwen chat template is not prefix-aligned.")
 
 
