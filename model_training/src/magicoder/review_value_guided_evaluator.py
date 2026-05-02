@@ -7,7 +7,13 @@ from typing import Any
 import torch
 from transformers import AutoTokenizer, set_seed
 
-from magicoder.prompt_template import AXIOM_REFINEMENT_SCALE, QWEN_REVIEW_STEP_ONLY_PROMPT, QWEN_REVIEW_STEP_PROMPT
+from magicoder.prompt_template import (
+    AXIOM_REFINEMENT_SCALE,
+    REVIEW_FINAL_CONSISTENCY_RULE,
+    REVIEW_STEP_FORMAT_SECTION,
+    QWEN_REVIEW_FINAL_ONLY_PROMPT,
+    QWEN_REVIEW_STEP_ONLY_PROMPT,
+)
 from magicoder.review_policy_value_inference import (
     generate_response,
     load_jsonl_item,
@@ -24,25 +30,28 @@ def build_prompt(instruction: str, partial_response: str, *, force_final: bool) 
     if force_final:
         final_instruction = (
             instruction
-            + "\n\nCompleted previous <step> blocks are fixed context. "
-            "Start the next output with <review>, output exactly one valid JSON object, and do not add more <step> blocks. "
-            "Before choosing axiom_grade, reconcile supported previous-step evidence with the final verdict; "
-            "if a supported counterexample or trace exists, the final review cannot silently contradict it."
+            + "\n\nThis is the final scoring turn. Output exactly one <review> JSON block. "
+            "Do not add more <step> blocks. "
+            "Before choosing axiom_grade, reconcile supported previous analysis notes with the final judgment."
         )
-        return QWEN_REVIEW_STEP_PROMPT.format(
+        if partial_response.strip():
+            final_instruction += "\n\nPrevious analysis notes:\n" + partial_response.strip()
+        return QWEN_REVIEW_FINAL_ONLY_PROMPT.format(
             instruction=final_instruction,
-            response=partial_response,
+            response="",
             axiom_scale=AXIOM_REFINEMENT_SCALE,
+            final_consistency_rule=REVIEW_FINAL_CONSISTENCY_RULE,
         )
     step_instruction = (
         instruction
-        + "\n\nCompleted previous <step> blocks are fixed context. "
-        "Continue from the last completed step. Output exactly one new <step> block. Do not output <review> yet."
+        + "\n\nThis is an intermediate turn. Output exactly one JSON object wrapped in <step> tags. "
+        "Do not output <review> yet. Each new step must add new evidence."
     )
     return QWEN_REVIEW_STEP_ONLY_PROMPT.format(
         instruction=step_instruction,
         response=partial_response,
         axiom_scale=AXIOM_REFINEMENT_SCALE,
+        step_format_section=REVIEW_STEP_FORMAT_SECTION,
     )
 
 
