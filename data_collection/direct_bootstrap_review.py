@@ -30,6 +30,8 @@ from mcts_math.review_utils import (
 )
 from solver_review import build_record
 
+FINAL_REVIEW_PREFILL = '<review>\n{"axiom_grade": '
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Direct independent bootstrap exporter for AXIOM code scoring.")
@@ -84,7 +86,7 @@ def build_prompt(
     if partial_response:
         partial_response = partial_response.rstrip() + "\n"
     if force_final_review:
-        partial_response += "<review>\n{"
+        partial_response += FINAL_REVIEW_PREFILL
     prompt = template.format(
         question=sample["question"],
         candidate_code=sample["candidate_code"],
@@ -281,7 +283,7 @@ def generate_review_only(
     for item, output in zip(trajectories, outputs):
         text = output.outputs[0].text if output.outputs else ""
         sample = item["sample"]
-        candidate = evaluated_candidate(item["repeat_index"], "<review>\n{" + text, sample, args.dimension)
+        candidate = evaluated_candidate(item["repeat_index"], FINAL_REVIEW_PREFILL + text, sample, args.dimension)
         by_sample_index[sample_position[id(sample)]].append(candidate)
 
     return [(sample, by_sample_index[index]) for index, sample in enumerate(sample_batch)]
@@ -343,7 +345,7 @@ def generate_stepwise(
     sample_position = {id(sample): index for index, sample in enumerate(sample_batch)}
     for item, output in zip(trajectories, outputs):
         text = output.outputs[0].text if output.outputs else ""
-        segments = [*item["segments"], normalize_review_text("<review>\n{" + text)]
+        segments = [*item["segments"], normalize_review_text(FINAL_REVIEW_PREFILL + text)]
         sample = item["sample"]
         candidate_index = item["repeat_index"]
         candidate = evaluated_stepwise_candidate(candidate_index, segments, sample, args.dimension)
