@@ -1,6 +1,6 @@
 REVIEW_FINAL_FORMAT_SECTION = """Structured final review format:
 <review>
-{{"axiom_grade": <0-5 integer>, "score": <0-100 number>, "verdict": "accept|minor_issue|major_issue", "functional_correctness": true, "repair_effort": "none|minor_quality|major_quality|minor_functional|major_functional|rewrite", "evidence_type": "provided_test_failure|deduced_counterexample|static_logic_contradiction|uncertain", "summary": "...", "evidence": ["...", "..."]}}
+{{"axiom_grade": <0-5 integer>, "functional_correctness": true|false, "repair_effort": "none|minor_quality|major_quality|minor_functional|major_functional|rewrite", "evidence_type": "provided_test_failure|deduced_counterexample|static_logic_contradiction|uncertain", "summary": "...", "evidence": ["...", "..."]}}
 </review>"""
 
 REVIEW_STEP_FORMAT_SECTION = """Next-step format:
@@ -21,18 +21,15 @@ Examples are illustrative, not exhaustive criteria; score by the closest AXIOM r
 
 
 REVIEW_EVIDENCE_RULES = """Evidence rules:
-1. Use only the task, candidate code, visible tests, and completed previous steps.
+1. Use only the task, candidate code, visible tests, and previous analysis notes.
 2. If tests are not visible, never claim that tests pass or fail.
-3. A low grade needs concrete visible evidence: syntax/runtime error, missing required I/O, direct requirement contradiction, unrelated code, or a concrete counterexample.
+3. A grade below 3 requires a concrete functional defect, such as a requirement contradiction, runtime/syntax issue, missing required behavior, or specific counterexample.
 4. If no functional defect is verifiable, keep functional_correctness=true and choose grade 3-5.
-5. For provided_test_failure, trace the exact visible test and quote its expected assertion.
-6. Treat unusual visible-test expectations as authoritative. Do not replace them with intuition.
-7. Equivalent variable names, decomposition, formulas, DP states, or helper classes can still be correct.
-8. Do not output code fixes."""
+5. evidence should contain 1-2 short strings. Do not output code fixes."""
 
 
 REVIEW_FINAL_CONSISTENCY_RULE = """Final consistency rule:
-Before choosing axiom_grade, reconcile supported previous-step evidence with the final verdict. If a completed step contains a concrete counterexample or trace supported by the task, code, or visible tests, the final review cannot silently contradict it; either reflect the defect in functional_correctness/axiom_grade or explain why that step is unsupported."""
+Before choosing axiom_grade, reconcile supported previous-step evidence with the final judgment. If a completed step contains a concrete counterexample or trace supported by the task, code, or visible tests, the final review cannot silently contradict it; either reflect the defect in functional_correctness/axiom_grade or explain why that step is unsupported."""
 
 
 QWEN_REVIEW_STEP_PROMPT = """You are a code scoring model for functional correctness.
@@ -69,17 +66,24 @@ Available tests:
 
 QWEN_REVIEW_FINAL_PROMPT = """You are a code scoring model for functional correctness.
 @@ Instruction
-Current generation mode: final AXIOM scoring.
-Output exactly one compact JSON object wrapped in <review> tags. Do not output <step> blocks or prose outside <review>.
-The very first non-whitespace characters of your answer must be <review>.
-After the opening tag, continue immediately with a JSON object, not a natural-language sentence.
-The response is already inside the final JSON object. The first JSON key must be "axiom_grade".
-The next value after "axiom_grade": must be one integer in 0-5, followed immediately by a comma.
-Do not output <think>, <step>, markdown fences, or explanatory prose in this final turn.
-Treat completed previous steps as fixed evidence context. Use them if supported by the task/code/tests; ignore unsupported or repeated claims.
+You evaluate code based on functional correctness.
 
-Purpose: assign a stable AXIOM 0-5 grade to the candidate code. Text critique is only evidence for the scalar score.
-Scope: judge whether the candidate satisfies the task's functional requirements. Ignore style, naming, formatting, missing explanation, or alternative implementation strategy unless it changes observable behavior.
+This is the final turn of a multi-step code review. Earlier turns may have already analyzed the candidate code. If previous analysis notes are provided below, synthesize them, resolve conflicts using the task, code, and visible tests, and assign one AXIOM grade.
+
+You must score according to the AXIOM 0-5 refinement-effort scale:
+
+{axiom_scale}
+
+Output must be exactly one JSON object wrapped in <review> tags. Do not output natural-language text outside the tags, markdown fences, <think> blocks, <step> blocks, or code fixes. Otherwise the result cannot be parsed.
+
+Field rules:
+- axiom_grade is the AXIOM grade.
+- functional_correctness must be true for grades 3-5 and false for grades 0-2.
+- repair_effort must match the selected AXIOM grade: 5 -> none, 4 -> minor_quality, 3 -> major_quality, 2 -> minor_functional, 1 -> major_functional, 0 -> rewrite.
+- evidence_type must be one of provided_test_failure, deduced_counterexample, static_logic_contradiction, uncertain.
+- summary should be one short sentence explaining the final judgment.
+- evidence should contain 1-2 short evidence strings grounded in the task, candidate code, visible tests, or previous analysis notes.
+- If previous analysis notes conflict, follow the claim best supported by the task, code, and visible tests.
 
 Task description:
 {question}
@@ -92,13 +96,11 @@ Candidate code:
 Available tests:
 {tests}
 
-{axiom_scale}
+End of available tests.
 
 {evidence_rules}
 
 {final_consistency_rule}
-
-Use at most 2 short evidence strings in the final JSON.
 
 {final_format_section}
 

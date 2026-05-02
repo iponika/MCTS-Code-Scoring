@@ -36,24 +36,13 @@ FINAL_REVIEW_PREFILL = '<review>\n{"axiom_grade": '
 def relax_freeform_final_prompt(prompt: str) -> str:
     relaxed = prompt
     relaxed = relaxed.replace(
-        "Output exactly one compact JSON object wrapped in <review> tags. Do not output <step> blocks or prose outside <review>.\n",
+        "Output must be exactly one JSON object wrapped in <review> tags. Do not output natural-language text outside the tags, markdown fences, <think> blocks, <step> blocks, or code fixes. Otherwise the result cannot be parsed.\n",
         "You may reason before the final labeled answer, but finish with exactly one complete <review>...</review> block.\n",
     )
     relaxed = relaxed.replace(
-        "The very first non-whitespace characters of your answer must be <review>.\n",
-        "The final labeled answer begins at the last complete <review> block in your response.\n",
-    )
-    relaxed = relaxed.replace(
-        "After the opening tag, continue immediately with a JSON object, not a natural-language sentence.\n",
-        "Inside the final <review> block, write a compact JSON object rather than prose.\n",
-    )
-    relaxed = relaxed.replace(
-        'The response is already inside the final JSON object. The first JSON key must be "axiom_grade".\n',
-        'In the final <review> JSON, the first key must be "axiom_grade".\n',
-    )
-    relaxed = relaxed.replace(
-        "Do not output <think>, <step>, markdown fences, or explanatory prose in this final turn.\n",
-        "Do not output <step> blocks or markdown fences. If you reason before the final answer, keep that reasoning outside the final <review> block.\n",
+        "Field rules:\n",
+        "The final labeled answer begins at the last complete <review> block in your response. "
+        "Inside that final block, write the JSON object required below.\n\nField rules:\n",
     )
     return relaxed
 
@@ -79,6 +68,12 @@ def parse_args() -> argparse.Namespace:
         type=int,
         default=3,
         help="Number of sequential <step> blocks to generate when --response_mode stepwise.",
+    )
+    parser.add_argument(
+        "--step_context_mode",
+        choices=["assistant_prefix", "instruction_context"],
+        default="instruction_context",
+        help="How prior <step> blocks are exposed during stepwise reasoning. instruction_context avoids assistant-prefix continuation.",
     )
     return parser.parse_args()
 
@@ -113,7 +108,7 @@ def build_prompt(
         partial_response = ""
     if completed_steps == "None":
         completed_steps = ""
-    if force_final_review and steps_as_instruction_context:
+    if steps_as_instruction_context:
         partial_response = ""
     if partial_response:
         partial_response = partial_response.rstrip() + "\n"
@@ -134,9 +129,24 @@ def build_prompt(
     if force_final_review and steps_as_instruction_context and completed_steps:
         prompt = prompt.replace(
             "\n\nStructured final review format:\n",
-            "\n\nCompleted previous steps to use as evidence context:\n"
+            "\n\nPrevious analysis notes:\n"
             f"{completed_steps}\n\nStructured final review format:\n",
             1,
+        )
+    if (not force_final_review) and steps_as_instruction_context and completed_steps:
+        prompt = prompt.replace(
+            "\n\nNext-step format:\n",
+            "\n\nCompleted previous steps to use as evidence context:\n"
+            f"{completed_steps}\n\nNext-step format:\n",
+            1,
+        )
+        prompt = prompt.replace(
+            "Treat completed previous steps as fixed context. Continue from the last completed step without repeating it.\n",
+            "Treat completed previous steps as fixed context. Use them as fixed context and do not repeat them.\n",
+        )
+        prompt = prompt.replace(
+            "Do not restate the whole task, code, or earlier analysis. Add one concise evidence increment: a requirement trace, visible-test trace, counterexample, static logic check, or challenge to an unsupported prior claim.\n",
+            "Do not restate the whole task, code, or earlier analysis. Add one concise evidence increment: a requirement trace, visible-test trace, counterexample, static logic check, or challenge to an unsupported prior claim. Each new step must add new evidence instead of continuing the wording of a previous step.\n",
         )
     if force_final_review and freeform_final_review:
         prompt = relax_freeform_final_prompt(prompt)
@@ -372,6 +382,7 @@ def generate_stepwise(
                 config,
                 partial_solution="".join(item["segments"]) or "None",
                 force_final_review=False,
+                steps_as_instruction_context=args.step_context_mode == "instruction_context",
             )
             for item in trajectories
         ]
@@ -391,7 +402,7 @@ def generate_stepwise(
             config,
             partial_solution="".join(item["segments"]) or "None",
             force_final_review=True,
-            steps_as_instruction_context=True,
+            steps_as_instruction_context=args.step_context_mode == "instruction_context",
         )
         for item in trajectories
     ]

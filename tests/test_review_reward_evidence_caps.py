@@ -43,6 +43,33 @@ class ReviewRewardEvidenceCapsTest(unittest.TestCase):
         self.assertLessEqual(reward, -0.7)
         self.assertEqual(details["predicted_axiom_grade"], 2)
 
+    def test_missing_legacy_verdict_is_derived_from_axiom_grade(self) -> None:
+        review_without_verdict = (
+            '<review>{"axiom_grade":5,'
+            '"functional_correctness":true,"repair_effort":"none",'
+            '"evidence_type":"uncertain",'
+            '"summary":"Correct code.",'
+            '"evidence":["The implementation returns x + 1 directly."]}</review>'
+        )
+        review_with_verdict = (
+            '<review>{"axiom_grade":5,"verdict":"accept",'
+            '"functional_correctness":true,"repair_effort":"none",'
+            '"evidence_type":"uncertain",'
+            '"summary":"Correct code.",'
+            '"evidence":["The implementation returns x + 1 directly."]}</review>'
+        )
+
+        reward_without, details_without = compute_review_reward(
+            "Correctness Verification", review_without_verdict, sample_with_target_grade(5)
+        )
+        reward_with, details_with = compute_review_reward(
+            "Correctness Verification", review_with_verdict, sample_with_target_grade(5)
+        )
+
+        self.assertEqual(reward_without, reward_with)
+        self.assertEqual(details_without["verdict_alignment"], details_with["verdict_alignment"])
+        self.assertEqual(details_without["verdict_alignment"], 1.0)
+
 
 if __name__ == "__main__":
     unittest.main()

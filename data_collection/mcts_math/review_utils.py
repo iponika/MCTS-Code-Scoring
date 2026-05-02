@@ -644,7 +644,7 @@ def compute_review_reward(target_dimension: str, final_answer: str, sample: Dict
         return -1.0, {"error": "missing_or_invalid_axiom_grade", "parsed": parsed}
     predicted_score = axiom_scalar_score(predicted_grade)
 
-    predicted_verdict = str(parsed.get("verdict", "")).strip()
+    predicted_verdict = str(parsed.get("verdict") or axiom_verdict(predicted_grade)).strip()
     evidence_type = str(parsed.get("evidence_type", "")).strip()
     evidence_alignment, evidence_details = validate_review_evidence(parsed, sample)
 
