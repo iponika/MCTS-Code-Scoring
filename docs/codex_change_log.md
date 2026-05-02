@@ -217,3 +217,10 @@ This file records Codex-made project changes so work can be resumed safely acros
 - Added a new regression case in `tests/test_train_multi_qwen_messages.py` covering the real DeepSeek pattern where only the user-history render is prefix-aligned.
 - Tightened final review prompting for direct bootstrap: the response prefix now starts from `{"axiom_grade": ` instead of a bare `{`, and the final prompt explicitly requires the next value to be an integer `0-5` followed by a comma, with no `<think>`, `<step>`, markdown fence, or prose in the final turn.
 - Added prompt-visibility assertions for the stricter final-review contract so future prompt edits keep the JSON-entry behavior locked.
+
+## 2026-05-02
+
+- Changed stepwise final-review prompting in `model_training/src/magicoder/review_evaluator.py` so previously completed `<step>` blocks are no longer injected as assistant-prefix text after `@@ Response`.
+- Final stepwise reviews now receive prior `<step>` blocks as explicit evidence context inside the instruction body, while the final assistant response starts empty and must begin the `<review>` block itself.
+- Kept non-final step prompting unchanged: intermediate step generation still continues from the existing assistant-side `<step>` history.
+- Updated `tests/test_review_prompt_visibility.py` to lock the new split between stepwise-final prompting and stepwise-intermediate prompting.

@@ -287,18 +287,23 @@ class ReviewPromptVisibilityTest(unittest.TestCase):
             "tests": ["assert f(1) == 2"],
             "language": "python",
         }
+        prior_step = "<step>\nstatic_logic_check: The function returns x + 1 directly.\n</step>\n"
         prompt = prompt_for_dimension(
             sample,
             "Correctness Verification",
-            partial_response="<step>\nstatic_logic_check: The function returns x + 1 directly.\n</step>\n",
+            partial_response=prior_step,
             force_final=True,
         )
 
-        self.assertIn("completed previous <step> blocks", prompt)
+        self.assertIn("Completed previous <step> blocks are fixed evidence context.", prompt)
         self.assertIn("Start your next output with <review>", prompt)
         self.assertIn("reconcile supported previous-step evidence", prompt)
         self.assertIn("cannot silently contradict it", prompt)
         self.assertIn('"axiom_grade"', prompt)
+        self.assertIn("Completed previous steps to use as evidence context:", prompt)
+        self.assertIn("static_logic_check: The function returns x + 1 directly.", prompt)
+        response_tail = prompt.split("@@ Response", 1)[1]
+        self.assertNotIn(prior_step.strip(), response_tail)
 
     def test_review_training_prompt_matches_response_shape(self) -> None:
         instruction = "Scoring target: assess candidate code correctness.\n\nTask description:\nReturn x + 1."

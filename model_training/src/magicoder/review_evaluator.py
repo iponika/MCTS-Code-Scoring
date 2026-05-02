@@ -125,6 +125,7 @@ def prompt_for_dimension(
     mark_code_truncation_inside_block: bool = True,
     show_tests_in_prompt: bool = False,
 ) -> str:
+    completed_steps = str(partial_response or "").strip()
     instruction = build_instruction(
         sample,
         dimension,
@@ -148,7 +149,7 @@ def prompt_for_dimension(
         )
     if force_final:
         instruction += (
-            "\n\nThe text already present after @@ Response contains completed previous <step> blocks. "
+            "\n\nCompleted previous <step> blocks are fixed evidence context. "
             "Use them as fixed context and do not repeat them. "
             "Start your next output with <review> and end it with </review>. "
             "Do not add more <step> blocks. Output exactly one valid JSON object inside the review tags. "
@@ -159,6 +160,11 @@ def prompt_for_dimension(
             "If a previous review block exists, ignore it and output a corrected final review. "
             "Use any <value_feedback> blocks as private guidance; do not quote or repeat them in the review."
         )
+        if completed_steps:
+            instruction += (
+                "\n\nCompleted previous steps to use as evidence context:\n"
+                f"{completed_steps}"
+            )
         if parse_error:
             instruction += (
                 "\nPrevious final review parse error: "
@@ -180,7 +186,7 @@ def prompt_for_dimension(
         )
     return QWEN_REVIEW_STEP_PROMPT.format(
         instruction=instruction,
-        response=partial_response,
+        response="",
         axiom_scale=AXIOM_REFINEMENT_SCALE,
     )
 
