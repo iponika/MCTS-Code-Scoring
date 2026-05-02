@@ -229,6 +229,31 @@ class ReviewPromptVisibilityTest(unittest.TestCase):
         self.assertIn("Do not output <think>", prompt)
         self.assertIn("@@ Response\n<step>\nstatic_logic_check: The function returns x + 1 directly.\n</step>\n<review>\n{\"axiom_grade\": ", prompt)
 
+    def test_direct_bootstrap_stepwise_final_moves_prior_steps_into_instruction(self) -> None:
+        config = OmegaConf.structured(BaseConfig)
+        sample = {
+            "question": "Return x + 1.",
+            "candidate_code": "def f(x):\n    return x + 1",
+            "code_language": "python",
+            "tests_for_prompt": "No tests are available to the reviewer.",
+        }
+        prior_step = "<step>\nstatic_logic_check: The function returns x + 1 directly.\n</step>"
+
+        prompt = build_direct_bootstrap_prompt(
+            sample,
+            "Correctness Verification",
+            config,
+            partial_solution=prior_step,
+            force_final_review=True,
+            steps_as_instruction_context=True,
+        )
+
+        self.assertIn("Completed previous steps to use as evidence context:", prompt)
+        self.assertIn("static_logic_check: The function returns x + 1 directly.", prompt)
+        response_tail = prompt.split("@@ Response", 1)[1]
+        self.assertNotIn(prior_step, response_tail)
+        self.assertIn('<review>\n{"axiom_grade": ', response_tail)
+
     def test_thinking_configs_stop_at_native_think_close(self) -> None:
         for path in [
             "data_collection/configs/mcts_code_review_qwen3_4b.yaml",

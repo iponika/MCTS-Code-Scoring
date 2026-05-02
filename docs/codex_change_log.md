@@ -227,3 +227,6 @@ This file records Codex-made project changes so work can be resumed safely acros
 - On branch `direct-final-free-review`, relaxed direct `review`-mode final prompting so it no longer pre-fills `<review>` / JSON or appends `/no_think`; the model may reason first and then finish with a final `<review>` block.
 - Added a direct-review normalization path that keeps only the last complete `<review>...</review>` block from freeform outputs, so pre-review reasoning does not leak into exported policy text.
 - Added focused unit coverage in `tests/test_direct_bootstrap_review.py` for the freeform direct-final prompt contract and last-review extraction behavior.
+- On branch `direct-final-free-review`, changed data-generation `stepwise -> final review` prompting so accumulated `<step>` blocks move into instruction-side evidence context instead of staying in `@@ Response` as assistant-prefix text.
+- The data-generation stepwise final prompt now keeps `@@ Response` for only the final `<review>` opening / JSON prefix, matching the evaluator-side structure and reducing continuation pressure from prior `<step>` text.
+- Added prompt-visibility coverage to lock the new data-generation stepwise-final placement behavior.
