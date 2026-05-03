@@ -592,7 +592,7 @@ def build_chat_eval_prompt(
         tokenizer,
         user_content,
         assistant_prefix,
-        enable_thinking=False,
+        enable_thinking=None,
     )
 
 

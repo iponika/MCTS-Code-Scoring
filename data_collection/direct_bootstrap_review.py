@@ -75,6 +75,13 @@ def parse_args() -> argparse.Namespace:
         default="instruction_context",
         help="How prior reasoning notes are exposed during stepwise reasoning. instruction_context avoids assistant-prefix continuation.",
     )
+    parser.add_argument(
+        "--freeform_final_review",
+        action="store_true",
+        default=False,
+        help="Allow free-form reasoning before the <review> block in review-only mode. "
+             "Off by default so that FINAL_REVIEW_PREFILL anchors the output.",
+    )
     return parser.parse_args()
 
 
@@ -320,6 +327,7 @@ def generate_review_only(
     sampling_params.stop = ["</review>"]
     sampling_params.temperature = 0.0
     sampling_params.top_p = 1.0
+    freeform = getattr(args, "freeform_final_review", False)
     prompts = [
         build_prompt(
             item["sample"],
@@ -327,7 +335,7 @@ def generate_review_only(
             config,
             partial_solution="None",
             force_final_review=True,
-            freeform_final_review=True,
+            freeform_final_review=freeform,
         )
         for item in trajectories
     ]
@@ -337,6 +345,8 @@ def generate_review_only(
     sample_position = {id(sample): index for index, sample in enumerate(sample_batch)}
     for item, output in zip(trajectories, outputs):
         text = output.outputs[0].text if output.outputs else ""
+        if not freeform:
+            text = normalize_review_text(FINAL_REVIEW_PREFILL + text)
         sample = item["sample"]
         candidate = evaluated_candidate(item["repeat_index"], text, sample, args.dimension)
         by_sample_index[sample_position[id(sample)]].append(candidate)
