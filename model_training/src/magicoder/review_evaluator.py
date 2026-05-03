@@ -26,6 +26,24 @@ from magicoder.prompt_template import (
     QWEN_REVIEW_STEP_ONLY_PROMPT,
     QWEN_REVIEW_STEP_PROMPT,
 )
+
+try:
+    from shared.prompt_contract import (
+        build_review_instruction_from_sample,
+        build_review_user_content,
+        render_eval_prompt,
+    )
+    _HAS_SHARED = True
+except ImportError:
+    import sys as _sys
+    from pathlib import Path as _Path
+    _sys.path.insert(0, str(_Path(__file__).resolve().parents[3]))
+    from shared.prompt_contract import (
+        build_review_instruction_from_sample,
+        build_review_user_content,
+        render_eval_prompt,
+    )
+    _HAS_SHARED = True
 from magicoder.axiom_scoring import (
     AXIOM_SCALE_TEXT,
     axiom_grade_from_scalar,
@@ -508,6 +526,89 @@ def concrete_low_grade_evidence(text: str) -> bool:
     return any(marker in lowered for marker in evidence_markers)
 
 
+# ---------------------------------------------------------------------------
+# Chat-template-aware prompt building (matches training format)
+# ---------------------------------------------------------------------------
+
+
+def _build_assistant_prefix(
+    partial_response: str,
+    force_final: bool,
+) -> str:
+    """Build the assistant continuation prefix for chat-template prompts.
+
+    The model was trained with ``<think>`` blocks wrapping step content and
+    ``<review>`` blocks immediately after ``</think>``.
+    """
+    text = partial_response.strip()
+    if not text:
+        return ""
+    # Strip any leading <think> so we can re-add it uniformly.
+    inner = text
+    if inner.startswith("<think>"):
+        inner = inner[len("<think>"):].lstrip("\n")
+    if force_final:
+        return f"<think>\n{inner}\n</think>\n\n"
+    return f"<think>\n{inner}\n"
+
+
+def build_chat_eval_prompt(
+    tokenizer,
+    sample: dict[str, Any],
+    dimension: str,
+    partial_response: str = "",
+    *,
+    force_final: bool = False,
+    final_only: bool = False,
+    parse_error: dict[str, Any] | None = None,
+    max_problem_chars: int = 3500,
+    max_code_chars: int = 3500,
+    mark_code_truncation_inside_block: bool = True,
+    show_tests_in_prompt: bool = False,
+) -> str:
+    """Build a chat-template-formatted prompt that matches training format.
+
+    Returns a string ready for tokenisation and generation (BOS included).
+    """
+    instruction = build_review_instruction_from_sample(
+        sample,
+        dimension,
+        max_problem_chars=max_problem_chars,
+        max_code_chars=max_code_chars,
+        mark_code_truncation_inside_block=mark_code_truncation_inside_block,
+        show_tests_in_prompt=show_tests_in_prompt,
+    )
+    user_content = build_review_user_content(instruction)
+
+    if parse_error:
+        user_content += (
+            f"\n\nPrevious final review parse error: "
+            f"{parse_error.get('error')}: {parse_error.get('message', '')}. "
+            "Correct the JSON syntax in the next review block."
+        )
+
+    assistant_prefix = _build_assistant_prefix(partial_response, force_final)
+    return render_eval_prompt(
+        tokenizer,
+        user_content,
+        assistant_prefix,
+        enable_thinking=False,
+    )
+
+
+def _effective_max_steps(args) -> int:
+    """Return the total number of generation rounds (intermediate + final).
+
+    If ``reasoning_steps`` is set, use ``reasoning_steps + 1`` to account
+    for the final forced-review round.  Otherwise fall back to the legacy
+    ``max_steps`` value (which conflates intermediate and final).
+    """
+    reasoning_steps = getattr(args, "reasoning_steps", None)
+    if reasoning_steps is not None and reasoning_steps >= 0:
+        return reasoning_steps + 1
+    return args.max_steps
+
+
 def evaluate_dimension(
     sample: dict[str, Any],
     dimension: str,
@@ -519,23 +620,41 @@ def evaluate_dimension(
     partial_response = ""
     trace: list[dict[str, Any]] = []
     rethink_count = 0
+    use_chat_template = getattr(args, "use_chat_template", True)
+    total_steps = _effective_max_steps(args)
 
-    for step_index in range(args.max_steps):
-        force_final = args.final_only_json or step_index == args.max_steps - 1
+    for step_index in range(total_steps):
+        force_final = args.final_only_json or step_index == total_steps - 1
         max_new_tokens = (args.final_max_new_tokens or args.max_new_tokens) if force_final else args.max_new_tokens
         stop = "</review>" if force_final else ["</think>", "</review>"]
-        prompt = prompt_for_dimension(
-            sample,
-            dimension,
-            partial_response,
-            force_final=force_final,
-            final_only=args.final_only_json,
-            step_context_mode=args.step_context_mode,
-            max_problem_chars=args.max_problem_chars,
-            max_code_chars=args.max_code_chars,
-            mark_code_truncation_inside_block=args.mark_code_truncation_inside_block,
-            show_tests_in_prompt=args.show_tests_in_prompt,
-        )
+
+        if use_chat_template:
+            prompt = build_chat_eval_prompt(
+                tokenizer,
+                sample,
+                dimension,
+                partial_response,
+                force_final=force_final,
+                final_only=args.final_only_json,
+                max_problem_chars=args.max_problem_chars,
+                max_code_chars=args.max_code_chars,
+                mark_code_truncation_inside_block=args.mark_code_truncation_inside_block,
+                show_tests_in_prompt=args.show_tests_in_prompt,
+            )
+        else:
+            prompt = prompt_for_dimension(
+                sample,
+                dimension,
+                partial_response,
+                force_final=force_final,
+                final_only=args.final_only_json,
+                step_context_mode=args.step_context_mode,
+                max_problem_chars=args.max_problem_chars,
+                max_code_chars=args.max_code_chars,
+                mark_code_truncation_inside_block=args.mark_code_truncation_inside_block,
+                show_tests_in_prompt=args.show_tests_in_prompt,
+            )
+
         candidates = []
         for candidate_index in range(args.num_candidates):
             with torch.no_grad():
@@ -547,6 +666,7 @@ def evaluate_dimension(
                     temperature=args.temperature,
                     top_p=args.top_p,
                     stop=stop,
+                    chat_template_prompt=use_chat_template,
                 )
                 value_score = score_response(value_model, tokenizer, prompt, continuation) if value_model is not None else neutral_value_score()
             artifacts = extract_reasoning_artifacts(continuation)
@@ -607,19 +727,34 @@ def evaluate_dimension(
         if final_review_parse["ok"]:
             break
         clean_partial_response = retry_partial_response(partial_response, final_review_parse)
-        retry_prompt = prompt_for_dimension(
-            sample,
-            dimension,
-            clean_partial_response,
-            force_final=True,
-            parse_error=final_review_parse,
-            final_only=args.final_only_json,
-            step_context_mode=args.step_context_mode,
-            max_problem_chars=args.max_problem_chars,
-            max_code_chars=args.max_code_chars,
-            mark_code_truncation_inside_block=args.mark_code_truncation_inside_block,
-            show_tests_in_prompt=args.show_tests_in_prompt,
-        )
+        if use_chat_template:
+            retry_prompt = build_chat_eval_prompt(
+                tokenizer,
+                sample,
+                dimension,
+                clean_partial_response,
+                force_final=True,
+                final_only=args.final_only_json,
+                parse_error=final_review_parse,
+                max_problem_chars=args.max_problem_chars,
+                max_code_chars=args.max_code_chars,
+                mark_code_truncation_inside_block=args.mark_code_truncation_inside_block,
+                show_tests_in_prompt=args.show_tests_in_prompt,
+            )
+        else:
+            retry_prompt = prompt_for_dimension(
+                sample,
+                dimension,
+                clean_partial_response,
+                force_final=True,
+                parse_error=final_review_parse,
+                final_only=args.final_only_json,
+                step_context_mode=args.step_context_mode,
+                max_problem_chars=args.max_problem_chars,
+                max_code_chars=args.max_code_chars,
+                mark_code_truncation_inside_block=args.mark_code_truncation_inside_block,
+                show_tests_in_prompt=args.show_tests_in_prompt,
+            )
         with torch.no_grad():
             continuation = generate_response(
                 policy_model=policy_model,
@@ -629,6 +764,7 @@ def evaluate_dimension(
                 temperature=args.final_temperature,
                 top_p=args.top_p,
                 stop="</review>",
+                chat_template_prompt=use_chat_template,
             )
             retry_value_score = score_response(value_model, tokenizer, retry_prompt, continuation) if value_model is not None else neutral_value_score()
         retry_artifacts = extract_reasoning_artifacts(continuation)
@@ -646,18 +782,32 @@ def evaluate_dimension(
             }
         )
 
-    final_prompt = prompt_for_dimension(
-        sample,
-        dimension,
-        "",
-        force_final=True,
-        final_only=args.final_only_json,
-        step_context_mode=args.step_context_mode,
-        max_problem_chars=args.max_problem_chars,
-        max_code_chars=args.max_code_chars,
-        mark_code_truncation_inside_block=args.mark_code_truncation_inside_block,
-        show_tests_in_prompt=args.show_tests_in_prompt,
-    )
+    if use_chat_template:
+        final_prompt = build_chat_eval_prompt(
+            tokenizer,
+            sample,
+            dimension,
+            "",
+            force_final=True,
+            final_only=args.final_only_json,
+            max_problem_chars=args.max_problem_chars,
+            max_code_chars=args.max_code_chars,
+            mark_code_truncation_inside_block=args.mark_code_truncation_inside_block,
+            show_tests_in_prompt=args.show_tests_in_prompt,
+        )
+    else:
+        final_prompt = prompt_for_dimension(
+            sample,
+            dimension,
+            "",
+            force_final=True,
+            final_only=args.final_only_json,
+            step_context_mode=args.step_context_mode,
+            max_problem_chars=args.max_problem_chars,
+            max_code_chars=args.max_code_chars,
+            mark_code_truncation_inside_block=args.mark_code_truncation_inside_block,
+            show_tests_in_prompt=args.show_tests_in_prompt,
+        )
     final_value_score = score_response(value_model, tokenizer, final_prompt, partial_response) if value_model is not None else neutral_value_score()
     reference_score = sample.get("axiom_target_score")
     reference_grade = sample.get("axiom_target_grade")

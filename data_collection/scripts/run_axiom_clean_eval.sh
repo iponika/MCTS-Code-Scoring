@@ -31,6 +31,8 @@ RETHINK_THRESHOLD="${RETHINK_THRESHOLD:--0.2}"
 RETHINK_SPREAD_THRESHOLD="${RETHINK_SPREAD_THRESHOLD:-0.0}"
 MAX_RETHINKS="${MAX_RETHINKS:-1}"
 MAX_FINAL_RETRIES="${MAX_FINAL_RETRIES:-2}"
+REASONING_STEPS="${REASONING_STEPS:-}"
+USE_CHAT_TEMPLATE="${USE_CHAT_TEMPLATE:-1}"
 EVAL_BASE_DIRECT="${EVAL_BASE_DIRECT:-1}"
 EVAL_TRAINED_DIRECT="${EVAL_TRAINED_DIRECT:-1}"
 EVAL_TRAINED_VALUE="${EVAL_TRAINED_VALUE:-1}"
@@ -163,6 +165,15 @@ eval_one() {
     if [[ "${FINAL_ONLY_JSON}" == "1" || "${FINAL_ONLY_JSON,,}" == "true" || "${FINAL_ONLY_JSON,,}" == "yes" ]]; then
       final_mode_args+=(--final_only_json)
     fi
+    if [[ -n "${REASONING_STEPS}" ]]; then
+      final_mode_args+=(--reasoning_steps "${REASONING_STEPS}")
+    fi
+    if [[ "${USE_CHAT_TEMPLATE}" == "1" || "${USE_CHAT_TEMPLATE,,}" == "true" ]]; then
+      final_mode_args+=(--use_chat_template)
+    else
+      final_mode_args+=(--no-use_chat_template)
+    fi
+    PYTHONPATH="${ROOT}:${ROOT}/model_training/src" \
     CUDA_VISIBLE_DEVICES="${cuda_device}" \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True \

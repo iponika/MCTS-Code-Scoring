@@ -80,11 +80,15 @@ def load_value_model(model_path: str, device: str, dtype_name: str):
     return model
 
 
-def encode_text(tokenizer, text: str, device: torch.device) -> dict[str, torch.Tensor]:
+def encode_text(tokenizer, text: str, device: torch.device, *, add_bos: bool = True) -> dict[str, torch.Tensor]:
     input_ids = tokenizer(text, add_special_tokens=False, return_tensors="pt")["input_ids"]
-    if tokenizer.bos_token_id is not None:
-        bos = torch.tensor([[tokenizer.bos_token_id]], dtype=input_ids.dtype)
-        input_ids = torch.cat([bos, input_ids], dim=1)
+    if add_bos and tokenizer.bos_token_id is not None:
+        # Only prepend BOS when the text does NOT already start with it
+        # (chat-template-rendered text typically includes BOS).
+        first_id = int(input_ids[0, 0]) if input_ids.shape[1] > 0 else None
+        if first_id != tokenizer.bos_token_id:
+            bos = torch.tensor([[tokenizer.bos_token_id]], dtype=input_ids.dtype)
+            input_ids = torch.cat([bos, input_ids], dim=1)
     return {
         "input_ids": input_ids.to(device),
         "attention_mask": torch.ones_like(input_ids).to(device),
@@ -111,8 +115,19 @@ def generate_response(
     temperature: float,
     top_p: float,
     stop: str | list[str],
+    *,
+    chat_template_prompt: bool = False,
 ) -> str:
-    encoded = encode_text(tokenizer, prompt, first_model_device(policy_model))
+    """Generate a continuation from *prompt*.
+
+    Parameters
+    ----------
+    chat_template_prompt : bool
+        When *True*, *prompt* is assumed to be rendered through
+        ``tokenizer.apply_chat_template`` and therefore already contains
+        the BOS token.  ``encode_text`` will not prepend a duplicate BOS.
+    """
+    encoded = encode_text(tokenizer, prompt, first_model_device(policy_model), add_bos=not chat_template_prompt)
     generation_kwargs = {
         "max_new_tokens": max_new_tokens,
         "do_sample": temperature > 0,

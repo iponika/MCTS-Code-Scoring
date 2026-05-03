@@ -87,6 +87,22 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--max_final_retries", type=int, default=1)
     parser.add_argument("--final_temperature", type=float, default=0.0)
     parser.add_argument("--skip_existing", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument(
+        "--use_chat_template",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Render prompts through the tokenizer chat template (matches training format). "
+             "Use --no-use_chat_template to fall back to legacy raw-text prompts.",
+    )
+    parser.add_argument(
+        "--reasoning_steps",
+        type=int,
+        default=None,
+        help="Number of intermediate reasoning steps before the forced final review. "
+             "Total generation rounds = reasoning_steps + 1.  "
+             "When unset, falls back to --max_steps (legacy behaviour where max_steps "
+             "conflates intermediate and final steps).",
+    )
     return parser
 
 
