@@ -132,14 +132,15 @@ def response_segment_type(segment: str) -> str:
 
 
 def qwen_review_user_content(instruction: str) -> str:
-    return (
-        "You are a code scoring model for functional correctness.\n"
-        "Use the task, candidate code, and AXIOM refinement-effort scale to assign one stable score.\n"
-        "Put intermediate evidence inside <think> as concise native reasoning notes, then finish with exactly one "
-        "<review> JSON block.\n"
-        "Do not put q_value, reward, or training metadata in the answer.\n\n"
-        f"{instruction.strip()}"
-    )
+    try:
+        from shared.prompt_contract import build_review_user_content
+        return build_review_user_content(instruction)
+    except ImportError:
+        import sys as _sys
+        from pathlib import Path as _Path
+        _sys.path.insert(0, str(_Path(__file__).resolve().parents[3]))
+        from shared.prompt_contract import build_review_user_content
+        return build_review_user_content(instruction)
 
 
 def qwen_assistant_content_from_responses(responses: list[str]) -> str:
@@ -205,10 +206,8 @@ def refresh_qwen_message_fields(items: Iterable[dict[str, Any]]) -> dict[str, in
 
 
 def truncate_for_review(value: object, max_chars: int, marker: str = "\n... [truncated]") -> tuple[str, bool]:
-    text = str(value or "").strip()
-    if max_chars <= 0 or len(text) <= max_chars:
-        return text, False
-    return text[:max_chars].rstrip() + marker, True
+    from shared.prompt_contract import truncate_for_review as _shared_truncate
+    return _shared_truncate(value, max_chars, marker)
 
 
 def build_instruction(
@@ -220,48 +219,14 @@ def build_instruction(
     mark_code_truncation_inside_block: bool = True,
     show_tests_in_prompt: bool = False,
 ) -> str:
-    tests = record.get("tests") or []
-    if not show_tests_in_prompt:
-        tests_text = "No tests are available to the reviewer."
-    elif tests:
-        tests_text = "\n".join(str(test) for test in tests[:5])
-        if len(tests) > 5:
-            tests_text += f"\n... ({len(tests) - 5} more assertions omitted)"
-    else:
-        tests_text = "No tests are available."
-    language = str(record.get("language") or record.get("lang") or "python").strip() or "python"
-    problem_text, problem_truncated = truncate_for_review(
-        record.get("problem") or record.get("question") or "",
-        max_problem_chars,
-    )
-    code_marker = "\n... [truncated]" if mark_code_truncation_inside_block else ""
-    code_text, code_truncated = truncate_for_review(
-        record.get("candidate_code") or "",
-        max_code_chars,
-        marker=code_marker,
-    )
-    truncation_notice = ""
-    if code_truncated and not mark_code_truncation_inside_block:
-        truncation_notice = (
-            "\n\nPrompt-budget note: the candidate code was shortened for evaluation input length. "
-            "Do not treat the shortening itself as evidence of a syntax error, missing implementation, "
-            "or truncated user code; score only the visible code and task evidence."
-        )
-    if problem_truncated:
-        truncation_notice += (
-            "\nPrompt-budget note: the task description was shortened; do not treat omitted text as a code defect."
-        )
-
-    return (
-        "Scoring target: assess candidate code correctness and assign the overall AXIOM code grade.\n\n"
-        f"Task description:\n{problem_text}\n\n"
-        "Candidate code:\n"
-        f"```{language}\n"
-        f"{code_text}\n"
-        "```\n\n"
-        f"Available tests:\n{tests_text}\n\n"
-        "Assess functional correctness using concrete evidence from the task, code, and any reviewer-visible tests."
-        f"{truncation_notice}"
+    from shared.prompt_contract import build_review_instruction_from_sample
+    return build_review_instruction_from_sample(
+        record,
+        dimension,
+        max_problem_chars=max_problem_chars,
+        max_code_chars=max_code_chars,
+        mark_code_truncation_inside_block=mark_code_truncation_inside_block,
+        show_tests_in_prompt=show_tests_in_prompt,
     )
 
 

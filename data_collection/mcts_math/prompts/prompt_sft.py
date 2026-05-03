@@ -1,34 +1,35 @@
-REVIEW_FINAL_FORMAT_SECTION = """Structured final review format:
-<review>
-{{"axiom_grade": <0-5 integer>, "functional_correctness": true|false, "repair_effort": "none|minor_quality|major_quality|minor_functional|major_functional|rewrite", "evidence_type": "provided_test_failure|deduced_counterexample|static_logic_contradiction|uncertain", "summary": "...", "evidence": ["...", "..."]}}
-</review>"""
+import sys as _sys
+from pathlib import Path as _Path
 
-REVIEW_STEP_FORMAT_SECTION = """Intermediate reasoning format:
-Write one concise functional-correctness evidence note in the model's native reasoning channel. Do not output XML tags, JSON, markdown fences, code fixes, or the final <review> block in this intermediate turn."""
-
-AXIOM_REFINEMENT_SCALE = """AXIOM refinement-effort scale:
-- First decide functional status. Grades 3-5 require perfect or not-disproven functionality; grades 1-2 require a concrete functional defect; grade 0 means the code is fundamentally mismatched to the task.
-- Then decide repair scope. "minor tweaking" means a small localized change; "major refactoring" means a structural change, for example, rewriting an entire code block, algorithm, state flow, or multiple coordinated sites.
-- 5/5: Production-ready; no code change is needed for the stated requirement.
-- 4/5: Functionally correct, but minor code-quality tweaking is needed, for example, clearer naming, clarifying ambiguous operator precedence, replacing a magic number, removing an unused variable or dead code, or splitting an overlong statement.
-- 3/5: Functionally correct, but major code-quality refactoring is needed, for example, reducing deep nesting, decomposing a long method, removing duplicated/scattered logic, reducing tight coupling, removing speculative generality, or replacing mutable global state.
-- 2/5: Functionally defective, but minor localized functionality repair is enough, for example, adding a boundary check, changing one comparison/logical/arithmetic operator, correcting one initializer/index/argument order/constant, assigning an immutable-method return value, or returning the intended expression. A typical localized defect is, for example, an off-by-one error.
-- 1/5: Functionally defective and requires major functional refactoring, for example, replacing the required algorithm, restoring a missing non-trivial processing step, changing an unsuitable data structure, fixing cross-iteration state corruption, redesigning recursion/base cases, repairing lifecycle/state-machine logic, restoring boundary validation, or correcting a serialization-format interpretation.
-- 0/5: Fundamentally flawed; rewriting is more efficient than repairing, for example, code for an unrelated task, a severe language/API mismatch, empty/non-runnable code that prevents meaningful repair, or behavior that contradicts the core requirement.
-Examples are illustrative, not exhaustive criteria; score by the closest AXIOM repair-effort level supported by concrete evidence."""
-
-
-REVIEW_EVIDENCE_RULES = """Evidence rules:
-1. Use only the task, candidate code, visible tests, and previous analysis notes.
-2. If tests are not visible, never claim that tests pass or fail.
-3. A grade below 3 requires a concrete functional defect, such as a requirement contradiction, runtime/syntax issue, missing required behavior, or specific counterexample.
-4. If no functional defect is verifiable, keep functional_correctness=true and choose grade 3-5.
-5. evidence should contain 1-2 short strings. Do not output code fixes."""
+_sys.path.insert(0, str(_Path(__file__).resolve().parents[3]))
+from shared.prompt_contract import (  # noqa: F401, E402
+    AXIOM_REFINEMENT_SCALE,
+    REVIEW_EVIDENCE_RULES,
+    REVIEW_FINAL_CONSISTENCY_RULE,
+    REVIEW_FINAL_FORMAT_SECTION,
+    REVIEW_STEP_FORMAT_SECTION,
+    FINAL_REVIEW_PREFILL,
+    REVIEW_STEP_PROMPT,
+    REVIEW_FINAL_PROMPT,
+    QWEN_USER_PREAMBLE,
+    build_review_instruction,
+    build_review_instruction_from_sample,
+    build_review_user_content,
+    build_review_prompt,
+    prompt_to_chat_messages,
+    render_eval_prompt,
+    truncate_for_review,
+)
 
 
-REVIEW_FINAL_CONSISTENCY_RULE = """Final consistency rule:
-Before choosing axiom_grade, reconcile supported previous reasoning evidence with the final judgment. If an earlier reasoning note contains a concrete counterexample or trace supported by the task, code, or visible tests, the final review cannot silently contradict it; either reflect the defect in functional_correctness/axiom_grade or explain why that note is unsupported."""
-
+# ---------------------------------------------------------------------------
+# Data-generation templates with raw field placeholders
+# ({question}, {candidate_code}, etc.).  These are used by callers
+# (agents/utils.py, direct_review_local.py, direct_review_api.py,
+# direct_bootstrap_review.py) that format the template with per-field values
+# instead of a pre-built {instruction} block.  New code should prefer
+# build_review_prompt() from shared.prompt_contract.
+# ---------------------------------------------------------------------------
 
 QWEN_REVIEW_STEP_PROMPT = """You are a code scoring model for functional correctness.
 @@ Instruction

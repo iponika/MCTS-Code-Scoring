@@ -340,6 +340,7 @@ eval_final_only_model() {
   EVAL_TRAINED_VALUE=0 \
   TRAINED_DIRECT_MAX_STEPS=1 \
   TRAINED_DIRECT_NUM_CANDIDATES=1 \
+  USE_CHAT_TEMPLATE=1 \
   NTFY_URL="${NTFY_URL}" \
   "${ROOT}/data_collection/scripts/run_axiom_clean_eval.sh"
 }
@@ -361,8 +362,10 @@ eval_stepwise_model() {
   EVAL_TRAINED_DIRECT=1 \
   EVAL_TRAINED_VALUE=0 \
   TRAINED_DIRECT_MAX_STEPS="${step_count}" \
+  REASONING_STEPS="${step_count}" \
   TRAINED_DIRECT_NUM_CANDIDATES=1 \
   MAX_RETHINKS=0 \
+  USE_CHAT_TEMPLATE=1 \
   NTFY_URL="${NTFY_URL}" \
   "${ROOT}/data_collection/scripts/run_axiom_clean_eval.sh"
 }
