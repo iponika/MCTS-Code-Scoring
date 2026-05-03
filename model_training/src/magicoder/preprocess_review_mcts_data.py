@@ -143,9 +143,52 @@ def qwen_review_user_content(instruction: str) -> str:
         return build_review_user_content(instruction)
 
 
+def _try_extract_review_json(text: str) -> str | None:
+    """Try to extract a review JSON object from reasoning text.
+
+    Returns a ``<review>...</review>`` block if a parseable JSON object
+    containing ``axiom_grade`` is found, otherwise *None*.
+    """
+    payload = str(text or "")
+    # Strip markdown code fences
+    if "```" in payload:
+        parts = payload.split("```")
+        # Try the content inside the first fenced block
+        for part in parts[1::2]:
+            inner = part.split("\n", 1)[1] if "\n" in part else part
+            inner = inner.strip()
+            if "{" in inner and "}" in inner:
+                candidate = inner[inner.find("{"):inner.rfind("}") + 1]
+                try:
+                    parsed = json.loads(candidate)
+                    if isinstance(parsed, dict) and "axiom_grade" in parsed:
+                        return f'<review>\n{json.dumps(parsed, ensure_ascii=False)}\n</review>'
+                except (json.JSONDecodeError, ValueError):
+                    pass
+    # Fallback: find outermost { … } containing axiom_grade
+    if "{" in payload and "}" in payload:
+        candidate = payload[payload.find("{"):payload.rfind("}") + 1]
+        try:
+            parsed = json.loads(candidate)
+            if isinstance(parsed, dict) and "axiom_grade" in parsed:
+                return f'<review>\n{json.dumps(parsed, ensure_ascii=False)}\n</review>'
+        except (json.JSONDecodeError, ValueError):
+            pass
+    return None
+
+
 def qwen_assistant_content_from_responses(responses: list[str]) -> str:
     steps = [str(segment).strip() for segment in responses if response_segment_type(segment) == "reasoning"]
     reviews = [str(segment).strip() for segment in responses if response_segment_type(segment) == "review"]
+
+    # Salvage: if all segments are reasoning but the last one contains a
+    # parseable review JSON (e.g. inside markdown fences), extract it so
+    # the training sample has a proper <review> block.
+    if steps and not reviews:
+        extracted = _try_extract_review_json(steps[-1])
+        if extracted is not None:
+            reviews = [extracted]
+
     if not steps:
         return reviews[-1] if reviews else ""
 
@@ -187,6 +230,12 @@ def attach_qwen_messages(item: dict[str, Any]) -> dict[str, Any]:
     ]
     item["assistant_parts"] = build_assistant_parts(item)
     item["training_format"] = "qwen_messages_think_review"
+
+    # Guard: if the assistant content has no <review> block, suppress LM loss
+    # so the model does not learn to produce reasoning-only output.
+    if "<review>" not in assistant_content:
+        item["lm_loss_weight"] = 0.0
+
     return item
 
 
