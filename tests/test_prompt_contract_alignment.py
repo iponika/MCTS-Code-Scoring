@@ -180,6 +180,10 @@ class BuildReviewPromptTest(unittest.TestCase):
             force_final=True,
             freeform_final_review=False,
         )
+        self.assertIn("You don't have to analyze code by yourself.", prompt)
+        self.assertIn("static_logic_check: x + 1 is returned directly.", prompt)
+        response_tail = prompt.split("@@ Response", 1)[1]
+        self.assertNotIn("static_logic_check: x + 1 is returned directly.", response_tail)
         self.assertIn(FINAL_REVIEW_PREFILL, prompt)
 
     def test_shared_builder_supports_freeform_final_review(self):
@@ -191,6 +195,15 @@ class BuildReviewPromptTest(unittest.TestCase):
         )
         self.assertNotIn(FINAL_REVIEW_PREFILL, prompt)
         self.assertIn("You may reason before the final labeled answer", prompt)
+
+    def test_shared_builder_final_prompt_without_prior_notes_adds_no_prior_hint(self):
+        prompt = build_review_prompt_from_sample(
+            SAMPLE,
+            partial_solution="",
+            force_final=True,
+            freeform_final_review=False,
+        )
+        self.assertNotIn("You don't have to analyze code by yourself.", prompt)
 
     def test_apply_review_prompt_controls_adds_expected_thinking_suffix(self):
         raw_prompt = build_review_prompt_from_sample(
