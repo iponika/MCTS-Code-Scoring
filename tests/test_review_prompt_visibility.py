@@ -243,7 +243,8 @@ class ReviewPromptVisibilityTest(unittest.TestCase):
         self.assertIn("reconcile supported previous reasoning evidence", prompt)
         self.assertNotIn('"score"', prompt)
         self.assertNotIn('"verdict"', prompt)
-        self.assertIn("Previous analysis notes:\nstatic_logic_check: The function returns x + 1 directly.", prompt)
+        self.assertIn("static_logic_check: The function returns x + 1 directly.", prompt)
+        self.assertIn("You don't have to analyze code by yourself.", prompt)
         self.assertIn("@@ Response\n<review>\n{\"axiom_grade\": ", prompt)
 
     def test_direct_bootstrap_stepwise_final_moves_prior_steps_into_instruction(self) -> None:
@@ -265,7 +266,7 @@ class ReviewPromptVisibilityTest(unittest.TestCase):
             steps_as_instruction_context=True,
         )
 
-        self.assertIn("Previous analysis notes:", prompt)
+        self.assertIn("You don't have to analyze code by yourself.", prompt)
         self.assertIn("static_logic_check: The function returns x + 1 directly.", prompt)
         response_tail = prompt.split("@@ Response", 1)[1]
         self.assertNotIn(prior_step, response_tail)
@@ -367,7 +368,7 @@ class ReviewPromptVisibilityTest(unittest.TestCase):
             step_context_mode="instruction_context",
         )
 
-        self.assertIn("Previous analysis notes:", prompt)
+        self.assertIn("You don't have to analyze code by yourself.", prompt)
         self.assertIn("static_logic_check: The function returns x + 1 directly.", prompt)
         response_tail = prompt.split("@@ Response", 1)[1]
         self.assertNotIn(prior_step.strip(), response_tail)
@@ -446,10 +447,26 @@ class ReviewPromptVisibilityTest(unittest.TestCase):
         self.assertIn("reconcile supported previous reasoning evidence", prompt)
         self.assertIn("cannot silently contradict it", prompt)
         self.assertIn('"axiom_grade"', prompt)
-        self.assertIn("Previous analysis notes:", prompt)
+        self.assertIn("You don't have to analyze code by yourself.", prompt)
         self.assertIn("static_logic_check: The function returns x + 1 directly.", prompt)
         response_tail = prompt.split("@@ Response", 1)[1]
         self.assertNotIn(prior_step.strip(), response_tail)
+
+    def test_stepwise_eval_final_prompt_without_prior_steps_adds_no_prior_hint(self) -> None:
+        sample = {
+            "problem": "Return x + 1.",
+            "candidate_code": "def f(x):\n    return x + 1",
+            "tests": ["assert f(1) == 2"],
+            "language": "python",
+        }
+        prompt = prompt_for_dimension(
+            sample,
+            "Correctness Verification",
+            partial_response="",
+            force_final=True,
+        )
+
+        self.assertNotIn("You don't have to analyze code by yourself.", prompt)
 
     def test_review_training_prompt_matches_response_shape(self) -> None:
         instruction = "Scoring target: assess candidate code correctness.\n\nTask description:\nReturn x + 1."
