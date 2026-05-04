@@ -29,9 +29,7 @@ from magicoder.prompt_template import (
 
 try:
     from shared.prompt_contract import (
-        build_review_instruction_from_sample,
-        build_review_user_content,
-        render_eval_prompt,
+        prompt_to_chat_messages,
     )
     _HAS_SHARED = True
 except ImportError:
@@ -39,9 +37,7 @@ except ImportError:
     from pathlib import Path as _Path
     _sys.path.insert(0, str(_Path(__file__).resolve().parents[3]))
     from shared.prompt_contract import (
-        build_review_instruction_from_sample,
-        build_review_user_content,
-        render_eval_prompt,
+        prompt_to_chat_messages,
     )
     _HAS_SHARED = True
 from magicoder.axiom_scoring import (
@@ -561,39 +557,39 @@ def build_chat_eval_prompt(
     force_final: bool = False,
     final_only: bool = False,
     parse_error: dict[str, Any] | None = None,
+    step_context_mode: str = "instruction_context",
     max_problem_chars: int = 3500,
     max_code_chars: int = 3500,
     mark_code_truncation_inside_block: bool = True,
     show_tests_in_prompt: bool = False,
 ) -> str:
-    """Build a chat-template-formatted prompt that matches training format.
+    """Render the existing raw-text prompt contract through the tokenizer chat template.
 
-    Returns a string ready for tokenisation and generation (BOS included).
+    This keeps chat-template evaluation behavior aligned with prompt_for_dimension(),
+    including step_context_mode semantics, instead of maintaining a second prompt path.
     """
-    instruction = build_review_instruction_from_sample(
+    raw_prompt = prompt_for_dimension(
         sample,
         dimension,
+        partial_response,
+        force_final=force_final,
+        parse_error=parse_error,
+        final_only=final_only,
+        step_context_mode=step_context_mode,
         max_problem_chars=max_problem_chars,
         max_code_chars=max_code_chars,
         mark_code_truncation_inside_block=mark_code_truncation_inside_block,
         show_tests_in_prompt=show_tests_in_prompt,
     )
-    user_content = build_review_user_content(instruction)
-
-    if parse_error:
-        user_content += (
-            f"\n\nPrevious final review parse error: "
-            f"{parse_error.get('error')}: {parse_error.get('message', '')}. "
-            "Correct the JSON syntax in the next review block."
-        )
-
-    assistant_prefix = _build_assistant_prefix(partial_response, force_final)
-    return render_eval_prompt(
-        tokenizer,
-        user_content,
-        assistant_prefix,
-        enable_thinking=None,
-    )
+    messages = prompt_to_chat_messages(raw_prompt)
+    kwargs: dict[str, Any] = {
+        "tokenize": False,
+        "add_generation_prompt": True,
+    }
+    try:
+        return tokenizer.apply_chat_template(messages, enable_thinking=None, **kwargs)
+    except TypeError:
+        return tokenizer.apply_chat_template(messages, **kwargs)
 
 
 def _effective_max_steps(args) -> int:
@@ -636,6 +632,7 @@ def evaluate_dimension(
                 partial_response,
                 force_final=force_final,
                 final_only=args.final_only_json,
+                step_context_mode=args.step_context_mode,
                 max_problem_chars=args.max_problem_chars,
                 max_code_chars=args.max_code_chars,
                 mark_code_truncation_inside_block=args.mark_code_truncation_inside_block,
@@ -736,6 +733,7 @@ def evaluate_dimension(
                 force_final=True,
                 final_only=args.final_only_json,
                 parse_error=final_review_parse,
+                step_context_mode=args.step_context_mode,
                 max_problem_chars=args.max_problem_chars,
                 max_code_chars=args.max_code_chars,
                 mark_code_truncation_inside_block=args.mark_code_truncation_inside_block,
@@ -790,6 +788,7 @@ def evaluate_dimension(
             "",
             force_final=True,
             final_only=args.final_only_json,
+            step_context_mode=args.step_context_mode,
             max_problem_chars=args.max_problem_chars,
             max_code_chars=args.max_code_chars,
             mark_code_truncation_inside_block=args.mark_code_truncation_inside_block,

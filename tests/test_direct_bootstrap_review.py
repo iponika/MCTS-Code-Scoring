@@ -61,7 +61,7 @@ class DirectBootstrapReviewTest(unittest.TestCase):
         self.assertEqual(len(results[0][1]), 2)
         self.assertEqual([item["candidate_index"] for item in results[0][1]], [0, 1])
 
-    def test_review_only_final_prompt_is_freeform_without_prefill_or_no_think(self) -> None:
+    def test_review_only_final_prompt_is_freeform_by_default(self) -> None:
         sample = {
             "question": "Return x + 1.",
             "candidate_code": "def f(x):\n    return x + 1\n",
@@ -101,6 +101,38 @@ class DirectBootstrapReviewTest(unittest.TestCase):
         self.assertIn("The final labeled answer begins at the last complete <review> block", engine.last_prompts[0])
         self.assertNotIn("The very first non-whitespace characters of your answer must be <review>.", engine.last_prompts[0])
         self.assertEqual(captured_texts, ['<think>\nreason\n</think>\n<review>{"axiom_grade": 4}</review>'])
+
+    def test_review_only_can_explicitly_use_prefill_anchor(self) -> None:
+        sample = {
+            "question": "Return x + 1.",
+            "candidate_code": "def f(x):\n    return x + 1\n",
+            "code_language": "python",
+            "tests_for_prompt": "No tests are available to the reviewer.",
+        }
+        args = SimpleNamespace(repeats=1, dimension="Correctness Verification", freeform_final_review=False)
+        config = OmegaConf.structured(BaseConfig)
+        config.review_native_thinking_steps = True
+        sampling_params = SimpleNamespace(n=None, best_of=None, stop=None, temperature=0.7, top_p=0.9)
+        engine = _FakeEngine('"axiom_grade": 4, "summary": "ok"}\n</review>')
+
+        with (
+            patch.object(direct_bootstrap_review, "maybe_apply_chat_template", side_effect=lambda prompts, *_: prompts),
+            patch.object(
+                direct_bootstrap_review,
+                "evaluated_candidate",
+                side_effect=lambda index, text, sample, dimension: {
+                    "candidate_index": index,
+                    "text": text,
+                    "reward": 0.0,
+                    "reward_details": {},
+                    "predicted_axiom_grade": None,
+                },
+            ),
+        ):
+            direct_bootstrap_review.generate_review_only([sample], args, config, engine, sampling_params)
+
+        self.assertIn(direct_bootstrap_review.FINAL_REVIEW_PREFILL, engine.last_prompts[0])
+        self.assertTrue(engine.last_prompts[0].rstrip().endswith("/no_think"))
 
     def test_normalize_review_text_keeps_only_last_review_block(self) -> None:
         text = (

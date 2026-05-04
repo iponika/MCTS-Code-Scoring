@@ -6,13 +6,26 @@ from mcts_math.agents.utils import review_prompt_wrap, review_step_result_unwrap
 from mcts_math.config import BaseConfig
 from magicoder.preprocess_review_mcts_data import build_instruction
 from magicoder.prompt_template import review_prompt_for_response
-from magicoder.review_evaluator import prompt_for_dimension
+from magicoder.review_evaluator import build_chat_eval_prompt, prompt_for_dimension
 from direct_bootstrap_review import build_prompt as build_direct_bootstrap_prompt
 from direct_bootstrap_review import direct_bootstrap_stop_tokens
 from mcts_math.llms.local_llms import chat_messages_for_prompt
 
 
 class ReviewPromptVisibilityTest(unittest.TestCase):
+    class _FakeChatTokenizer:
+        def __init__(self) -> None:
+            self.last_messages = None
+            self.last_kwargs = None
+
+        def apply_chat_template(self, messages, **kwargs):
+            self.last_messages = messages
+            self.last_kwargs = kwargs
+            chunks = []
+            for message in messages:
+                chunks.append(f"[{message['role']}]\n{message['content']}")
+            return "\n\n".join(chunks)
+
     def test_build_instruction_hides_dataset_tests_by_default(self) -> None:
         sample = {
             "problem": "Return x + 1.",
@@ -359,6 +372,57 @@ class ReviewPromptVisibilityTest(unittest.TestCase):
         self.assertNotIn(prior_step.strip(), response_tail)
         self.assertNotIn("Continue from the last completed step", prompt)
         self.assertIn("Each new reasoning note must add new evidence", prompt)
+
+    def test_chat_eval_prompt_respects_instruction_context(self) -> None:
+        sample = {
+            "problem": "Return x + 1.",
+            "candidate_code": "def f(x):\n    return x + 1",
+            "tests": ["assert f(1) == 2"],
+            "language": "python",
+        }
+        prior_step = "static_logic_check: The function returns x + 1 directly.\n"
+        tokenizer = self._FakeChatTokenizer()
+
+        rendered = build_chat_eval_prompt(
+            tokenizer,
+            sample,
+            "Correctness Verification",
+            partial_response=prior_step,
+            force_final=False,
+            step_context_mode="instruction_context",
+            show_tests_in_prompt=False,
+        )
+
+        self.assertEqual(len(tokenizer.last_messages), 1)
+        self.assertEqual(tokenizer.last_messages[0]["role"], "user")
+        self.assertIn("Previous analysis notes:", tokenizer.last_messages[0]["content"])
+        self.assertIn("static_logic_check: The function returns x + 1 directly.", tokenizer.last_messages[0]["content"])
+        self.assertIn("@@ Response", tokenizer.last_messages[0]["content"])
+        self.assertIn("Previous analysis notes:", rendered)
+
+    def test_chat_eval_prompt_can_use_assistant_prefix_mode(self) -> None:
+        sample = {
+            "problem": "Return x + 1.",
+            "candidate_code": "def f(x):\n    return x + 1",
+            "tests": ["assert f(1) == 2"],
+            "language": "python",
+        }
+        prior_step = "static_logic_check: The function returns x + 1 directly.\n"
+        tokenizer = self._FakeChatTokenizer()
+
+        build_chat_eval_prompt(
+            tokenizer,
+            sample,
+            "Correctness Verification",
+            partial_response=prior_step,
+            force_final=False,
+            step_context_mode="assistant_prefix",
+            show_tests_in_prompt=False,
+        )
+
+        self.assertEqual(len(tokenizer.last_messages), 2)
+        self.assertEqual(tokenizer.last_messages[1]["role"], "assistant")
+        self.assertIn("static_logic_check: The function returns x + 1 directly.", tokenizer.last_messages[1]["content"])
 
     def test_stepwise_eval_final_prompt_shows_review_format(self) -> None:
         sample = {

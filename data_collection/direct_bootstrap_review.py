@@ -77,10 +77,10 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--freeform_final_review",
-        action="store_true",
-        default=False,
+        action=argparse.BooleanOptionalAction,
+        default=True,
         help="Allow free-form reasoning before the <review> block in review-only mode. "
-             "Off by default so that FINAL_REVIEW_PREFILL anchors the output.",
+             "Use --no-freeform_final_review to anchor the output with FINAL_REVIEW_PREFILL.",
     )
     return parser.parse_args()
 
@@ -327,7 +327,7 @@ def generate_review_only(
     sampling_params.stop = ["</review>"]
     sampling_params.temperature = 0.0
     sampling_params.top_p = 1.0
-    freeform = getattr(args, "freeform_final_review", False)
+    freeform = getattr(args, "freeform_final_review", True)
     prompts = [
         build_prompt(
             item["sample"],
