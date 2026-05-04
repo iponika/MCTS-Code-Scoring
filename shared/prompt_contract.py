@@ -487,6 +487,9 @@ def build_review_prompt_from_sample(
     instruction += (
         "\n\nPrevious analysis notes may already appear in the assistant history for this conversation. "
         "Use them as fixed context and continue the analysis. "
+        "The previous rounds' analysis text may be inserted directly as your prior thinking history. "
+        "If you can see prior thoughts, first summarize the code's correctness status you previously reached in one sentence, "
+        "then continue with a further correctness judgment that builds on that prior analysis. "
         "Generate one concise native reasoning note. Do not output XML tags, JSON, or <review> yet. "
         "Do not repeat, paraphrase, or restart previous steps."
     )
