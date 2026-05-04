@@ -170,6 +170,8 @@ class BuildReviewPromptTest(unittest.TestCase):
             step_context_mode="assistant_prefix",
         )
         self.assertIn("@@ Response\nstatic_logic_check: x + 1 is returned directly.\n", prompt)
+        self.assertIn("inserted directly as your prior thinking history", prompt)
+        self.assertIn("first summarize the code's correctness status", prompt)
 
     def test_shared_builder_supports_anchored_final_review(self):
         prompt = build_review_prompt_from_sample(

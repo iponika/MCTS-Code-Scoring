@@ -424,6 +424,7 @@ class ReviewPromptVisibilityTest(unittest.TestCase):
         self.assertEqual(len(tokenizer.last_messages), 2)
         self.assertEqual(tokenizer.last_messages[1]["role"], "assistant")
         self.assertIn("static_logic_check: The function returns x + 1 directly.", tokenizer.last_messages[1]["content"])
+        self.assertIn("inserted directly as your prior thinking history", tokenizer.last_messages[0]["content"])
 
     def test_stepwise_eval_final_prompt_shows_review_format(self) -> None:
         sample = {
