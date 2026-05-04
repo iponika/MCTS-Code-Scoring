@@ -823,7 +823,7 @@ def main() -> None:
     parser.add_argument("--max_steps", type=int, default=3)
     parser.add_argument("--num_candidates", type=int, default=2)
     parser.add_argument("--max_new_tokens", type=int, default=256)
-    parser.add_argument("--final_max_new_tokens", type=int, default=0, help="0 means reuse --max_new_tokens for final review generation and retries.")
+    parser.add_argument("--final_max_new_tokens", type=int, default=768, help="Maximum new tokens for final review generation and retries.")
     parser.add_argument("--temperature", type=float, default=0.7)
     parser.add_argument("--top_p", type=float, default=0.95)
     parser.add_argument("--score_key", choices=VALUE_SCORE_KEYS, default="last_value")
