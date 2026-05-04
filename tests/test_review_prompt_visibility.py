@@ -216,7 +216,7 @@ class ReviewPromptVisibilityTest(unittest.TestCase):
 
         response_tail = prompt.split("@@ Response", 1)[1]
         self.assertIn(partial, response_tail)
-        self.assertIn("already present after @@ Response", prompt)
+        self.assertIn("assistant history", prompt)
         self.assertIn("Generate one concise native reasoning note", prompt)
 
     def test_direct_bootstrap_final_prompt_has_consistency_rule(self) -> None:
@@ -243,7 +243,8 @@ class ReviewPromptVisibilityTest(unittest.TestCase):
         self.assertIn("reconcile supported previous reasoning evidence", prompt)
         self.assertNotIn('"score"', prompt)
         self.assertNotIn('"verdict"', prompt)
-        self.assertIn("@@ Response\nstatic_logic_check: The function returns x + 1 directly.\n<review>\n{\"axiom_grade\": ", prompt)
+        self.assertIn("Previous analysis notes:\nstatic_logic_check: The function returns x + 1 directly.", prompt)
+        self.assertIn("@@ Response\n<review>\n{\"axiom_grade\": ", prompt)
 
     def test_direct_bootstrap_stepwise_final_moves_prior_steps_into_instruction(self) -> None:
         config = OmegaConf.structured(BaseConfig)
@@ -441,7 +442,7 @@ class ReviewPromptVisibilityTest(unittest.TestCase):
 
         self.assertIn("This is the final scoring turn", prompt)
         self.assertIn("Output exactly one <review> JSON block", prompt)
-        self.assertIn("reconcile supported previous analysis notes", prompt)
+        self.assertIn("reconcile supported previous reasoning evidence", prompt)
         self.assertIn("cannot silently contradict it", prompt)
         self.assertIn('"axiom_grade"', prompt)
         self.assertIn("Previous analysis notes:", prompt)

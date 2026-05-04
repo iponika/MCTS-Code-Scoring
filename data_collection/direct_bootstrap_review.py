@@ -13,13 +13,9 @@ from mcts_math.config import BaseConfig
 from mcts_math.llms.local_llms import maybe_apply_chat_template
 from mcts_math.llms.local_llm_engine import llm_engine
 from mcts_math.prompts.prompt_sft import (
-    REVIEW_FINAL_FORMAT_SECTION,
-    REVIEW_STEP_FORMAT_SECTION,
-    AXIOM_REFINEMENT_SCALE,
-    REVIEW_EVIDENCE_RULES,
-    REVIEW_FINAL_CONSISTENCY_RULE,
-    QWEN_REVIEW_FINAL_PROMPT,
-    QWEN_REVIEW_STEP_PROMPT,
+    FINAL_REVIEW_PREFILL,
+    apply_review_prompt_controls,
+    build_review_prompt_from_sample,
 )
 from mcts_math.review_utils import (
     compact_native_think_body,
@@ -29,23 +25,6 @@ from mcts_math.review_utils import (
     parse_review_payload,
 )
 from solver_review import build_record
-
-FINAL_REVIEW_PREFILL = '<review>\n{"axiom_grade": '
-
-
-def relax_freeform_final_prompt(prompt: str) -> str:
-    relaxed = prompt
-    relaxed = relaxed.replace(
-        "Output must be exactly one JSON object wrapped in <review> tags. Do not output natural-language text outside the tags, markdown fences, <think> blocks, <step> blocks, or code fixes. Otherwise the result cannot be parsed.\n",
-        "You may reason before the final labeled answer, but finish with exactly one complete <review>...</review> block.\n",
-    )
-    relaxed = relaxed.replace(
-        "Field rules:\n",
-        "The final labeled answer begins at the last complete <review> block in your response. "
-        "Inside that final block, write the JSON object required below.\n\nField rules:\n",
-    )
-    return relaxed
-
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Direct independent bootstrap exporter for AXIOM code scoring.")
@@ -108,59 +87,28 @@ def build_prompt(
     freeform_final_review: bool = False,
     steps_as_instruction_context: bool = False,
 ) -> str:
-    template = QWEN_REVIEW_FINAL_PROMPT if force_final_review else QWEN_REVIEW_STEP_PROMPT
-    completed_steps = partial_solution.strip() if partial_solution else ""
-    partial_response = completed_steps
-    if partial_response == "None":
-        partial_response = ""
-    if completed_steps == "None":
-        completed_steps = ""
-    if steps_as_instruction_context:
-        partial_response = ""
-    if partial_response:
-        partial_response = partial_response.rstrip() + "\n"
-    if force_final_review and not freeform_final_review:
-        partial_response += FINAL_REVIEW_PREFILL
-    prompt = template.format(
-        question=sample["question"],
-        candidate_code=sample["candidate_code"],
-        code_language=sample.get("code_language", "python"),
-        tests=prompt_tests_text(sample, config),
-        partial_solution=partial_response,
-        axiom_scale=AXIOM_REFINEMENT_SCALE,
-        evidence_rules=REVIEW_EVIDENCE_RULES,
-        final_consistency_rule=REVIEW_FINAL_CONSISTENCY_RULE,
-        step_format_section=REVIEW_STEP_FORMAT_SECTION,
-        final_format_section=REVIEW_FINAL_FORMAT_SECTION,
+    shared_sample = {
+        "question": sample["question"],
+        "candidate_code": sample["candidate_code"],
+        "code_language": sample.get("code_language", "python"),
+        "tests_for_prompt": prompt_tests_text(sample, config),
+    }
+    prompt = build_review_prompt_from_sample(
+        shared_sample,
+        dimension=dimension,
+        partial_solution=partial_solution,
+        force_final=force_final_review,
+        step_context_mode="instruction_context" if steps_as_instruction_context else "assistant_prefix",
+        freeform_final_review=freeform_final_review,
+        show_tests_in_prompt=bool(getattr(config, "show_tests_in_prompt", False)),
     )
-    if force_final_review and steps_as_instruction_context and completed_steps:
-        prompt = prompt.replace(
-            "\n\nStructured final review format:\n",
-            "\n\nPrevious analysis notes:\n"
-            f"{completed_steps}\n\nStructured final review format:\n",
-            1,
-        )
-    if (not force_final_review) and steps_as_instruction_context and completed_steps:
-        prompt = prompt.replace(
-            "\n\nIntermediate reasoning format:\n",
-            "\n\nPrevious analysis notes:\n"
-            f"{completed_steps}\n\nIntermediate reasoning format:\n",
-            1,
-        )
-        prompt = prompt.replace(
-            "If previous analysis notes are provided below or already present after @@ Response, use them as fixed context and add one new evidence item.\n",
-            "If previous analysis notes are provided below, use them as fixed context and add one new evidence item without repeating them.\n",
-        )
-    if force_final_review and freeform_final_review:
-        prompt = relax_freeform_final_prompt(prompt)
-    thinking_mode = str(getattr(config, "qwen_thinking_mode", "") or "").strip().lower()
-    if force_final_review and getattr(config, "review_native_thinking_steps", False) and not freeform_final_review:
-        return prompt + "\n\n/no_think"
-    if thinking_mode in {"think", "/think"}:
-        return prompt + "\n\n/think"
-    if thinking_mode in {"no_think", "no-think", "/no_think"}:
-        return prompt + "\n\n/no_think"
-    return prompt
+    return apply_review_prompt_controls(
+        prompt,
+        force_final=force_final_review,
+        freeform_final_review=freeform_final_review,
+        thinking_mode=getattr(config, "qwen_thinking_mode", ""),
+        review_native_thinking_steps=bool(getattr(config, "review_native_thinking_steps", False)),
+    )
 
 
 def iter_batches(items: list[dict[str, Any]], batch_size: int):

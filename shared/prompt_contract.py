@@ -60,7 +60,7 @@ FINAL_REVIEW_PREFILL = '<review>\n{"axiom_grade": '
 
 REVIEW_STEP_PROMPT = """You are a code scoring model for functional correctness.
 @@ Instruction
-This is an intermediate turn of a multi-step code review. Earlier turns may have already analyzed the candidate code. If previous analysis notes are provided below or already present after @@ Response, use them as fixed context and add one new evidence item.
+This is an intermediate turn of a multi-step code review. Earlier turns may have already analyzed the candidate code. If previous analysis notes are provided below, or if earlier assistant messages already contain analysis notes, use them as fixed context and add one new evidence item.
 
 You are not assigning the final score in this turn. Generate one concise native reasoning note. Do not output XML tags, JSON, markdown fences, code fixes, or the final <review> block in this intermediate turn.
 
@@ -196,8 +196,11 @@ def build_review_instruction_from_sample(
     code_language = str(sample.get("language") or sample.get("lang") or sample.get("code_language") or "python")
 
     tests = sample.get("tests") or []
+    tests_for_prompt = sample.get("tests_for_prompt")
     if not show_tests_in_prompt:
         tests_text = "No tests are available to the reviewer."
+    elif tests_for_prompt is not None:
+        tests_text = str(tests_for_prompt)
     elif tests:
         tests_text = "\n".join(str(test) for test in tests[:5])
         if len(tests) > 5:
@@ -263,6 +266,140 @@ def build_review_prompt(
         evidence_rules=REVIEW_EVIDENCE_RULES,
         step_format_section=REVIEW_STEP_FORMAT_SECTION,
     )
+
+
+def normalize_partial_solution(partial_solution: str = "") -> tuple[str, str]:
+    """Return both the completed-note text and the response-prefix variant."""
+    completed_steps = str(partial_solution or "").strip()
+    if completed_steps == "None":
+        completed_steps = ""
+    response_prefix = completed_steps.rstrip() + "\n" if completed_steps else ""
+    return completed_steps, response_prefix
+
+
+def relax_freeform_final_prompt(prompt: str) -> str:
+    """Relax anchored-final wording so the model may reason before the last <review> block."""
+    relaxed = str(prompt or "")
+    relaxed = relaxed.replace(
+        "Output must be exactly one JSON object wrapped in <review> tags. Do not output natural-language text outside the tags, markdown fences, <think> blocks, <step> blocks, or code fixes. Otherwise the result cannot be parsed.\n",
+        "You may reason before the final labeled answer, but finish with exactly one complete <review>...</review> block.\n",
+    )
+    relaxed = relaxed.replace(
+        "Field rules:\n",
+        "The final labeled answer begins at the last complete <review> block in your response. "
+        "Inside that final block, write the JSON object required below.\n\nField rules:\n",
+    )
+    return relaxed
+
+
+def build_review_prompt_from_sample(
+    sample: dict[str, Any],
+    *,
+    dimension: str = "Correctness Verification",
+    partial_solution: str = "",
+    force_final: bool = False,
+    final_only: bool = False,
+    step_context_mode: str = "assistant_prefix",
+    parse_error: dict[str, Any] | None = None,
+    freeform_final_review: bool = False,
+    max_problem_chars: int = 3500,
+    max_code_chars: int = 3500,
+    mark_code_truncation_inside_block: bool = True,
+    show_tests_in_prompt: bool = False,
+) -> str:
+    """Build the canonical raw-text review prompt from one sample.
+
+    This is the single shared prompt-construction entrypoint used by data
+    generation and evaluation. Callers should add model-specific suffixes
+    (for example ``/think`` or ``/no_think``) separately via
+    :func:`apply_review_prompt_controls`.
+    """
+    instruction = build_review_instruction_from_sample(
+        sample,
+        dimension,
+        max_problem_chars=max_problem_chars,
+        max_code_chars=max_code_chars,
+        mark_code_truncation_inside_block=mark_code_truncation_inside_block,
+        show_tests_in_prompt=show_tests_in_prompt,
+    )
+    completed_steps, response_prefix = normalize_partial_solution(partial_solution)
+
+    if final_only or force_final:
+        instruction += (
+            "\n\nThis is the final scoring turn. Output exactly one <review> JSON block. "
+            "Do not add more intermediate reasoning notes."
+        )
+        if completed_steps:
+            instruction += f"\n\nPrevious analysis notes:\n{completed_steps}"
+        if parse_error:
+            instruction += (
+                "\n\nPrevious final review parse error: "
+                f"{parse_error.get('error')}: {parse_error.get('message', '')}. "
+                "Correct the JSON syntax in the next review block."
+            )
+        prompt = REVIEW_FINAL_PROMPT.format(
+            instruction=instruction,
+            partial_solution="" if freeform_final_review else FINAL_REVIEW_PREFILL,
+            axiom_scale=AXIOM_REFINEMENT_SCALE,
+            evidence_rules=REVIEW_EVIDENCE_RULES,
+            final_consistency_rule=REVIEW_FINAL_CONSISTENCY_RULE,
+            final_format_section=REVIEW_FINAL_FORMAT_SECTION,
+        )
+        return relax_freeform_final_prompt(prompt) if freeform_final_review else prompt
+
+    if step_context_mode == "instruction_context":
+        instruction += (
+            "\n\nThis is an intermediate scoring turn. "
+            "Use previous analysis notes as fixed context and do not repeat them. "
+            "Generate one concise native reasoning note. Do not output XML tags, JSON, or <review> yet. "
+            "Each new reasoning note must add new evidence instead of continuing the wording of a previous note."
+        )
+        if completed_steps:
+            instruction += f"\n\nPrevious analysis notes:\n{completed_steps}"
+        prompt = REVIEW_STEP_PROMPT.format(
+            instruction=instruction,
+            partial_solution="",
+            axiom_scale=AXIOM_REFINEMENT_SCALE,
+            evidence_rules=REVIEW_EVIDENCE_RULES,
+            step_format_section=REVIEW_STEP_FORMAT_SECTION,
+        )
+        return prompt.replace(
+            "If previous analysis notes are provided below, or if earlier assistant messages already contain analysis notes, use them as fixed context and add one new evidence item.\n",
+            "If previous analysis notes are provided below, use them as fixed context and add one new evidence item without repeating them.\n",
+        )
+
+    instruction += (
+        "\n\nPrevious analysis notes may already appear in the assistant history for this conversation. "
+        "Use them as fixed context and continue the analysis. "
+        "Generate one concise native reasoning note. Do not output XML tags, JSON, or <review> yet. "
+        "Do not repeat, paraphrase, or restart previous steps."
+    )
+    return REVIEW_STEP_PROMPT.format(
+        instruction=instruction,
+        partial_solution=response_prefix,
+        axiom_scale=AXIOM_REFINEMENT_SCALE,
+        evidence_rules=REVIEW_EVIDENCE_RULES,
+        step_format_section=REVIEW_STEP_FORMAT_SECTION,
+    )
+
+
+def apply_review_prompt_controls(
+    prompt: str,
+    *,
+    force_final: bool,
+    freeform_final_review: bool = False,
+    thinking_mode: str = "",
+    review_native_thinking_steps: bool = False,
+) -> str:
+    """Apply model-control suffixes such as /think or /no_think."""
+    normalized_mode = str(thinking_mode or "").strip().lower()
+    if force_final and review_native_thinking_steps and not freeform_final_review:
+        return str(prompt) + "\n\n/no_think"
+    if normalized_mode in {"think", "/think"}:
+        return str(prompt) + "\n\n/think"
+    if normalized_mode in {"no_think", "no-think", "/no_think"}:
+        return str(prompt) + "\n\n/no_think"
+    return str(prompt)
 
 
 # ---------------------------------------------------------------------------

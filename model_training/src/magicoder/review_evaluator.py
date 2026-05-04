@@ -9,7 +9,7 @@ from typing import Any
 import torch
 from transformers import AutoTokenizer, set_seed
 
-from magicoder.preprocess_review_mcts_data import build_instruction, iter_records
+from magicoder.preprocess_review_mcts_data import iter_records
 from magicoder.review_policy_value_inference import (
     generate_response,
     load_policy,
@@ -18,17 +18,9 @@ from magicoder.review_policy_value_inference import (
     score_response,
 )
 from magicoder.review_value_guided_evaluator import VALUE_SCORE_KEYS
-from magicoder.prompt_template import (
-    AXIOM_REFINEMENT_SCALE,
-    REVIEW_FINAL_CONSISTENCY_RULE,
-    REVIEW_STEP_FORMAT_SECTION,
-    QWEN_REVIEW_FINAL_ONLY_PROMPT,
-    QWEN_REVIEW_STEP_ONLY_PROMPT,
-    QWEN_REVIEW_STEP_PROMPT,
-)
-
 try:
     from shared.prompt_contract import (
+        build_review_prompt_from_sample,
         prompt_to_chat_messages,
     )
     _HAS_SHARED = True
@@ -37,6 +29,7 @@ except ImportError:
     from pathlib import Path as _Path
     _sys.path.insert(0, str(_Path(__file__).resolve().parents[3]))
     from shared.prompt_contract import (
+        build_review_prompt_from_sample,
         prompt_to_chat_messages,
     )
     _HAS_SHARED = True
@@ -141,88 +134,19 @@ def prompt_for_dimension(
     mark_code_truncation_inside_block: bool = True,
     show_tests_in_prompt: bool = False,
 ) -> str:
-    completed_steps = str(partial_response or "").strip()
-    instruction = build_instruction(
+    return build_review_prompt_from_sample(
         sample,
-        dimension,
+        dimension=dimension,
+        partial_solution=partial_response,
+        force_final=force_final,
+        final_only=final_only,
+        step_context_mode=step_context_mode,
+        parse_error=parse_error,
+        freeform_final_review=False,
         max_problem_chars=max_problem_chars,
         max_code_chars=max_code_chars,
         mark_code_truncation_inside_block=mark_code_truncation_inside_block,
         show_tests_in_prompt=show_tests_in_prompt,
-    )
-    if final_only:
-        if parse_error:
-            instruction += (
-                "\n\nPrevious final review parse error: "
-                f"{parse_error.get('error')}: {parse_error.get('message', '')}. "
-                "Correct the JSON syntax in the next review block."
-            )
-        return QWEN_REVIEW_FINAL_ONLY_PROMPT.format(
-            instruction=instruction,
-            response="",
-            axiom_scale=AXIOM_REFINEMENT_SCALE,
-            final_consistency_rule=REVIEW_FINAL_CONSISTENCY_RULE,
-        )
-    if force_final:
-        instruction += (
-            "\n\nThis is the final scoring turn. Output exactly one <review> JSON block. "
-            "Do not add more intermediate reasoning notes. "
-            "Before choosing axiom_grade, reconcile supported previous analysis notes with the final judgment. "
-            "The evidence value must be a JSON array of strings using square brackets only. "
-            "Use any <value_feedback> blocks as private guidance; do not quote or repeat them in the review."
-        )
-        if completed_steps:
-            instruction += (
-                "\n\nPrevious analysis notes:\n"
-                f"{completed_steps}"
-            )
-        if parse_error:
-            instruction += (
-                "\nPrevious final review parse error: "
-                f"{parse_error.get('error')}: {parse_error.get('message', '')}. "
-                "Correct the JSON syntax in the next review block."
-            )
-    else:
-        if step_context_mode == "instruction_context":
-            instruction += (
-                "\n\nThis is an intermediate scoring turn. "
-                "Use previous analysis notes as fixed context and do not repeat them. "
-                "Generate one concise native reasoning note. Do not output XML tags, JSON, or <review> yet. "
-                "Each new reasoning note must add new evidence instead of continuing the wording of a previous note. "
-                "Use any <value_feedback> blocks as private guidance; do not quote or repeat them."
-            )
-            if completed_steps:
-                instruction += (
-                    "\n\nPrevious analysis notes:\n"
-                    f"{completed_steps}"
-                )
-            response = ""
-        else:
-            instruction += (
-                "\n\nThe text already present after @@ Response contains previous analysis notes. "
-                "Use them as fixed context and continue the analysis. "
-                "Generate one concise native reasoning note. Do not output XML tags, JSON, or <review> yet. "
-                "Do not repeat, paraphrase, or restart previous steps. "
-                "Use any <value_feedback> blocks as private guidance; do not quote or repeat them."
-            )
-            response = partial_response
-        prompt = QWEN_REVIEW_STEP_ONLY_PROMPT.format(
-            instruction=instruction,
-            response=response,
-            axiom_scale=AXIOM_REFINEMENT_SCALE,
-            step_format_section=REVIEW_STEP_FORMAT_SECTION,
-        )
-        if step_context_mode == "instruction_context":
-            prompt = prompt.replace(
-                "If previous analysis notes are provided below or already present after @@ Response, use them as fixed context and add one new evidence item.\n",
-                "If previous analysis notes are provided below, use them as fixed context and add one new evidence item without repeating them.\n",
-            )
-        return prompt
-    return QWEN_REVIEW_FINAL_ONLY_PROMPT.format(
-        instruction=instruction,
-        response="",
-        axiom_scale=AXIOM_REFINEMENT_SCALE,
-        final_consistency_rule=REVIEW_FINAL_CONSISTENCY_RULE,
     )
 
 

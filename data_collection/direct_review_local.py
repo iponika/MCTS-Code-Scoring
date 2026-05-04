@@ -12,11 +12,8 @@ from mcts_math.axiom_scoring import axiom_functionally_correct, axiom_scalar_sco
 from mcts_math.config import BaseConfig
 from mcts_math.llms.local_llm_engine import llm_engine
 from mcts_math.prompts.prompt_sft import (
-    REVIEW_FINAL_FORMAT_SECTION,
-    AXIOM_REFINEMENT_SCALE,
-    REVIEW_EVIDENCE_RULES,
-    REVIEW_FINAL_CONSISTENCY_RULE,
-    QWEN_REVIEW_FINAL_PROMPT,
+    apply_review_prompt_controls,
+    build_review_prompt_from_sample,
 )
 from mcts_math.review_utils import (
     compute_review_reward,
@@ -53,17 +50,24 @@ def prompt_tests_text(sample: dict[str, Any], config: Any) -> str:
 
 
 def build_prompt(sample: dict[str, Any], dimension: str, config: Any) -> str:
-    return QWEN_REVIEW_FINAL_PROMPT.format(
-        question=sample["question"],
-        candidate_code=sample["candidate_code"],
-        code_language=sample.get("code_language", "python"),
-        tests=prompt_tests_text(sample, config),
-        partial_solution="None",
-        axiom_scale=AXIOM_REFINEMENT_SCALE,
-        evidence_rules=REVIEW_EVIDENCE_RULES,
-        final_consistency_rule=REVIEW_FINAL_CONSISTENCY_RULE,
-        step_format_section="",
-        final_format_section=REVIEW_FINAL_FORMAT_SECTION,
+    raw_prompt = build_review_prompt_from_sample(
+        {
+            "question": sample["question"],
+            "candidate_code": sample["candidate_code"],
+            "code_language": sample.get("code_language", "python"),
+            "tests_for_prompt": prompt_tests_text(sample, config),
+        },
+        dimension=dimension,
+        force_final=True,
+        freeform_final_review=False,
+        show_tests_in_prompt=bool(getattr(config, "show_tests_in_prompt", False)),
+    )
+    return apply_review_prompt_controls(
+        raw_prompt,
+        force_final=True,
+        freeform_final_review=False,
+        thinking_mode=getattr(config, "qwen_thinking_mode", ""),
+        review_native_thinking_steps=bool(getattr(config, "review_native_thinking_steps", False)),
     )
 
 
