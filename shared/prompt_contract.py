@@ -25,7 +25,7 @@ AXIOM_REFINEMENT_SCALE = """AXIOM refinement-effort scale:
 - 2/5: Functionally defective, but minor localized functionality repair is enough, for example, adding a boundary check, changing one comparison/logical/arithmetic operator, correcting one initializer/index/argument order/constant, assigning an immutable-method return value, or returning the intended expression. A typical localized defect is, for example, an off-by-one error.
 - 1/5: Functionally defective and requires major functional refactoring, for example, replacing the required algorithm, restoring a missing non-trivial processing step, changing an unsuitable data structure, fixing cross-iteration state corruption, redesigning recursion/base cases, repairing lifecycle/state-machine logic, restoring boundary validation, or correcting a serialization-format interpretation.
 - 0/5: Fundamentally flawed; rewriting is more efficient than repairing, for example, code for an unrelated task, a severe language/API mismatch, empty/non-runnable code that prevents meaningful repair, or behavior that contradicts the core requirement.
-Examples are illustrative, not exhaustive criteria; score by the closest AXIOM repair-effort level supported by concrete evidence."""
+"""
 
 
 REVIEW_EVIDENCE_RULES = """Evidence rules:
@@ -57,27 +57,21 @@ FINAL_REVIEW_PREFILL = '<review>\n{"axiom_grade": '
 # Unified prompt templates
 # ---------------------------------------------------------------------------
 
-REVIEW_STEP_PROMPT = """You are a code scoring model for functional correctness.
+REVIEW_STEP_PROMPT = """You are a code analysis model for functional correctness.
 @@ Instruction
-This is an intermediate turn of a multi-step code review. Earlier turns may have already analyzed the candidate code. If previous analysis notes are provided below, or if earlier assistant messages already contain analysis notes, use them as fixed context and add one new evidence item.
+This is an intermediate turn of a multi-step code review. You are not assigning the final score in this turn. Your job is to analyze code correctness succeeding previous analysis.
 
-You are not assigning the final score in this turn. Generate one concise native reasoning note. Do not output XML tags, JSON, markdown fences, code fixes, or the final <review> block in this intermediate turn.
-
-You must gather evidence for the AXIOM 0-5 refinement-effort scale:
+Your analysis must gather evidence for the AXIOM 0-5 refinement-effort scale:
 
 {axiom_scale}
 
-Reasoning rules:
-- Focus on one new evidence point: requirement trace, visible-test trace, counterexample, static logic check, or challenge to an unsupported prior claim.
-- Each new reasoning note must add new evidence and must not restate the whole task, code, or earlier analysis.
-- If previous analysis notes conflict, challenge only the claim best contradicted by the task, code, or visible tests.
-- Do not decide the final AXIOM grade yet.
+Remember this is a intermediate turn. Earlier turns may have already analyzed the candidate code and marked serial number for each point, I insert them into your "previous output" as if it were you who thought them out. You should also start with a serial number succeeding previous serial number and followed by your analysis and everytime you output a serial number you should check through your previous output.
+
+If you don't see previous output, you're the first round, and you first output token must be "1. " (and must not be natural language such as "Okay")followed by your initial analysis, and if you have more analisys, use "2. ", "3. " etc.
+
+Don't repeat - each new reasoning note must not restate the whole task, code, or earlier analysis, don't ignore or abort previous analysis. Your analysis object is as follows:
 
 {instruction}
-
-{evidence_rules}
-
-{step_format_section}
 
 @@ Response
 {partial_solution}"""
@@ -108,7 +102,7 @@ Field rules:
 
 {evidence_rules}
 
-{final_consistency_rule}
+Attention, your output MUST follow the format as followed
 
 {final_format_section}
 
