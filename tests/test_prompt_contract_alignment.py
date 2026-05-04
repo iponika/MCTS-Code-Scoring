@@ -184,10 +184,12 @@ class BuildReviewPromptTest(unittest.TestCase):
         self.assertIn("This is the final turn of a multi-step code review.", prompt)
         self.assertIn("reconcile supported previous reasoning evidence", prompt)
         self.assertIn("You don't have to analyze code by yourself.", prompt)
+        self.assertIn("Do not continue the numbered analysis notes.", prompt)
+        self.assertIn("Start your very first output token with <review>", prompt)
         self.assertIn("static_logic_check: x + 1 is returned directly.", prompt)
         response_tail = prompt.split("@@ Response", 1)[1]
         self.assertNotIn("static_logic_check: x + 1 is returned directly.", response_tail)
-        self.assertIn(FINAL_REVIEW_PREFILL, prompt)
+        self.assertEqual(response_tail.strip(), "")
 
     def test_shared_builder_supports_freeform_final_review(self):
         prompt = build_review_prompt_from_sample(
@@ -209,6 +211,8 @@ class BuildReviewPromptTest(unittest.TestCase):
         self.assertNotIn("This is the final turn of a multi-step code review.", prompt)
         self.assertNotIn("reconcile supported previous reasoning evidence", prompt)
         self.assertNotIn("You don't have to analyze code by yourself.", prompt)
+        self.assertNotIn("Do not continue the numbered analysis notes.", prompt)
+        self.assertIn(FINAL_REVIEW_PREFILL, prompt)
 
     def test_apply_review_prompt_controls_adds_expected_thinking_suffix(self):
         raw_prompt = build_review_prompt_from_sample(

@@ -243,7 +243,9 @@ class ReviewPromptVisibilityTest(unittest.TestCase):
         self.assertNotIn('"verdict"', prompt)
         self.assertIn("static_logic_check: The function returns x + 1 directly.", prompt)
         self.assertIn("You don't have to analyze code by yourself.", prompt)
-        self.assertIn("@@ Response\n<review>\n{\"axiom_grade\": ", prompt)
+        self.assertIn("Do not continue the numbered analysis notes.", prompt)
+        self.assertIn("Start your very first output token with <review>", prompt)
+        self.assertEqual(prompt.split("@@ Response", 1)[1].strip(), "")
 
     def test_direct_bootstrap_stepwise_final_moves_prior_steps_into_instruction(self) -> None:
         config = OmegaConf.structured(BaseConfig)
@@ -265,10 +267,11 @@ class ReviewPromptVisibilityTest(unittest.TestCase):
         )
 
         self.assertIn("You don't have to analyze code by yourself.", prompt)
+        self.assertIn("Do not continue the numbered analysis notes.", prompt)
         self.assertIn("static_logic_check: The function returns x + 1 directly.", prompt)
         response_tail = prompt.split("@@ Response", 1)[1]
         self.assertNotIn(prior_step, response_tail)
-        self.assertIn('<review>\n{"axiom_grade": ', response_tail)
+        self.assertEqual(response_tail.strip(), "")
 
     def test_direct_bootstrap_stepwise_step_can_move_prior_steps_into_instruction(self) -> None:
         config = OmegaConf.structured(BaseConfig)
@@ -446,9 +449,12 @@ class ReviewPromptVisibilityTest(unittest.TestCase):
         self.assertIn("cannot silently contradict it", prompt)
         self.assertIn('"axiom_grade"', prompt)
         self.assertIn("You don't have to analyze code by yourself.", prompt)
+        self.assertIn("Do not continue the numbered analysis notes.", prompt)
+        self.assertIn("Start your very first output token with <review>", prompt)
         self.assertIn("static_logic_check: The function returns x + 1 directly.", prompt)
         response_tail = prompt.split("@@ Response", 1)[1]
         self.assertNotIn(prior_step.strip(), response_tail)
+        self.assertEqual(response_tail.strip(), "")
 
     def test_stepwise_eval_final_prompt_without_prior_steps_adds_no_prior_hint(self) -> None:
         sample = {
@@ -467,6 +473,7 @@ class ReviewPromptVisibilityTest(unittest.TestCase):
         self.assertNotIn("This is the final turn of a multi-step code review", prompt)
         self.assertNotIn("reconcile supported previous reasoning evidence", prompt)
         self.assertNotIn("You don't have to analyze code by yourself.", prompt)
+        self.assertNotIn("Do not continue the numbered analysis notes.", prompt)
 
     def test_review_training_prompt_matches_response_shape(self) -> None:
         instruction = "Scoring target: assess candidate code correctness.\n\nTask description:\nReturn x + 1."
