@@ -20,6 +20,7 @@ from magicoder.review_policy_value_inference import (
 from magicoder.review_value_guided_evaluator import VALUE_SCORE_KEYS
 try:
     from shared.prompt_contract import (
+        FINAL_REVIEW_PREFILL,
         build_review_prompt_from_sample,
         prompt_to_chat_messages,
     )
@@ -29,6 +30,7 @@ except ImportError:
     from pathlib import Path as _Path
     _sys.path.insert(0, str(_Path(__file__).resolve().parents[3]))
     from shared.prompt_contract import (
+        FINAL_REVIEW_PREFILL,
         build_review_prompt_from_sample,
         prompt_to_chat_messages,
     )
@@ -334,12 +336,41 @@ def _parse_review_json(review_text: str) -> dict[str, Any]:
 
 
 def parse_final_review(text: str) -> dict[str, Any]:
+    if "<review>" not in text and "</review>" in text:
+        stripped = str(text or "").strip()
+        review_text = stripped.split("</review>", 1)[0].strip()
+        if review_text.startswith("{"):
+            return _parse_review_json(review_text)
+        if re.match(r"^[0-5]\s*,", review_text):
+            return _parse_review_json('{"axiom_grade": ' + review_text)
+        return {"ok": False, "error": "missing_review_tags"}
     if "<review>" not in text or "</review>" not in text:
         return {"ok": False, "error": "missing_review_tags"}
     review_text = text.rsplit("<review>", 1)[1].split("</review>", 1)[0].strip()
     if "{" in review_text and "}" in review_text:
         review_text = review_text[review_text.find("{") : review_text.rfind("}") + 1]
     return _parse_review_json(review_text)
+
+
+def merge_final_review_continuation(continuation: str, *, anchored: bool) -> str:
+    text = str(continuation or "").strip()
+    if not anchored or not text or "<review>" in text:
+        return text
+    if text.startswith("{"):
+        return "<review>\n" + text
+    if re.match(r'^[0-5]\s*,', text):
+        return FINAL_REVIEW_PREFILL + text
+    if (
+        "</review>" in text
+        and (
+            re.match(r'^[0-5]\s*,', text)
+            or '"functional_correctness"' in text
+            or '"repair_effort"' in text
+            or '"evidence"' in text
+        )
+    ):
+        return FINAL_REVIEW_PREFILL + text
+    return text
 
 
 def lenient_axiom_grade(text: str) -> int | None:
@@ -617,7 +648,8 @@ def evaluate_dimension(
             partial_response += rethink_feedback(best, args.rethink_threshold, args.score_key)
         else:
             if force_final:
-                partial_response += best["continuation"].strip() + "\n"
+                final_continuation = merge_final_review_continuation(best["continuation"], anchored=True)
+                partial_response += final_continuation.strip() + "\n"
             else:
                 reasoning_note = (best.get("reasoning") or best.get("content") or best["continuation"]).strip()
                 partial_response += reasoning_note + "\n"
@@ -690,7 +722,8 @@ def evaluate_dimension(
             )
             retry_value_score = score_response(value_model, tokenizer, retry_prompt, continuation) if value_model is not None else neutral_value_score()
         retry_artifacts = extract_reasoning_artifacts(continuation)
-        partial_response += continuation.strip() + "\n"
+        merged_retry = merge_final_review_continuation(continuation, anchored=True)
+        partial_response += merged_retry.strip() + "\n"
         final_review_parse = parse_final_review(partial_response)
         final_retries.append(
             {
@@ -823,7 +856,7 @@ def main() -> None:
     parser.add_argument("--max_steps", type=int, default=3)
     parser.add_argument("--num_candidates", type=int, default=2)
     parser.add_argument("--max_new_tokens", type=int, default=256)
-    parser.add_argument("--final_max_new_tokens", type=int, default=768, help="Maximum new tokens for final review generation and retries.")
+    parser.add_argument("--final_max_new_tokens", type=int, default=1536, help="Maximum new tokens for final review generation and retries.")
     parser.add_argument("--temperature", type=float, default=0.7)
     parser.add_argument("--top_p", type=float, default=0.95)
     parser.add_argument("--score_key", choices=VALUE_SCORE_KEYS, default="last_value")

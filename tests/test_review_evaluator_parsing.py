@@ -1,6 +1,7 @@
 import unittest
 
-from magicoder.review_evaluator import extract_reasoning_artifacts, parse_final_review
+from magicoder.review_evaluator import extract_reasoning_artifacts, merge_final_review_continuation, parse_final_review
+from shared.prompt_contract import FINAL_REVIEW_PREFILL
 
 
 class ReviewEvaluatorParsingTest(unittest.TestCase):
@@ -53,6 +54,24 @@ class ReviewEvaluatorParsingTest(unittest.TestCase):
         self.assertEqual(parsed["parsed"]["axiom_grade"], 4)
         self.assertEqual(parsed["parsed"]["score"], 80.0)
         self.assertEqual(parsed.get("recovery_method"), "grade_fallback")
+
+    def test_merge_final_review_continuation_restores_prefill_for_closing_only_output(self) -> None:
+        continuation = '2, "functional_correctness": false, "repair_effort": "minor_functional", "evidence": ["x"]}\n</review>'
+
+        merged = merge_final_review_continuation(continuation, anchored=True)
+
+        self.assertTrue(merged.startswith(FINAL_REVIEW_PREFILL))
+        parsed = parse_final_review(merged)
+        self.assertTrue(parsed["ok"])
+        self.assertEqual(parsed["parsed"]["axiom_grade"], 2)
+
+    def test_parse_final_review_recovers_missing_open_tag_when_json_and_close_tag_exist(self) -> None:
+        text = '2, "functional_correctness": false, "repair_effort": "minor_functional", "evidence": ["x"]}\n</review>'
+
+        parsed = parse_final_review(text)
+
+        self.assertTrue(parsed["ok"])
+        self.assertEqual(parsed["parsed"]["axiom_grade"], 2)
 
 
 if __name__ == "__main__":
