@@ -252,3 +252,10 @@ This file records Codex-made project changes so work can be resumed safely acros
 - Added `_try_extract_review_json()` in `model_training/src/magicoder/preprocess_review_mcts_data.py` to salvage review JSON embedded in reasoning-only segments (e.g. inside markdown code fences or bare JSON). Rescued 22 direct-review and 68 stepwise-1step training samples that previously lost their structured review.
 - Added an `lm_loss_weight` guard in `attach_qwen_messages()`: training items whose final assistant content lacks a `<review>` block are forced to `lm_loss_weight=0.0`, preventing the model from learning reasoning-only output without structured scoring. Neutralized 170 harmful direct-review training samples (previously 69% of the dataset with `lm_loss_weight > 0`).
 - Changed `generate_review_only` in `data_collection/direct_bootstrap_review.py` to default `freeform_final_review=False`, so `FINAL_REVIEW_PREFILL` anchors the model output format. Added `--freeform_final_review` CLI flag to opt back into the old relaxed behavior. Non-freeform outputs now prepend `FINAL_REVIEW_PREFILL` before normalization, matching the `generate_stepwise` final-step pattern.
+
+## 2026-05-04
+
+- Fixed a chat-template evaluation regression introduced by the recent prompt refactor: `model_training/src/magicoder/review_evaluator.py` now builds chat-template prompts from the same `prompt_for_dimension()` raw-text contract used elsewhere, so `step_context_mode=instruction_context` and `step_context_mode=assistant_prefix` keep their intended semantics instead of silently collapsing to assistant-history continuation.
+- Added prompt-visibility regression tests for both chat-template step-context modes in `tests/test_review_prompt_visibility.py`.
+- Reverted the accidental `direct_review` default contract drift from the 2026-05-03 change: `data_collection/direct_bootstrap_review.py` again defaults to `freeform_final_review=True`, while `--no-freeform_final_review` explicitly enables the anchored `FINAL_REVIEW_PREFILL` path.
+- Added focused unit coverage in `tests/test_direct_bootstrap_review.py` to lock both the freeform default and the explicit anchored override.
