@@ -12,11 +12,6 @@ from mcts_math.axiom_scoring import axiom_functionally_correct, axiom_scalar_sco
 from mcts_math.config import BaseConfig
 from mcts_math.llms.local_llms import maybe_apply_chat_template
 from mcts_math.llms.local_llm_engine import llm_engine
-from mcts_math.prompts.prompt_sft import (
-    FINAL_REVIEW_PREFILL,
-    apply_review_prompt_controls,
-    build_review_prompt_from_sample,
-)
 from mcts_math.review_utils import (
     compact_native_think_body,
     compute_review_reward,
@@ -25,6 +20,22 @@ from mcts_math.review_utils import (
     parse_review_payload,
 )
 from solver_review import build_record
+try:
+    from shared.prompt_contract import (
+        FINAL_REVIEW_PREFILL,
+        apply_review_prompt_controls,
+        build_review_prompt_from_sample,
+    )
+except ImportError:
+    import sys as _sys
+    from pathlib import Path as _Path
+
+    _sys.path.insert(0, str(_Path(__file__).resolve().parents[1]))
+    from shared.prompt_contract import (
+        FINAL_REVIEW_PREFILL,
+        apply_review_prompt_controls,
+        build_review_prompt_from_sample,
+    )
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Direct independent bootstrap exporter for AXIOM code scoring.")

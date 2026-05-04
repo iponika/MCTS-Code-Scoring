@@ -11,16 +11,26 @@ from tqdm import tqdm
 from mcts_math.axiom_scoring import axiom_functionally_correct, axiom_scalar_score, parse_axiom_grade
 from mcts_math.config import BaseConfig
 from mcts_math.llms.local_llm_engine import llm_engine
-from mcts_math.prompts.prompt_sft import (
-    apply_review_prompt_controls,
-    build_review_prompt_from_sample,
-)
 from mcts_math.review_utils import (
     compute_review_reward,
     extract_reasoning_artifacts,
     load_codecriticbench_dataset,
     parse_review_payload,
 )
+try:
+    from shared.prompt_contract import (
+        apply_review_prompt_controls,
+        build_review_prompt_from_sample,
+    )
+except ImportError:
+    import sys as _sys
+    from pathlib import Path as _Path
+
+    _sys.path.insert(0, str(_Path(__file__).resolve().parents[1]))
+    from shared.prompt_contract import (
+        apply_review_prompt_controls,
+        build_review_prompt_from_sample,
+    )
 
 
 def parse_args() -> argparse.Namespace:

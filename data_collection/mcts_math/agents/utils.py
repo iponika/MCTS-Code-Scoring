@@ -13,12 +13,22 @@ from typing import List, Dict, Any, Optional, Type, Tuple, Union
 
 
 from mcts_math.prompts.prompt_react import PROMPT_REACT
-from mcts_math.prompts.prompt_sft import (
-    apply_review_prompt_controls,
-    build_review_prompt_from_sample,
-)
 from mcts_math.tools.python_tool import PythonInterpreter
 from mcts_math.review_utils import compact_native_think_body
+try:
+    from shared.prompt_contract import (
+        apply_review_prompt_controls,
+        build_review_prompt_from_sample,
+    )
+except ImportError:
+    import sys as _sys
+    from pathlib import Path as _Path
+
+    _sys.path.insert(0, str(_Path(__file__).resolve().parents[3]))
+    from shared.prompt_contract import (
+        apply_review_prompt_controls,
+        build_review_prompt_from_sample,
+    )
 
 from mcts_math.constants import *
 from subprocess import TimeoutExpired,Popen,PIPE

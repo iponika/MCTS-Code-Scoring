@@ -501,8 +501,8 @@ class ReviewPromptVisibilityTest(unittest.TestCase):
         ]:
             self.assertFalse(hasattr(prompt_template, name), name)
 
-    def test_data_collection_review_prompt_module_does_not_export_codegen_prompts(self) -> None:
-        import mcts_math.prompts.prompt_sft as prompt_sft
+    def test_shared_prompt_contract_does_not_export_codegen_prompts(self) -> None:
+        import shared.prompt_contract as prompt_contract
 
         for name in [
             "DEEPSEEK_PROMPT",
@@ -510,7 +510,7 @@ class ReviewPromptVisibilityTest(unittest.TestCase):
             "QWEN_DIRECT_PROMPT",
             "QWEN_STEP_PROMPT",
         ]:
-            self.assertFalse(hasattr(prompt_sft, name), name)
+            self.assertFalse(hasattr(prompt_contract, name), name)
 
 
 if __name__ == "__main__":

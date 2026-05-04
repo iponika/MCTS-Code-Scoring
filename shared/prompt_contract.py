@@ -2,10 +2,9 @@
 
 Every stage of the pipeline (data_collection, model_training preprocessing,
 and evaluation) MUST import prompt constants and builder functions from this
-module to guarantee format alignment.  The wrapper files
-``data_collection/mcts_math/prompts/prompt_sft.py`` and
-``model_training/src/magicoder/prompt_template.py`` re-export symbols from
-here so that existing import paths continue to work.
+module to guarantee format alignment. The remaining compatibility wrapper
+``model_training/src/magicoder/prompt_template.py`` re-exports symbols from
+here so that legacy training-side import paths continue to work.
 """
 
 from __future__ import annotations
