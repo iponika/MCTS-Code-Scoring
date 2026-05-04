@@ -443,6 +443,8 @@ def build_review_prompt_from_sample(
                 "Synthesize all available earlier analysis with the task, code, and visible tests, then assign one AXIOM grade."
                 f"\n\n{REVIEW_FINAL_CONSISTENCY_RULE}"
                 "\n\nYou don't have to analyze code by yourself."
+                "\n\nDo not continue the numbered analysis notes. "
+                "Start your very first output token with <review> and immediately write the final JSON object."
                 f"\n\nEarlier analysis:\n{completed_steps}"
             )
         if parse_error:
@@ -451,9 +453,12 @@ def build_review_prompt_from_sample(
                 f"{parse_error.get('error')}: {parse_error.get('message', '')}. "
                 "Correct the JSON syntax in the next review block."
             )
+        final_response_prefix = ""
+        if not completed_steps and not freeform_final_review:
+            final_response_prefix = FINAL_REVIEW_PREFILL
         prompt = REVIEW_FINAL_PROMPT.format(
             instruction=instruction,
-            partial_solution="" if freeform_final_review else FINAL_REVIEW_PREFILL,
+            partial_solution=final_response_prefix,
             axiom_scale=AXIOM_REFINEMENT_SCALE,
             evidence_rules=REVIEW_EVIDENCE_RULES,
             final_consistency_rule=REVIEW_FINAL_CONSISTENCY_RULE,
