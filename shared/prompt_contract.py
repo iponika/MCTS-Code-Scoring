@@ -122,7 +122,7 @@ QWEN_REVIEW_FINAL_PROMPT = REVIEW_FINAL_PROMPT
 
 
 # ---------------------------------------------------------------------------
-# Training-side compatibility templates
+# Training-side compatibility templates. 新代码只能用上面的 Unified，compatibility 仅供旧训练入口使用
 # ---------------------------------------------------------------------------
 
 TRAINING_REVIEW_STEP_PROMPT = """You are a code scoring model for functional correctness.
