@@ -135,6 +135,7 @@ class BuildReviewPromptTest(unittest.TestCase):
         instruction = build_review_instruction_from_sample(SAMPLE, "Correctness Verification")
         prompt = build_review_prompt(instruction, force_final=False)
         self.assertIn("@@ Response", prompt)
+        self.assertIn("@@ Response\n1. ", prompt)
         self.assertNotIn(FINAL_REVIEW_PREFILL, prompt)
 
     def test_final_prompt_has_prefill(self):
@@ -180,6 +181,8 @@ class BuildReviewPromptTest(unittest.TestCase):
             force_final=True,
             freeform_final_review=False,
         )
+        self.assertIn("This is the final turn of a multi-step code review.", prompt)
+        self.assertIn("reconcile supported previous reasoning evidence", prompt)
         self.assertIn("You don't have to analyze code by yourself.", prompt)
         self.assertIn("static_logic_check: x + 1 is returned directly.", prompt)
         response_tail = prompt.split("@@ Response", 1)[1]
@@ -203,6 +206,8 @@ class BuildReviewPromptTest(unittest.TestCase):
             force_final=True,
             freeform_final_review=False,
         )
+        self.assertNotIn("This is the final turn of a multi-step code review.", prompt)
+        self.assertNotIn("reconcile supported previous reasoning evidence", prompt)
         self.assertNotIn("You don't have to analyze code by yourself.", prompt)
 
     def test_apply_review_prompt_controls_adds_expected_thinking_suffix(self):
