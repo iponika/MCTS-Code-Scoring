@@ -142,6 +142,26 @@ def normalize_review_text(text: str) -> str:
     return text
 
 
+def merge_final_review_text(text: str, *, anchored: bool) -> str:
+    merged = str(text or "").strip()
+    if not anchored or not merged or "<review>" in merged:
+        return merged
+    if merged.startswith("{"):
+        return "<review>\n" + merged
+    if merged[:1].isdigit() and "," in merged[:8]:
+        return FINAL_REVIEW_PREFILL + merged
+    if (
+        "</review>" in merged
+        and (
+            '"functional_correctness"' in merged
+            or '"repair_effort"' in merged
+            or '"evidence"' in merged
+        )
+    ):
+        return FINAL_REVIEW_PREFILL + merged
+    return merged
+
+
 def normalize_step_text(text: str) -> str:
     artifacts = extract_reasoning_artifacts(text)
     cleaned = (artifacts["reasoning"] or artifacts["content"] or str(text or "")).strip()
@@ -305,7 +325,7 @@ def generate_review_only(
     for item, output in zip(trajectories, outputs):
         text = output.outputs[0].text if output.outputs else ""
         if not freeform:
-            text = normalize_review_text(FINAL_REVIEW_PREFILL + text)
+            text = normalize_review_text(merge_final_review_text(text, anchored=True))
         sample = item["sample"]
         candidate = evaluated_candidate(item["repeat_index"], text, sample, args.dimension)
         by_sample_index[sample_position[id(sample)]].append(candidate)
@@ -371,7 +391,7 @@ def generate_stepwise(
     sample_position = {id(sample): index for index, sample in enumerate(sample_batch)}
     for item, output in zip(trajectories, outputs):
         text = output.outputs[0].text if output.outputs else ""
-        segments = [*item["segments"], normalize_review_text(FINAL_REVIEW_PREFILL + text)]
+        segments = [*item["segments"], normalize_review_text(merge_final_review_text(text, anchored=True))]
         sample = item["sample"]
         candidate_index = item["repeat_index"]
         candidate = evaluated_stepwise_candidate(candidate_index, segments, sample, args.dimension)

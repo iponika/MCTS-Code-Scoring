@@ -144,6 +144,20 @@ class DirectBootstrapReviewTest(unittest.TestCase):
         normalized = direct_bootstrap_review.normalize_review_text(text)
         self.assertEqual(normalized, '<review>\n{"axiom_grade": 4, "score": 80}\n</review>')
 
+    def test_merge_final_review_text_avoids_double_axiom_prefix_for_full_json_object(self) -> None:
+        text = '{"axiom_grade": 0, "functional_correctness": false}\n</review>'
+
+        merged = direct_bootstrap_review.merge_final_review_text(text, anchored=True)
+
+        self.assertEqual(merged, '<review>\n{"axiom_grade": 0, "functional_correctness": false}\n</review>')
+
+    def test_merge_final_review_text_restores_axiom_prefix_for_closing_only_suffix(self) -> None:
+        text = '2, "functional_correctness": false, "repair_effort": "minor_functional"}\n</review>'
+
+        merged = direct_bootstrap_review.merge_final_review_text(text, anchored=True)
+
+        self.assertTrue(merged.startswith(direct_bootstrap_review.FINAL_REVIEW_PREFILL))
+
 
 if __name__ == "__main__":
     unittest.main()
