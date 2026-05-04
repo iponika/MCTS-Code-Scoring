@@ -444,6 +444,7 @@ class ReviewPromptVisibilityTest(unittest.TestCase):
 
         self.assertIn("This is the final scoring turn", prompt)
         self.assertIn("Output exactly one <review> JSON block", prompt)
+        self.assertIn("This is the final turn of a multi-step code review", prompt)
         self.assertIn("reconcile supported previous reasoning evidence", prompt)
         self.assertIn("cannot silently contradict it", prompt)
         self.assertIn('"axiom_grade"', prompt)
@@ -466,6 +467,8 @@ class ReviewPromptVisibilityTest(unittest.TestCase):
             force_final=True,
         )
 
+        self.assertNotIn("This is the final turn of a multi-step code review", prompt)
+        self.assertNotIn("reconcile supported previous reasoning evidence", prompt)
         self.assertNotIn("You don't have to analyze code by yourself.", prompt)
 
     def test_review_training_prompt_matches_response_shape(self) -> None:

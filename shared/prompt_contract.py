@@ -81,17 +81,11 @@ REVIEW_FINAL_PROMPT = """You are a code scoring model for functional correctness
 @@ Instruction
 You evaluate code based on functional correctness.
 
-This is the final turn of a multi-step code review. Synthesize all available earlier analysis with the task, code, and visible tests, then assign one AXIOM grade.
-
 You must score according to the AXIOM 0-5 refinement-effort scale:
 
 {axiom_scale}
 
-Output must be exactly one JSON object wrapped in <review> tags. Do not output natural-language text outside the tags, markdown fences, <think> blocks, <step> blocks, or code fixes. Otherwise the result cannot be parsed.
-
 {instruction}
-
-{final_consistency_rule}
 
 Attention, your output MUST be in the following format:
 
@@ -105,6 +99,8 @@ Field rules:
 - summary should be one short sentence explaining the final judgment.
 - evidence should contain 1-2 short evidence strings grounded in the task, candidate code, visible tests, or previous analysis notes.
 - If previous analysis notes conflict, follow the claim best supported by the task, code, and visible tests.
+
+Output must be exactly one JSON object wrapped in <review> tags. Do not output natural-language text outside the tags, markdown fences, <think> blocks, <step> blocks, or code fixes. Otherwise the result cannot be parsed.
 
 @@ Response
 {partial_solution}"""
@@ -369,6 +365,8 @@ def build_review_prompt(
             final_consistency_rule=REVIEW_FINAL_CONSISTENCY_RULE,
             final_format_section=REVIEW_FINAL_FORMAT_SECTION,
         )
+    if not partial:
+        partial = "1. "
     return REVIEW_STEP_PROMPT.format(
         instruction=instruction,
         partial_solution=partial,
@@ -383,7 +381,7 @@ def normalize_partial_solution(partial_solution: str = "") -> tuple[str, str]:
     completed_steps = str(partial_solution or "").strip()
     if completed_steps == "None":
         completed_steps = ""
-    response_prefix = completed_steps.rstrip() + "\n" if completed_steps else ""
+    response_prefix = completed_steps.rstrip() + "\n" if completed_steps else "1. "
     return completed_steps, response_prefix
 
 
@@ -441,6 +439,9 @@ def build_review_prompt_from_sample(
         )
         if completed_steps:
             instruction += (
+                "\n\nThis is the final turn of a multi-step code review. "
+                "Synthesize all available earlier analysis with the task, code, and visible tests, then assign one AXIOM grade."
+                f"\n\n{REVIEW_FINAL_CONSISTENCY_RULE}"
                 "\n\nYou don't have to analyze code by yourself."
                 f"\n\nEarlier analysis:\n{completed_steps}"
             )
