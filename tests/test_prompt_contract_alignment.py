@@ -52,20 +52,7 @@ class SharedConstantsTest(unittest.TestCase):
 
 
 class ReExportAlignmentTest(unittest.TestCase):
-    """Wrapper modules re-export the shared canonical constants."""
-
-    def test_prompt_sft_reexports_axiom_scale(self):
-        from mcts_math.prompts.prompt_sft import AXIOM_REFINEMENT_SCALE as sft_scale
-        self.assertEqual(sft_scale, AXIOM_REFINEMENT_SCALE)
-
-    def test_prompt_sft_reexports_evidence_rules(self):
-        from mcts_math.prompts.prompt_sft import REVIEW_EVIDENCE_RULES as sft_rules
-        self.assertEqual(sft_rules, REVIEW_EVIDENCE_RULES)
-
-    def test_prompt_sft_keeps_legacy_raw_field_template(self):
-        from mcts_math.prompts.prompt_sft import QWEN_REVIEW_STEP_PROMPT
-        self.assertIn("{question}", QWEN_REVIEW_STEP_PROMPT)
-        self.assertIn("{candidate_code}", QWEN_REVIEW_STEP_PROMPT)
+    """Remaining wrapper modules re-export the shared canonical constants."""
 
     def test_prompt_template_reexports_axiom_scale(self):
         try:
@@ -81,6 +68,13 @@ class ReExportAlignmentTest(unittest.TestCase):
             self.skipTest("magicoder deps not installed")
         self.assertIn("{response}", QWEN_REVIEW_STEP_PROMPT)
         self.assertIn("{instruction}", QWEN_REVIEW_STEP_PROMPT)
+
+    def test_prompt_template_is_legacy_wrapper_module(self):
+        try:
+            from magicoder import prompt_template
+        except ImportError:
+            self.skipTest("magicoder deps not installed")
+        self.assertTrue(hasattr(prompt_template, "build_review_prompt_from_sample"))
 
 
 class BuildInstructionTest(unittest.TestCase):
