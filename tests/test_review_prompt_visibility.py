@@ -68,9 +68,8 @@ class ReviewPromptVisibilityTest(unittest.TestCase):
         )
 
         self.assertIn("This is an intermediate turn of a multi-step code review", prompt)
-        self.assertIn("Generate one concise native reasoning note", prompt)
-        self.assertIn("Intermediate reasoning format", prompt)
-        self.assertIn("Do not output XML tags", prompt)
+        self.assertIn('first output token must be "1. "', prompt)
+        self.assertIn("Your analysis object is as follows:", prompt)
         self.assertNotIn("<step>", prompt)
         self.assertNotIn('"step_type"', prompt)
         self.assertNotIn("as long as needed", prompt)
@@ -80,7 +79,6 @@ class ReviewPromptVisibilityTest(unittest.TestCase):
         self.assertNotIn("{mode_instruction}", prompt)
         self.assertNotIn("2. Use completed previous steps", prompt)
         self.assertIn("minor tweaking", prompt)
-        self.assertIn("Examples are illustrative, not exhaustive criteria", prompt)
         self.assertIn("for example, adding a boundary check", prompt)
         self.assertIn("for example, rewriting an entire code block", prompt)
         self.assertNotIn("exceptionally intelligent", prompt)
@@ -295,9 +293,8 @@ class ReviewPromptVisibilityTest(unittest.TestCase):
         self.assertIn("static_logic_check: The function returns x + 1 directly.", prompt)
         response_tail = prompt.split("@@ Response", 1)[1]
         self.assertNotIn(prior_step, response_tail)
-        self.assertIn("Generate one concise native reasoning note", prompt)
-        self.assertIn("final <review> block", prompt)
-        self.assertIn("add one new evidence item", prompt)
+        self.assertIn('first output token must be "1. "', prompt)
+        self.assertIn("Your analysis object is as follows:", prompt)
 
     def test_thinking_configs_stop_at_native_think_close(self) -> None:
         for path in [
@@ -342,10 +339,10 @@ class ReviewPromptVisibilityTest(unittest.TestCase):
             force_final=False,
         )
 
-        self.assertIn("previous analysis notes", prompt)
+        self.assertIn("prior thinking history", prompt)
         self.assertIn("This is an intermediate turn of a multi-step code review", prompt)
-        self.assertIn("Do not output XML tags", prompt)
-        self.assertIn("final <review> block", prompt)
+        self.assertIn("@@ Response\nstatic_logic_check: The function returns x + 1 directly.\n", prompt)
+        self.assertIn('first output token must be "1. "', prompt)
         self.assertNotIn("under 40 words", prompt)
         self.assertNotIn("unless the review is already ready", prompt)
         self.assertNotIn('"axiom_grade"', prompt)
@@ -368,12 +365,12 @@ class ReviewPromptVisibilityTest(unittest.TestCase):
             step_context_mode="instruction_context",
         )
 
-        self.assertIn("You don't have to analyze code by yourself.", prompt)
+        self.assertIn("Previous analysis notes:", prompt)
         self.assertIn("static_logic_check: The function returns x + 1 directly.", prompt)
         response_tail = prompt.split("@@ Response", 1)[1]
         self.assertNotIn(prior_step.strip(), response_tail)
         self.assertNotIn("Continue from the last completed step", prompt)
-        self.assertIn("Each new reasoning note must add new evidence", prompt)
+        self.assertIn('first output token must be "1. "', prompt)
 
     def test_chat_eval_prompt_respects_instruction_context(self) -> None:
         sample = {
@@ -494,7 +491,6 @@ class ReviewPromptVisibilityTest(unittest.TestCase):
         self.assertIn("reconcile supported reasoning evidence", step_prompt)
         self.assertIn("minor tweaking", final_prompt)
         self.assertIn("major refactoring", final_prompt)
-        self.assertIn("Examples are illustrative, not exhaustive criteria", final_prompt)
         self.assertIn("for example, an off-by-one error", final_prompt)
         self.assertIn("for example, replacing the required algorithm", final_prompt)
 
