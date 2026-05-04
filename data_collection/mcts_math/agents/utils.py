@@ -14,13 +14,8 @@ from typing import List, Dict, Any, Optional, Type, Tuple, Union
 
 from mcts_math.prompts.prompt_react import PROMPT_REACT
 from mcts_math.prompts.prompt_sft import (
-    REVIEW_FINAL_FORMAT_SECTION,
-    REVIEW_STEP_FORMAT_SECTION,
-    AXIOM_REFINEMENT_SCALE,
-    REVIEW_EVIDENCE_RULES,
-    REVIEW_FINAL_CONSISTENCY_RULE,
-    QWEN_REVIEW_FINAL_PROMPT,
-    QWEN_REVIEW_STEP_PROMPT,
+    apply_review_prompt_controls,
+    build_review_prompt_from_sample,
 )
 from mcts_math.tools.python_tool import PythonInterpreter
 from mcts_math.review_utils import compact_native_think_body
@@ -134,35 +129,28 @@ def review_prompt_wrap(
     is_value_only: bool = False,
 ) -> str:
     del is_value_only
-    tests = review_context.get("tests_for_prompt", "No tests are available.")
     force_final = review_context.get("force_final_review", False)
-    thinking_mode = str(getattr(config, "qwen_thinking_mode", "") or "").strip().lower()
-    thinking_suffix = ""
-    if force_final and getattr(config, "review_native_thinking_steps", False):
-        thinking_suffix = "\n\n/no_think"
-    elif thinking_mode in {"think", "/think"}:
-        thinking_suffix = "\n\n/think"
-    elif thinking_mode in {"no_think", "no-think", "/no_think"}:
-        thinking_suffix = "\n\n/no_think"
-    template = QWEN_REVIEW_FINAL_PROMPT if force_final else QWEN_REVIEW_STEP_PROMPT
-    partial_response = partial_solution.strip() if partial_solution else ""
-    if partial_response == "None":
-        partial_response = ""
-    if partial_response:
-        partial_response = partial_response.rstrip() + "\n"
-    prompt = template.format(
-        question=question,
-        candidate_code=review_context["candidate_code"],
-        code_language=review_context.get("code_language", "python"),
-        tests=tests,
-        partial_solution=partial_response,
-        axiom_scale=AXIOM_REFINEMENT_SCALE,
-        evidence_rules=REVIEW_EVIDENCE_RULES,
-        final_consistency_rule=REVIEW_FINAL_CONSISTENCY_RULE,
-        step_format_section=REVIEW_STEP_FORMAT_SECTION,
-        final_format_section=REVIEW_FINAL_FORMAT_SECTION,
+    sample = {
+        "question": question,
+        "candidate_code": review_context["candidate_code"],
+        "code_language": review_context.get("code_language", "python"),
+        "tests_for_prompt": review_context.get("tests_for_prompt", "No tests are available."),
+    }
+    prompt = build_review_prompt_from_sample(
+        sample,
+        partial_solution=partial_solution,
+        force_final=force_final,
+        step_context_mode="assistant_prefix",
+        show_tests_in_prompt=bool(review_context.get("show_tests_in_prompt", False)),
+        freeform_final_review=False,
     )
-    return prompt + thinking_suffix
+    return apply_review_prompt_controls(
+        prompt,
+        force_final=force_final,
+        freeform_final_review=False,
+        thinking_mode=getattr(config, "qwen_thinking_mode", ""),
+        review_native_thinking_steps=bool(getattr(config, "review_native_thinking_steps", False)),
+    )
 
 
 def _strip_outer_step_block(text: str) -> str:

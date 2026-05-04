@@ -16,6 +16,8 @@ from shared.prompt_contract import (
     build_review_instruction_from_sample,
     build_review_user_content,
     build_review_prompt,
+    build_review_prompt_from_sample,
+    apply_review_prompt_controls,
     prompt_to_chat_messages,
 )
 
@@ -153,6 +155,71 @@ class BuildReviewPromptTest(unittest.TestCase):
         prompt = build_review_prompt(instruction, partial_solution=partial, force_final=True)
         self.assertIn(partial, prompt)
         self.assertIn(FINAL_REVIEW_PREFILL, prompt)
+
+    def test_shared_builder_moves_prior_notes_into_instruction_context(self):
+        prompt = build_review_prompt_from_sample(
+            SAMPLE,
+            partial_solution="static_logic_check: x + 1 is returned directly.",
+            force_final=False,
+            step_context_mode="instruction_context",
+        )
+        self.assertIn("Previous analysis notes:", prompt)
+        self.assertIn("static_logic_check: x + 1 is returned directly.", prompt)
+        response_tail = prompt.split("@@ Response", 1)[1]
+        self.assertNotIn("static_logic_check: x + 1 is returned directly.", response_tail)
+
+    def test_shared_builder_can_keep_prior_notes_in_assistant_prefix_mode(self):
+        prompt = build_review_prompt_from_sample(
+            SAMPLE,
+            partial_solution="static_logic_check: x + 1 is returned directly.",
+            force_final=False,
+            step_context_mode="assistant_prefix",
+        )
+        self.assertIn("@@ Response\nstatic_logic_check: x + 1 is returned directly.\n", prompt)
+
+    def test_shared_builder_supports_anchored_final_review(self):
+        prompt = build_review_prompt_from_sample(
+            SAMPLE,
+            partial_solution="static_logic_check: x + 1 is returned directly.",
+            force_final=True,
+            freeform_final_review=False,
+        )
+        self.assertIn(FINAL_REVIEW_PREFILL, prompt)
+
+    def test_shared_builder_supports_freeform_final_review(self):
+        prompt = build_review_prompt_from_sample(
+            SAMPLE,
+            partial_solution="static_logic_check: x + 1 is returned directly.",
+            force_final=True,
+            freeform_final_review=True,
+        )
+        self.assertNotIn(FINAL_REVIEW_PREFILL, prompt)
+        self.assertIn("You may reason before the final labeled answer", prompt)
+
+    def test_apply_review_prompt_controls_adds_expected_thinking_suffix(self):
+        raw_prompt = build_review_prompt_from_sample(
+            SAMPLE,
+            partial_solution="",
+            force_final=True,
+            freeform_final_review=False,
+        )
+        with_no_think = apply_review_prompt_controls(
+            raw_prompt,
+            force_final=True,
+            freeform_final_review=False,
+            thinking_mode="",
+            review_native_thinking_steps=True,
+        )
+        self.assertTrue(with_no_think.endswith("/no_think"))
+
+        with_think = apply_review_prompt_controls(
+            raw_prompt,
+            force_final=False,
+            freeform_final_review=False,
+            thinking_mode="think",
+            review_native_thinking_steps=False,
+        )
+        self.assertTrue(with_think.endswith("/think"))
 
 
 class PromptToChatMessagesTest(unittest.TestCase):
