@@ -456,13 +456,23 @@ main() {
   run_parallel_training_round "static" "${STATIC_TRAIN}" "${STATIC_MODEL}" "direct_review" "${DIRECT_REVIEW_TRAIN}" "${DIRECT_REVIEW_MODEL}"
 
   step_array=(${step_counts})
-  if [[ "${#step_array[@]}" -ge 2 ]]; then
-    run_parallel_training_round \
-      "$(step_tag "${step_array[0]}")" "$(step_train_path "${step_array[0]}")" "$(step_model_path "${step_array[0]}")" \
-      "$(step_tag "${step_array[1]}")" "$(step_train_path "${step_array[1]}")" "$(step_model_path "${step_array[1]}")"
-  elif [[ "${#step_array[@]}" -eq 1 ]]; then
-    CURRENT_STAGE="train_$(step_tag "${step_array[0]}")"
-    train_one "$(step_tag "${step_array[0]}")" "$(step_train_path "${step_array[0]}")" "$(step_model_path "${step_array[0]}")" 0
+  if [[ "${#step_array[@]}" -gt 0 ]]; then
+    idx=0
+    while [[ "${idx}" -lt "${#step_array[@]}" ]]; do
+      left_step="${step_array[${idx}]}"
+      right_idx=$((idx + 1))
+      if [[ "${right_idx}" -lt "${#step_array[@]}" ]]; then
+        right_step="${step_array[${right_idx}]}"
+        run_parallel_training_round \
+          "$(step_tag "${left_step}")" "$(step_train_path "${left_step}")" "$(step_model_path "${left_step}")" \
+          "$(step_tag "${right_step}")" "$(step_train_path "${right_step}")" "$(step_model_path "${right_step}")"
+        idx=$((idx + 2))
+      else
+        CURRENT_STAGE="train_$(step_tag "${left_step}")"
+        train_one "$(step_tag "${left_step}")" "$(step_train_path "${left_step}")" "$(step_model_path "${left_step}")" 0
+        idx=$((idx + 1))
+      fi
+    done
   fi
 
   if [[ "${STOP_AFTER_TRAIN:-0}" == "1" ]]; then
