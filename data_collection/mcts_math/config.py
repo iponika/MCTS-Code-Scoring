@@ -132,6 +132,15 @@ class BaseConfig:
     enforce_eager: bool = field(
         default=False, metadata={"help": "disable CUDA graph capture in vllm"}
     )
+    disable_custom_all_reduce: bool = field(
+        default=False, metadata={"help": "disable vLLM custom all-reduce kernels and fall back to NCCL collectives"}
+    )
+    max_problem_chars: int = field(
+        default=3500, metadata={"help": "maximum problem characters included in review prompts; 0 keeps full text"}
+    )
+    max_code_chars: int = field(
+        default=3500, metadata={"help": "maximum candidate-code characters included in review prompts; 0 keeps full text"}
+    )
     n_generate_sample: int = field(
         default=1, metadata={"help": "how many samples generated for each step. B2 in paper."}
     )

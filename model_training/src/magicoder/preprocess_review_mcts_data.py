@@ -159,21 +159,30 @@ def _try_extract_review_json(text: str) -> str | None:
             inner = inner.strip()
             if "{" in inner and "}" in inner:
                 candidate = inner[inner.find("{"):inner.rfind("}") + 1]
-                try:
-                    parsed = json.loads(candidate)
-                    if isinstance(parsed, dict) and "axiom_grade" in parsed:
-                        return f'<review>\n{json.dumps(parsed, ensure_ascii=False)}\n</review>'
-                except (json.JSONDecodeError, ValueError):
-                    pass
+                extracted = _canonical_review_block(candidate)
+                if extracted is not None:
+                    return extracted
     # Fallback: find outermost { … } containing axiom_grade
     if "{" in payload and "}" in payload:
         candidate = payload[payload.find("{"):payload.rfind("}") + 1]
+        extracted = _canonical_review_block(candidate)
+        if extracted is not None:
+            return extracted
+    return None
+
+
+def _canonical_review_block(payload: str) -> str | None:
+    candidate = str(payload or "").strip()
+    candidates = [candidate]
+    if candidate.startswith("{") and not candidate.endswith("}"):
+        candidates.append(candidate + "}")
+    for item in candidates:
         try:
-            parsed = json.loads(candidate)
-            if isinstance(parsed, dict) and "axiom_grade" in parsed:
-                return f'<review>\n{json.dumps(parsed, ensure_ascii=False)}\n</review>'
+            parsed = json.loads(item)
         except (json.JSONDecodeError, ValueError):
-            pass
+            continue
+        if isinstance(parsed, dict) and "axiom_grade" in parsed:
+            return f'<review>\n{json.dumps(parsed, ensure_ascii=False)}\n</review>'
     return None
 
 
@@ -377,10 +386,13 @@ def build_verifier_correction_instruction(
     dimension: str,
     terminal_text: str,
     messages: list[str],
+    *,
+    max_problem_chars: int = 3500,
+    max_code_chars: int = 3500,
 ) -> str:
     feedback = "\n".join(f"- {message}" for message in messages)
     return (
-        build_instruction(record, dimension)
+        build_instruction(record, dimension, max_problem_chars=max_problem_chars, max_code_chars=max_code_chars)
         + "\n\nA previous review for this same sample was rejected by deterministic verifier checks.\n"
         "Use the verifier feedback to repair the reasoning. Do not repeat unsupported evidence; "
         "if the failed claim was central, re-evaluate the AXIOM grade from the task, code, and verified tests.\n\n"
@@ -437,6 +449,9 @@ def verifier_correction_training_item(
     lm_loss_weight: float,
     value_loss_weight: float,
     mode: str,
+    *,
+    max_problem_chars: int = 3500,
+    max_code_chars: int = 3500,
 ) -> dict[str, Any] | None:
     terminal = record.get("react", {}).get(tag)
     if not isinstance(terminal, dict):
@@ -459,7 +474,14 @@ def verifier_correction_training_item(
     synthetic_type = "verifier_correction" if mode == "policy" else f"verifier_correction_{mode}"
     terminal_suffix = f"verifier_correction_{mode}"
     item = {
-        "instruction": build_verifier_correction_instruction(record, dimension, str(terminal.get("text") or ""), messages),
+        "instruction": build_verifier_correction_instruction(
+            record,
+            dimension,
+            str(terminal.get("text") or ""),
+            messages,
+            max_problem_chars=max_problem_chars,
+            max_code_chars=max_code_chars,
+        ),
         "response": response,
         "q_value": [q_value for _ in response],
         "train_lm": train_lm,
@@ -490,6 +512,9 @@ def path_to_training_item(
     record: dict[str, Any],
     tag: str,
     train_lm: bool,
+    *,
+    max_problem_chars: int = 3500,
+    max_code_chars: int = 3500,
 ) -> dict[str, Any] | None:
     react = record["react"]
     terminal = react.get(tag)
@@ -530,7 +555,7 @@ def path_to_training_item(
         parsed_axiom_grade = parse_axiom_grade(parsed)
 
     item = {
-        "instruction": build_instruction(record, dimension),
+        "instruction": build_instruction(record, dimension, max_problem_chars=max_problem_chars, max_code_chars=max_code_chars),
         "response": responses,
         "q_value": q_values,
         "raw_q_value": list(q_values),
@@ -864,6 +889,8 @@ def convert_records(
     stage_raw_weight: float = 0.5,
     stage_best_descendant_weight: float = 0.3,
     stage_standardized_weight: float = 0.2,
+    max_problem_chars: int = 3500,
+    max_code_chars: int = 3500,
 ) -> tuple[list[dict[str, Any]], dict[str, int]]:
     items: list[dict[str, Any]] = []
     stats = defaultdict(int)
@@ -903,7 +930,13 @@ def convert_records(
             grade_matches = policy_grade_matches_details(details)
             policy_candidate = tag in best and q_value >= policy_min_q and error is None and not has_verifier_issues
             train_lm = policy_candidate and grade_matches
-            item = path_to_training_item(record, tag, train_lm=train_lm)
+            item = path_to_training_item(
+                record,
+                tag,
+                train_lm=train_lm,
+                max_problem_chars=max_problem_chars,
+                max_code_chars=max_code_chars,
+            )
             if item is None:
                 stats["skipped_paths"] += 1
                 continue
@@ -944,6 +977,8 @@ def convert_records(
                     lm_loss_weight=verifier_correction_lm_weight,
                     value_loss_weight=verifier_correction_value_weight,
                     mode=verifier_correction_mode,
+                    max_problem_chars=max_problem_chars,
+                    max_code_chars=max_code_chars,
                 )
                 if correction is not None:
                     correction["data_split"] = data_split
@@ -1364,6 +1399,8 @@ def main() -> None:
         default=0,
         help="0 keeps all terminal paths; otherwise cap value-only paths per sample dimension.",
     )
+    parser.add_argument("--max_problem_chars", type=int, default=3500, help="Maximum problem characters included in review training prompts. 0 keeps full text.")
+    parser.add_argument("--max_code_chars", type=int, default=3500, help="Maximum candidate-code characters included in review training prompts. 0 keeps full text.")
     parser.add_argument(
         "--stage_value_labels",
         action=argparse.BooleanOptionalAction,
@@ -1503,6 +1540,8 @@ def main() -> None:
         stage_raw_weight=args.stage_raw_weight,
         stage_best_descendant_weight=args.stage_best_descendant_weight,
         stage_standardized_weight=args.stage_standardized_weight,
+        max_problem_chars=args.max_problem_chars,
+        max_code_chars=args.max_code_chars,
     )
     stats = {f"new_{key}": value for key, value in new_stats.items()}
 
@@ -1524,6 +1563,8 @@ def main() -> None:
         stage_raw_weight=args.stage_raw_weight,
         stage_best_descendant_weight=args.stage_best_descendant_weight,
         stage_standardized_weight=args.stage_standardized_weight,
+        max_problem_chars=args.max_problem_chars,
+        max_code_chars=args.max_code_chars,
     )
     stats.update({f"replay_{key}": value for key, value in replay_stats.items()})
     selected_replay_items = select_replay_items(
