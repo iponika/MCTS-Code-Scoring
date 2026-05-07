@@ -311,12 +311,19 @@ audit_lengths() {
 import json
 from pathlib import Path
 from transformers import AutoTokenizer
-from magicoder.prompt_template import QWEN_REVIEW_STEP_PROMPT
+from magicoder.prompt_template import AXIOM_REFINEMENT_SCALE, QWEN_REVIEW_STEP_PROMPT
 tokenizer = AutoTokenizer.from_pretrained("${MODEL_PATH}", use_fast=True, trust_remote_code=True)
 rows = [json.loads(line) for line in Path("${train_data}").read_text(encoding="utf-8").splitlines() if line.strip()]
 lengths = []
 for row in rows:
-    ids = tokenizer.encode(QWEN_REVIEW_STEP_PROMPT.format(instruction=row.get("instruction", ""), response=""), add_special_tokens=True)
+    ids = tokenizer.encode(
+        QWEN_REVIEW_STEP_PROMPT.format(
+            instruction=row.get("instruction", ""),
+            response="",
+            axiom_scale=AXIOM_REFINEMENT_SCALE,
+        ),
+        add_special_tokens=True,
+    )
     for segment in row.get("response", []):
         ids += tokenizer.encode(str(segment).strip() + "\\n", add_special_tokens=False)
     ids += [tokenizer.eos_token_id]
