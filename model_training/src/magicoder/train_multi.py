@@ -33,6 +33,10 @@ from magicoder.prompt_template import review_prompt_for_response
 from magicoder.utils import N_CORES
 from torch.nn import MSELoss, CrossEntropyLoss
 import torch.nn.functional as F
+try:
+    from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
+except ImportError:
+    FSDP = None
 
 
 if importlib.util.find_spec("safetensors") is not None:
@@ -573,10 +577,30 @@ class RLTrainer(Trainer):
 
         
     def save_model(self, output_dir=None, _internal_call=False):
+        output_dir = output_dir or self.args.output_dir
+        unwrapped_model = self.accelerator.unwrap_model(self.model)
+        pretrained_model = getattr(unwrapped_model, "pretrained_model", None)
+        if FSDP is not None and isinstance(self.model, FSDP) and isinstance(pretrained_model, PeftModel):
+            os.makedirs(output_dir, exist_ok=True)
+            with FSDP.summon_full_params(self.model, recurse=True, writeback=False, rank0_only=True):
+                if self.is_world_process_zero():
+                    pretrained_model.save_pretrained(
+                        output_dir,
+                        safe_serialization=self.args.save_safetensors,
+                        max_shard_size="1000GB",
+                    )
+                    v_head_state_dict = {
+                        f"v_head.{name}": param.detach().cpu()
+                        for name, param in unwrapped_model.v_head.state_dict().items()
+                    }
+                    torch.save(v_head_state_dict, os.path.join(output_dir, V_HEAD_WEIGHTS_NAME))
+            self.accelerator.wait_for_everyone()
+            return
+
         super().save_model(output_dir, _internal_call)
         fix_valuehead_checkpoint(
             model=self.model,
-            output_dir=output_dir or self.args.output_dir,
+            output_dir=output_dir,
             safe_serialization=self.args.save_safetensors
         )
 
