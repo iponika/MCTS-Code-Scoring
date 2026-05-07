@@ -37,6 +37,13 @@ EVAL_BASE_DIRECT="${EVAL_BASE_DIRECT:-1}"
 EVAL_TRAINED_DIRECT="${EVAL_TRAINED_DIRECT:-1}"
 EVAL_TRAINED_VALUE="${EVAL_TRAINED_VALUE:-1}"
 NTFY_URL="${NTFY_URL:-https://ntfy.sh/iponika_mcts}"
+EVAL_CUDA_DEVICE="${EVAL_CUDA_DEVICE:-0}"
+USE_UV="${USE_UV:-1}"
+
+PY_CMD=(python)
+if [[ "${USE_UV}" == "1" || "${USE_UV,,}" == "true" || "${USE_UV,,}" == "yes" ]]; then
+  PY_CMD=(uv run python)
+fi
 
 mkdir -p "${RUN_DIR}" "${LOG_DIR}" "${EVAL_ROOT}"
 LOG_FILE="${LOG_DIR}/pipeline_$(date +%Y%m%d_%H%M%S).log"
@@ -181,7 +188,7 @@ eval_one() {
     HF_HUB_OFFLINE=1 \
     TRL_EXPERIMENTAL_SILENCE=1 \
     UV_CACHE_DIR=/tmp/uv-cache \
-    uv run python -m magicoder.batch_review_evaluator \
+    "${PY_CMD[@]}" -m magicoder.batch_review_evaluator \
       --policy_model_path "${policy_path}" \
       --value_model_path "${value_path}" \
       "${extra_args[@]}" \
@@ -200,6 +207,7 @@ eval_one() {
       --score_key "${SCORE_KEY}" \
       --seed "${seed}" \
       "${final_mode_args[@]}" \
+      --chat_template_enable_thinking "${CHAT_TEMPLATE_ENABLE_THINKING:-auto}" \
       --max_problem_chars "${MAX_PROBLEM_CHARS}" \
       --max_code_chars "${MAX_CODE_CHARS}" \
       --no-mark_code_truncation_inside_block \
@@ -214,7 +222,7 @@ eval_one() {
     PYTHONDONTWRITEBYTECODE=1 \
     HF_HUB_OFFLINE=1 \
     UV_CACHE_DIR=/tmp/uv-cache \
-    uv run python "${ROOT}/data_collection/scripts/summarize_review_eval_outputs.py" \
+    "${PY_CMD[@]}" "${ROOT}/data_collection/scripts/summarize_review_eval_outputs.py" \
       --eval_dir "${eval_dir}" \
       --output "${eval_dir}/summary.json"
     echo "[stage:eval_${tag}] done=$(date -Is)"
@@ -263,17 +271,17 @@ main() {
 
   if [[ "${EVAL_BASE_DIRECT}" == "1" ]]; then
     CURRENT_STAGE="eval_base_direct"
-    eval_one "base_direct_clean" 0 "${BASE_MODEL_PATH}" "${BASE_MODEL_PATH}" "share" "skip_value" "${BASE_DIRECT_MAX_STEPS}" "${BASE_DIRECT_NUM_CANDIDATES}" 0 1.0 202604221
+    eval_one "base_direct_clean" "${EVAL_CUDA_DEVICE}" "${BASE_MODEL_PATH}" "${BASE_MODEL_PATH}" "share" "skip_value" "${BASE_DIRECT_MAX_STEPS}" "${BASE_DIRECT_NUM_CANDIDATES}" 0 1.0 202604221
   fi
 
   if [[ -n "${TRAINED_MODEL_PATH}" && -d "${TRAINED_MODEL_PATH}" ]]; then
     if [[ "${EVAL_TRAINED_DIRECT}" == "1" ]]; then
       CURRENT_STAGE="eval_trained_direct"
-      eval_one "trained_direct_clean" 0 "${TRAINED_MODEL_PATH}" "${TRAINED_MODEL_PATH}" "share" "skip_value" "${TRAINED_DIRECT_MAX_STEPS}" "${TRAINED_DIRECT_NUM_CANDIDATES}" 0 1.0 202604222
+      eval_one "trained_direct_clean" "${EVAL_CUDA_DEVICE}" "${TRAINED_MODEL_PATH}" "${TRAINED_MODEL_PATH}" "share" "skip_value" "${TRAINED_DIRECT_MAX_STEPS}" "${TRAINED_DIRECT_NUM_CANDIDATES}" 0 1.0 202604222
     fi
     if [[ "${EVAL_TRAINED_VALUE}" == "1" ]]; then
       CURRENT_STAGE="eval_trained_value"
-      eval_one "trained_value_rerank_clean" 0 "${TRAINED_MODEL_PATH}" "${TRAINED_MODEL_PATH}" "share" "use_value" "${TRAINED_VALUE_MAX_STEPS}" "${TRAINED_VALUE_NUM_CANDIDATES}" 0.7 0.95 202604223
+      eval_one "trained_value_rerank_clean" "${EVAL_CUDA_DEVICE}" "${TRAINED_MODEL_PATH}" "${TRAINED_MODEL_PATH}" "share" "use_value" "${TRAINED_VALUE_MAX_STEPS}" "${TRAINED_VALUE_NUM_CANDIDATES}" 0.7 0.95 202604223
     fi
   else
     echo "[stage:eval_trained] TRAINED_MODEL_PATH is empty or missing; skipping trained evaluations."

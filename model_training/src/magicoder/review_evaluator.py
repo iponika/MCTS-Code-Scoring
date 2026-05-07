@@ -517,6 +517,7 @@ def build_chat_eval_prompt(
     max_code_chars: int = 3500,
     mark_code_truncation_inside_block: bool = True,
     show_tests_in_prompt: bool = False,
+    enable_thinking: bool | None = None,
 ) -> str:
     """Render the existing raw-text prompt contract through the tokenizer chat template.
 
@@ -542,9 +543,18 @@ def build_chat_eval_prompt(
         "add_generation_prompt": True,
     }
     try:
-        return tokenizer.apply_chat_template(messages, enable_thinking=None, **kwargs)
+        return tokenizer.apply_chat_template(messages, enable_thinking=enable_thinking, **kwargs)
     except TypeError:
         return tokenizer.apply_chat_template(messages, **kwargs)
+
+
+def _chat_template_enable_thinking(args) -> bool | None:
+    raw = str(getattr(args, "chat_template_enable_thinking", "auto") or "auto").strip().lower()
+    if raw in {"1", "true", "yes", "on", "think"}:
+        return True
+    if raw in {"0", "false", "no", "off", "no_think", "nothink"}:
+        return False
+    return None
 
 
 def _effective_max_steps(args) -> int:
@@ -572,6 +582,7 @@ def evaluate_dimension(
     trace: list[dict[str, Any]] = []
     rethink_count = 0
     use_chat_template = getattr(args, "use_chat_template", True)
+    chat_template_enable_thinking = _chat_template_enable_thinking(args)
     total_steps = _effective_max_steps(args)
 
     for step_index in range(total_steps):
@@ -605,6 +616,7 @@ def evaluate_dimension(
                 max_code_chars=args.max_code_chars,
                 mark_code_truncation_inside_block=args.mark_code_truncation_inside_block,
                 show_tests_in_prompt=args.show_tests_in_prompt,
+                enable_thinking=chat_template_enable_thinking,
             )
 
         candidates = []
@@ -694,6 +706,7 @@ def evaluate_dimension(
                 max_code_chars=args.max_code_chars,
                 mark_code_truncation_inside_block=args.mark_code_truncation_inside_block,
                 show_tests_in_prompt=args.show_tests_in_prompt,
+                enable_thinking=chat_template_enable_thinking,
             )
         else:
             retry_prompt = prompt_for_dimension(
@@ -750,6 +763,7 @@ def evaluate_dimension(
             max_code_chars=args.max_code_chars,
             mark_code_truncation_inside_block=args.mark_code_truncation_inside_block,
             show_tests_in_prompt=args.show_tests_in_prompt,
+            enable_thinking=chat_template_enable_thinking,
         )
     else:
         final_prompt = prompt_for_dimension(
