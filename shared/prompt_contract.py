@@ -17,14 +17,14 @@ from typing import Any
 # ---------------------------------------------------------------------------
 
 AXIOM_REFINEMENT_SCALE = """AXIOM refinement-effort scale:
-- First decide functional status. Grades 3-5 require perfect or not-disproven functionality; grades 1-2 require a concrete functional defect; grade 0 means the code is fundamentally mismatched to the task.
-- Then decide repair scope. "minor tweaking" means a small localized change; "major refactoring" means a structural change, for example, rewriting an entire code block, algorithm, state flow, or multiple coordinated sites.
+- First decide functional status. Grades 3-5 mean no verified functional defect; grades 1-2 require a concrete functional defect; grade 0 means the code is fundamentally mismatched or unusable.
+- Then decide repair scope. "minor" means a localized change; "major" means structural algorithm/state/API redesign.
 - 5/5: Production-ready; no code change is needed for the stated requirement.
-- 4/5: Functionally correct, but minor code-quality tweaking is needed, for example, clearer naming, clarifying ambiguous operator precedence, replacing a magic number, removing an unused variable or dead code, or splitting an overlong statement.
-- 3/5: Functionally correct, but major code-quality refactoring is needed, for example, reducing deep nesting, decomposing a long method, removing duplicated/scattered logic, reducing tight coupling, removing speculative generality, or replacing mutable global state.
-- 2/5: Functionally defective, but minor localized functionality repair is enough, for example, adding a boundary check, changing one comparison/logical/arithmetic operator, correcting one initializer/index/argument order/constant, assigning an immutable-method return value, or returning the intended expression. A typical localized defect is, for example, an off-by-one error.
-- 1/5: Functionally defective and requires major functional refactoring, for example, replacing the required algorithm, restoring a missing non-trivial processing step, changing an unsuitable data structure, fixing cross-iteration state corruption, redesigning recursion/base cases, repairing lifecycle/state-machine logic, restoring boundary validation, or correcting a serialization-format interpretation.
-- 0/5: Fundamentally flawed; rewriting is more efficient than repairing, for example, code for an unrelated task, a severe language/API mismatch, empty/non-runnable code that prevents meaningful repair, or behavior that contradicts the core requirement.
+- 4/5: Functionally correct; minor quality cleanup would help.
+- 3/5: Functionally correct; major quality refactoring would help.
+- 2/5: Functionally defective; a minor localized functional fix is enough.
+- 1/5: Functionally defective; major functional refactoring is needed.
+- 0/5: Fundamentally flawed; rewriting is more efficient than repair.
 """
 
 
@@ -62,7 +62,9 @@ REVIEW_STEP_PROMPT = """You are a code analysis model for functional correctness
 @@ Instruction
 This is an intermediate turn of a multi-step code review. You are not assigning the final score in this turn. Your job is to make one independent correctness check that helps the final scorer.
 
-Use this functional boundary as background: grades 0-2 require a verified functional defect; if no functional defect is verified, the final score should stay in grades 3-5.
+Use the AXIOM 0-5 refinement-effort scale as background:
+
+{axiom_scale}
 
 Intermediate reasoning rules:
 - Output only one short note; do not discuss these instructions.
