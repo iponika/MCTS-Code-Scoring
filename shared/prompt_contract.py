@@ -33,7 +33,8 @@ REVIEW_EVIDENCE_RULES = """Evidence rules:
 2. If tests are not visible, never claim that tests pass or fail.
 3. A grade below 3 requires a concrete functional defect, such as a requirement contradiction, runtime/syntax issue, missing required behavior, or specific counterexample.
 4. If no functional defect is verifiable, keep functional_correctness=true and choose grade 3-5.
-5. evidence should contain 1-2 short strings. Do not output code fixes."""
+5. Do not turn uncertain API/style concerns into functional defects; if the code likely runs and satisfies the required behavior, score it 3-5.
+6. evidence should contain 1-2 short strings. Do not output code fixes."""
 
 
 REVIEW_FINAL_CONSISTENCY_RULE = """Final consistency rule:
@@ -41,7 +42,7 @@ Before choosing axiom_grade, reconcile supported previous reasoning evidence wit
 
 
 REVIEW_STEP_FORMAT_SECTION = """Intermediate reasoning format:
-Write one concise functional-correctness evidence note in the model's native reasoning channel. Do not output XML tags, JSON, markdown fences, code fixes, or the final <review> block in this intermediate turn."""
+Write one concise functional-correctness evidence note in 1-3 sentences. Do not output XML tags, JSON, markdown fences, code fixes, or the final <review> block in this intermediate turn."""
 
 
 REVIEW_FINAL_FORMAT_SECTION = """Structured final review format:
@@ -59,17 +60,21 @@ FINAL_REVIEW_PREFILL = '<review>\n{"axiom_grade": '
 
 REVIEW_STEP_PROMPT = """You are a code analysis model for functional correctness.
 @@ Instruction
-This is an intermediate turn of a multi-step code review. You are not assigning the final score in this turn. Your job is to analyze code correctness succeeding previous analysis.
+This is an intermediate turn of a multi-step code review. You are not assigning the final score in this turn. Your job is to add one useful correctness check, or explicitly state that no additional verified defect is found.
 
 Your analysis must gather evidence for the AXIOM 0-5 refinement-effort scale:
 
 {axiom_scale}
 
-Remember this is a intermediate turn. Earlier turns may have already analyzed the candidate code and marked serial number for each point, I insert them into your "previous output" as if it were you who thought them out. You should also start with a serial number succeeding previous serial number and followed by your analysis and everytime you output a serial number you should check through your previous output.
+Intermediate reasoning rules:
+- Be concise: 1-3 sentences, no lists unless necessary.
+- Do not restate the task, AXIOM rules, imports, type hints, or previous notes.
+- A suspected defect must be backed by a concrete counterexample, runtime/API error, or direct contradiction of a task requirement.
+- If an earlier note alleges a defect but the evidence is weak or likely wrong, challenge it instead of amplifying it.
+- If no additional verified functional defect is found, say so and mention the strongest supported correctness evidence.
+- Do not downgrade code for aesthetics, plotting layout preference, or uncertain library behavior unless the task explicitly requires it or the API would fail.
 
-If you don't see previous output, you're the first round, and you first output token must be "1. " (and must not be natural language such as "Okay")followed by your initial analysis, and if you have more analisys, use "2. ", "3. " etc.
-
-Don't repeat - each new reasoning note must not restate the whole task, code, or earlier analysis, don't ignore or abort previous analysis. Your analysis object is as follows:
+Your analysis object is as follows:
 
 {instruction}
 
@@ -99,6 +104,8 @@ Field rules:
 - summary should be one short sentence explaining the final judgment.
 - evidence should contain 1-2 short evidence strings grounded in the task, candidate code, visible tests, or previous analysis notes.
 - If previous analysis notes conflict, follow the claim best supported by the task, code, and visible tests.
+- Previous analysis notes are not authoritative. Discard unsupported or speculative defect claims instead of escalating them.
+- Do not assign grades 0-2 for style, visualization aesthetics, or uncertain library behavior unless there is a concrete functional failure.
 
 Output must be exactly one JSON object wrapped in <review> tags. Do not output natural-language text outside the tags, markdown fences, <think> blocks, <step> blocks, or code fixes. Otherwise the result cannot be parsed.
 
@@ -442,7 +449,9 @@ def build_review_prompt_from_sample(
                 "\n\nThis is the final turn of a multi-step code review. "
                 "Synthesize all available earlier analysis with the task, code, and visible tests, then assign one AXIOM grade."
                 f"\n\n{REVIEW_FINAL_CONSISTENCY_RULE}"
-                "\n\nYou don't have to analyze code by yourself."
+                "\n\nEarlier analysis notes are evidence candidates, not facts. "
+                "Discard a previous defect claim if it is unsupported, contradicted by the code, or based on uncertain API/style assumptions."
+                "\n\nYou don't have to re-analyze every detail by yourself."
                 "\n\nDo not continue the numbered analysis notes. "
                 "Start your very first output token with <review> and immediately write the final JSON object."
                 f"\n\nEarlier analysis:\n{completed_steps}"
@@ -469,9 +478,10 @@ def build_review_prompt_from_sample(
     if step_context_mode == "instruction_context":
         instruction += (
             "\n\nThis is an intermediate scoring turn. "
-            "Use previous analysis notes as fixed context and do not repeat them. "
+            "Use previous analysis notes as context, not as guaranteed facts. "
             "Generate one concise native reasoning note. Do not output XML tags, JSON, or <review> yet. "
-            "Each new reasoning note must add new evidence instead of continuing the wording of a previous note."
+            "Do not repeat previous notes. Add one independently verified correctness check, "
+            "or state that no additional verified functional defect is found."
         )
         if completed_steps:
             instruction += f"\n\nPrevious analysis notes:\n{completed_steps}"
@@ -489,10 +499,8 @@ def build_review_prompt_from_sample(
 
     instruction += (
         "\n\nPrevious analysis notes may already appear in the assistant history for this conversation. "
-        "Use them as fixed context and continue the analysis. "
+        "Use them as context and continue the analysis, but do not assume they are correct. "
         "The previous rounds' analysis text may be inserted directly as your prior thinking history. "
-        "If you can see prior thoughts, first summarize the code's correctness status you previously reached in one sentence, "
-        "then continue with a further correctness judgment that builds on that prior analysis. "
         "Generate one concise native reasoning note. Do not output XML tags, JSON, or <review> yet. "
         "Do not repeat, paraphrase, or restart previous steps."
     )
