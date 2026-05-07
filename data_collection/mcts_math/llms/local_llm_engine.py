@@ -59,6 +59,8 @@ def llm_init(config):
         llm_kwargs["enable_prefix_caching"] = True
     if getattr(config, "enforce_eager", False):
         llm_kwargs["enforce_eager"] = True
+    if getattr(config, "disable_custom_all_reduce", False):
+        llm_kwargs["disable_custom_all_reduce"] = True
     llm = LLM(**llm_kwargs)
     
     return llm, sampling_params

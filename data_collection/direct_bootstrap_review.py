@@ -111,6 +111,8 @@ def build_prompt(
         force_final=force_final_review,
         step_context_mode="instruction_context" if steps_as_instruction_context else "assistant_prefix",
         freeform_final_review=freeform_final_review,
+        max_problem_chars=int(getattr(config, "max_problem_chars", 3500)),
+        max_code_chars=int(getattr(config, "max_code_chars", 3500)),
         show_tests_in_prompt=bool(getattr(config, "show_tests_in_prompt", False)),
     )
     return apply_review_prompt_controls(
@@ -133,13 +135,57 @@ def normalize_review_text(text: str) -> str:
     if "<review>" in text:
         review_suffix = text.rsplit("<review>", 1)[1]
         review_body = review_suffix.split("</review>", 1)[0].strip()
+        repaired = repair_review_body(review_body)
+        if repaired is not None:
+            return repaired
         normalized = "<review>\n" + review_body
         if "</review>" in review_suffix:
             normalized += "\n</review>"
         return normalized
     if "</review>" not in text and "<review>" in text:
         return text.rstrip() + "\n</review>"
+    extracted = try_extract_review_json(text)
+    if extracted is not None:
+        return extracted
     return text
+
+
+def repair_review_body(body: str) -> str | None:
+    payload = str(body or "").strip()
+    if not payload:
+        return None
+    candidates = [payload]
+    if payload.startswith("{") and not payload.endswith("}"):
+        candidates.append(payload + "}")
+    for candidate in candidates:
+        try:
+            parsed = json.loads(candidate)
+        except (json.JSONDecodeError, ValueError):
+            continue
+        if isinstance(parsed, dict) and "axiom_grade" in parsed:
+            return f"<review>\n{json.dumps(parsed, ensure_ascii=False)}\n</review>"
+    return None
+
+
+def try_extract_review_json(text: str) -> str | None:
+    payload = str(text or "")
+    candidates: list[str] = []
+    if "```" in payload:
+        parts = payload.split("```")
+        for part in parts[1::2]:
+            inner = part.split("\n", 1)[1] if "\n" in part else part
+            if "{" in inner and "}" in inner:
+                candidates.append(inner[inner.find("{"):inner.rfind("}") + 1])
+    if "{" in payload and "}" in payload:
+        candidates.append(payload[payload.find("{"):payload.rfind("}") + 1])
+    for candidate in candidates:
+        try:
+            parsed = json.loads(candidate.strip())
+        except (json.JSONDecodeError, ValueError):
+            continue
+        if isinstance(parsed, dict) and "axiom_grade" in parsed:
+            return f"<review>\n{json.dumps(parsed, ensure_ascii=False)}\n</review>"
+    return None
 
 
 def merge_final_review_text(text: str, *, anchored: bool) -> str:

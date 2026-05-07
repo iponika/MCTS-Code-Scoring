@@ -38,8 +38,12 @@ AXIOM_MIN_GRADE="${AXIOM_MIN_GRADE:-1}"
 AXIOM_MAX_GRADE="${AXIOM_MAX_GRADE:-5}"
 DIRECT_REPEATS="${DIRECT_REPEATS:-4}"
 DIRECT_BATCH_SIZE="${DIRECT_BATCH_SIZE:-2}"
+FREEFORM_FINAL_REVIEW="${FREEFORM_FINAL_REVIEW:-0}"
 POLICY_MIN_Q="${POLICY_MIN_Q:-0.8}"
-MAX_TRAINING_SEQ_LENGTH="${MAX_TRAINING_SEQ_LENGTH:-2048}"
+AXIOM_MAX_CODE_CHARS="${AXIOM_MAX_CODE_CHARS:-0}"
+MAX_PROBLEM_CHARS="${MAX_PROBLEM_CHARS:-0}"
+MAX_CODE_CHARS="${MAX_CODE_CHARS:-0}"
+MAX_TRAINING_SEQ_LENGTH="${MAX_TRAINING_SEQ_LENGTH:-8192}"
 MAX_STEPS="${MAX_STEPS:-120}"
 GRAD_ACCUM_STEPS="${GRAD_ACCUM_STEPS:-8}"
 EVAL_PER_GRADE="${EVAL_PER_GRADE:-10}"
@@ -164,7 +168,8 @@ prepare_seed_data() {
     --metadata "${SEED_META}" \
     --per_grade "${AXIOM_PER_GRADE}" \
     --min_grade "${AXIOM_MIN_GRADE}" \
-    --max_grade "${AXIOM_MAX_GRADE}"
+    --max_grade "${AXIOM_MAX_GRADE}" \
+    --max_code_chars "${AXIOM_MAX_CODE_CHARS}"
 }
 
 generate_direct_review() {
@@ -172,6 +177,10 @@ generate_direct_review() {
   if [[ -f "${DIRECT_REVIEW_RAW}" ]]; then
     echo "[stage:${CURRENT_STAGE}] exists: ${DIRECT_REVIEW_RAW}"
     return
+  fi
+  final_review_args=()
+  if [[ "${FREEFORM_FINAL_REVIEW}" != "1" && "${FREEFORM_FINAL_REVIEW,,}" != "true" ]]; then
+    final_review_args=(--no-freeform_final_review)
   fi
   require_idle_gpus
   cd "${ROOT}"
@@ -188,7 +197,8 @@ generate_direct_review() {
     --batch_size "${DIRECT_BATCH_SIZE}" \
     --repeats "${DIRECT_REPEATS}" \
     --response_mode review \
-    --reasoning_steps 0
+    --reasoning_steps 0 \
+    "${final_review_args[@]}"
 }
 
 generate_stepwise_variant() {
@@ -246,7 +256,9 @@ prepare_bootstrap_train() {
       --output_file "${output_path}" \
       --policy_min_q "${POLICY_MIN_Q}" \
       --policy_response_mode "${policy_mode}" \
-      --max_value_paths_per_dimension 0
+      --max_value_paths_per_dimension 0 \
+      --max_problem_chars "${MAX_PROBLEM_CHARS}" \
+      --max_code_chars "${MAX_CODE_CHARS}"
 }
 
 align_direct_review_to_static() {
@@ -412,6 +424,8 @@ eval_final_only_model() {
   TRAINED_MODEL_PATH="${trained_model}" \
   TRAIN_DATA="${SEED_DATA}" \
   PER_GRADE="${EVAL_PER_GRADE}" \
+  MAX_PROBLEM_CHARS="${MAX_PROBLEM_CHARS}" \
+  MAX_CODE_CHARS="${MAX_CODE_CHARS}" \
   DROP_AXIOM_GRADE_ZERO=1 \
   FINAL_ONLY_JSON=1 \
   EVAL_BASE_DIRECT=0 \
@@ -439,6 +453,8 @@ eval_stepwise_model() {
   TRAINED_MODEL_PATH="${trained_model}" \
   TRAIN_DATA="${SEED_DATA}" \
   PER_GRADE="${EVAL_PER_GRADE}" \
+  MAX_PROBLEM_CHARS="${MAX_PROBLEM_CHARS}" \
+  MAX_CODE_CHARS="${MAX_CODE_CHARS}" \
   DROP_AXIOM_GRADE_ZERO=1 \
   FINAL_ONLY_JSON=0 \
   EVAL_BASE_DIRECT=0 \
@@ -486,9 +502,14 @@ payload = {
     "seed_metadata": "${SEED_META}",
     "axiom_per_grade": int("${AXIOM_PER_GRADE}"),
     "eval_per_grade": int("${EVAL_PER_GRADE}"),
+    "axiom_max_code_chars": int("${AXIOM_MAX_CODE_CHARS}"),
+    "max_problem_chars": int("${MAX_PROBLEM_CHARS}"),
+    "max_code_chars": int("${MAX_CODE_CHARS}"),
     "max_steps": int("${MAX_STEPS}"),
     "max_training_seq_length": int("${MAX_TRAINING_SEQ_LENGTH}"),
     "direct_repeats": int("${DIRECT_REPEATS}"),
+    "direct_batch_size": int("${DIRECT_BATCH_SIZE}"),
+    "freeform_final_review": "${FREEFORM_FINAL_REVIEW}",
     "static_train": "${STATIC_TRAIN}" if "${RUN_STATIC}" == "1" else None,
     "direct_review_train": "${DIRECT_REVIEW_TRAIN}",
     "direct_review_alignment": json.loads(Path("${ALIGN_META}").read_text(encoding="utf-8")) if Path("${ALIGN_META}").exists() else None,

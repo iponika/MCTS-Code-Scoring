@@ -85,7 +85,13 @@ def main() -> None:
                 continue
             code = str(raw.get("code") or "")
             inst = str(raw.get("inst") or "")
-            if grade < args.min_grade or grade > args.max_grade or not code.strip() or not inst.strip() or len(code) > args.max_code_chars:
+            if (
+                grade < args.min_grade
+                or grade > args.max_grade
+                or not code.strip()
+                or not inst.strip()
+                or (args.max_code_chars > 0 and len(code) > args.max_code_chars)
+            ):
                 continue
             by_grade[grade].append((file_path.name, index, raw))
 
