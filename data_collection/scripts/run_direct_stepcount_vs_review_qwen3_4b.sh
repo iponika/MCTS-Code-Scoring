@@ -374,7 +374,7 @@ write_summary() {
   CURRENT_STAGE="write_summary"
   local counts
   counts="$(step_count_list)"
-  python - <<PY
+  PYTHONPATH="${ROOT}" python - <<PY
 import json
 from pathlib import Path
 from data_collection.review_experiment_utils import stepwise_variants
