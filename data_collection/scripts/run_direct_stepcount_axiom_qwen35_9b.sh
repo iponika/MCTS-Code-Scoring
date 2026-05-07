@@ -45,6 +45,7 @@ MAX_PROBLEM_CHARS="${MAX_PROBLEM_CHARS:-0}"
 MAX_CODE_CHARS="${MAX_CODE_CHARS:-0}"
 MAX_TRAINING_SEQ_LENGTH="${MAX_TRAINING_SEQ_LENGTH:-8192}"
 MAX_STEPS="${MAX_STEPS:-120}"
+SAVE_STEPS="${SAVE_STEPS:-$((MAX_STEPS + 1))}"
 GRAD_ACCUM_STEPS="${GRAD_ACCUM_STEPS:-8}"
 EVAL_PER_GRADE="${EVAL_PER_GRADE:-10}"
 CHECK_GPUS_IDLE="${CHECK_GPUS_IDLE:-1}"
@@ -403,7 +404,7 @@ train_fsdp() {
       --bf16 "${TRAINING_BF16}" \
       --logging_steps 10 \
       --save_strategy steps \
-      --save_steps 80 \
+      --save_steps "${SAVE_STEPS}" \
       --save_total_limit 2 \
       --report_to none \
       --optim adafactor \
