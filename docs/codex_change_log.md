@@ -2,6 +2,12 @@
 
 This file records Codex-made project changes so work can be resumed safely across forks and sessions. Each future code or workflow change should update this log and be followed by a git commit.
 
+## 2026-05-07
+
+- Rewrote `docs/session_handoff_20260502.md` so it no longer describes the repo as if the active default were still the older DeepSeek/native-reasoning transition line.
+- Updated the handoff brief to center the current maintained task: `Qwen/Qwen3-4B` in `no_think` mode, AXIOM-only balanced seed construction, AXIOM held-out evaluation, and the direct-vs-stepcount comparison (`Static`, `Direct Review`, `1-step`, `2-step`, `3-step`).
+- Recorded the latest meaningful result source for cross-server continuation: `data_collection/review_mcts_runs/direct_stepcount_axiom_qwen3_4b_nothink_overnight_20260506/summary.json`, with the practical conclusion that `Direct Review` vs `1-step` is the only comparison worth prioritizing right now.
+
 ## 2026-05-01
 
 - Set DeepSeek-R1-Distill-Qwen-7B as the default model for current review-scoring workflows by switching the generic review-MCTS config and AXIOM eval base default away from Qwen.

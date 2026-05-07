@@ -1,354 +1,266 @@
-# Session Handoff 2026-05-02
+# Session Handoff 2026-05-07
 
-This document is for another Codex session that needs to inspect, debug, or refactor the current code-scoring pipeline without re-deriving the active defaults from old experiment artifacts.
+This document is for another Codex session on another server. It summarizes the current maintained experiment line, the latest results that actually matter, and the files/scripts that should be treated as the main entrypoints.
 
-## Current Branch and Recent Direction
+## Current Active Task
+
+The current active task is:
+
+- Compare `Static`, `Direct Review`, `1-step`, `2-step`, and `3-step` training on AXIOM-only data.
+- Use `Qwen/Qwen3-4B` in `no_think` mode.
+- Judge code primarily by functional correctness under AXIOM 0-5 semantics.
+- Use this same-distribution AXIOM run to decide whether explicit stepwise reasoning helps code scoring.
+
+This is the current mainline because:
+
+- CodeCriticBench does not strictly match AXIOM semantics.
+- AXIOM labels are cleaner for the current scoring objective.
+- The latest prompt/eval repairs have finally made stepwise outputs parseable enough to compare on the same distribution.
+
+## Current Branch and Relevant Commits
 
 - Current working branch: `direct-final-free-review`
-- Recent prompt/eval commits on this branch:
-  - `041057d fix batch evaluator step context arg`
-  - `b809fb1 use native reasoning for review steps`
-  - `7db2649 structure step review prompts`
-  - `c9b134f rewrite functional review prompts`
-  - `b1d7a0f move generated stepwise final steps into instruction`
-  - `76b9582 free direct final review from prefills`
+- Latest task-specific commits:
+  - `a1324ce add axiom direct stepcount overnight pipeline`
+  - `bd00a82 fix direct stepcount summary import path`
 
 Interpretation:
-- The project is in the middle of a prompt-and-structure transition.
-- Old explicit `<step>` tags are no longer the intended default for new reasoning trajectories.
-- The current branch favors native reasoning notes plus a final `<review>` block.
 
-## Active Project Goal
+- `a1324ce` adds the AXIOM-only seed builder and the maintained overnight wrapper for this comparison line.
+- `bd00a82` fixes the last-stage summary import path bug. Before that fix, generation, training, and evaluation completed, but the wrapper failed when writing `summary.json`.
 
-The current project goal is not generic code review generation. It is:
+## Current Default Model for This Task
 
-- Score candidate code primarily on functional correctness.
-- Use AXIOM 0-5 as the internal scoring anchor.
-- Treat textual comments as supporting evidence for the score, not the main output.
+For the current maintained comparison task, the default model is:
 
-Current scope is deliberately narrowed:
+- `Qwen/Qwen3-4B`
 
-- Default evaluation dimension is only `Correctness Verification`.
-- The pipeline is optimized for code scoring, not multi-dimension review text generation.
+and the maintained config is:
 
-## Default Model and Model Policy
+- [mcts_code_review_qwen3_4b_no_think.yaml](/data1/xianzhiwei/mcts-code-review/data_collection/configs/mcts_code_review_qwen3_4b_no_think.yaml)
 
-Default maintained model:
+Important clarification:
 
-- `deepseek-ai/DeepSeek-R1-Distill-Qwen-7B`
+- DeepSeek 7B wrappers still exist in the repo.
+- They are not the current default for the active AXIOM step-count comparison task.
+- If another session is continuing the current mainline, start from Qwen3-4B `no_think`, not DeepSeek.
 
-Why this matters:
+## Current Dataset Policy
 
-- Maintained wrappers now default to DeepSeek 7B rather than Qwen.
-- Qwen wrappers are retained mainly for legacy comparison and debugging.
+### Training / generation source
 
-Relevant files:
+- AXIOM only
+- Source directory:
+  - [axiombench](/data1/xianzhiwei/mcts-code-review/datasets/axiom-llm-judge/axiombench)
 
-- [README.md](/data1/xianzhiwei/mcts-code-review/README.md)
-- [README.zh-CN.md](/data1/xianzhiwei/mcts-code-review/README.zh-CN.md)
-- [deepseek7b_defaults.sh](/data1/xianzhiwei/mcts-code-review/data_collection/scripts/deepseek7b_defaults.sh)
+### Held-out evaluation
 
-Local-server default snapshot logic:
+- AXIOM held-out
+- Training seed rows are excluded from held-out construction
 
-- `MODEL_KEY` defaults to `deepseek-ai/DeepSeek-R1-Distill-Qwen-7B`
-- `MODEL_PATH` prefers the local snapshot if present
+### Why this replaced CodeCriticBench for the current mainline
 
-## Default Data Assumptions
+- AXIOM labels are already in the target scoring semantics.
+- CodeCriticBench can still be useful later as an aligned auxiliary dataset, but not as the cleanest current benchmark source.
+- Direct inspection of sampled rows showed AXIOM is materially cleaner than CodeCriticBench for strict AXIOM-style supervision.
 
-Primary datasets currently assumed by maintained workflows:
+## Current Scoring Semantics
 
-- `datasets/CodeCriticBench/data/CodeCriticBench.jsonl`
-- `datasets/axiom-llm-judge/axiombench/*.jsonl`
+The project is currently narrowed to code scoring, not broad review generation.
 
-Operational role split:
+Primary objective:
 
-- CodeCriticBench: seed/source data for generation and training
-- AXIOM: held-out evaluation target and scoring anchor
+- Functional correctness scoring
 
-Current repo direction is AXIOM-aligned scoring, with CodeCriticBench mapped into that semantics.
+Internal score anchor:
 
-## Default Scoring Semantics
+- AXIOM `0-5`
 
-Current scoring semantics are AXIOM-first:
+Practical interpretation:
 
-- Internal grade: `0-5`
-- Meaning: refinement effort with correctness-first split
-- Grades `3-5`: functionally correct
-- Grades `0-2`: functionally incorrect or fundamentally mismatched
+- `3-5`: functionally correct
+- `0-2`: functionally incorrect or fundamentally mismatched
 
-Prompt-side wording is mirrored in:
+Textual review is supporting evidence for the score, not the primary project output.
 
-- [prompt_template.py](/data1/xianzhiwei/mcts-code-review/model_training/src/magicoder/prompt_template.py)
-- [review_evaluator.py](/data1/xianzhiwei/mcts-code-review/model_training/src/magicoder/review_evaluator.py)
+## Current Prompt / Eval Contract
 
-Examples in the rubric are intentionally illustrative, not exhaustive.
+### Stepwise intermediate reasoning
 
-## Current Default Inference and Eval Behavior
+Current intent:
 
-### Dimensions
+- Stepwise training/eval uses explicit numbered reasoning.
+- Intermediate reasoning is still carried through the assistant-side response path.
+- The current step experiments intentionally bias the model toward visible numbered continuation.
 
-Default eval dimension list:
+### Final review turn
 
-- `["Correctness Verification"]`
+Current maintained final-turn behavior:
 
-Defined in:
+- Prior reasoning is moved into the instruction, not continued as assistant-prefix history.
+- If prior reasoning exists, the final prompt tells the model it does not have to analyze the code by itself again.
+- If there are zero prior steps, that extra hint is omitted.
 
-- [review_evaluator.py](/data1/xianzhiwei/mcts-code-review/model_training/src/magicoder/review_evaluator.py)
+Reason:
 
-### Stepwise Context Mode
+- This change repaired the earlier failure mode where stepwise final turns kept drifting into more prose instead of emitting a parseable final review.
 
-Current default:
+### Output contract
 
-- `step_context_mode = instruction_context`
+Maintained final output:
 
-Meaning:
+- one `<review>...</review>` JSON block
 
-- Previously generated reasoning notes are inserted into the instruction as `Previous analysis notes:`
-- They are not continued as assistant-prefix text by default
+Core keys:
 
-This is now the maintained default in:
+- `axiom_grade`
+- `functional_correctness`
+- `repair_effort`
+- `evidence_type`
+- `summary`
+- `evidence`
 
-- [review_evaluator.py](/data1/xianzhiwei/mcts-code-review/model_training/src/magicoder/review_evaluator.py)
-- [batch_review_evaluator.py](/data1/xianzhiwei/mcts-code-review/model_training/src/magicoder/batch_review_evaluator.py)
-- [direct_bootstrap_review.py](/data1/xianzhiwei/mcts-code-review/data_collection/direct_bootstrap_review.py)
+## Current Maintained Workflow
 
-### Final-only vs Stepwise
+### 1. Build AXIOM seed set
 
-There are two distinct eval modes and they must not be conflated:
+Seed builder:
 
-- `final_only_json = 1`
-  - Single final `<review>` turn
-  - No intermediate reasoning steps during eval
-- `final_only_json = 0`
-  - Stepwise reasoning
-  - Intermediate native reasoning notes
-  - Final `<review>` at the last turn
+- [prepare_axiom_seedset.py](/data1/xianzhiwei/mcts-code-review/data_collection/prepare_axiom_seedset.py)
 
-Maintained wrapper behavior:
+What it does:
 
-- `static` and `direct_review` evals are final-only
-- `direct_stepwise_1step` / `direct_stepwise_2step` evals are stepwise
+- Reads AXIOM rows directly from `datasets/axiom-llm-judge/axiombench`
+- Builds balanced prepared samples by grade
+- Preserves provenance metadata
 
-See:
+### 2. Run the maintained direct step-count comparison
+
+Main wrapper:
+
+- [run_direct_stepcount_axiom_qwen3_4b.sh](/data1/xianzhiwei/mcts-code-review/data_collection/scripts/run_direct_stepcount_axiom_qwen3_4b.sh)
+
+Underlying workflow:
 
 - [run_direct_stepcount_vs_review_qwen3_4b.sh](/data1/xianzhiwei/mcts-code-review/data_collection/scripts/run_direct_stepcount_vs_review_qwen3_4b.sh)
 
-### Tests in Prompt
+Current maintained setup:
 
-Current default for evaluation:
+- `Static`
+- `Direct Review`
+- `1-step`
+- `2-step`
+- `3-step`
 
-- `show_tests_in_prompt = False`
-
-Meaning:
-
-- Dataset tests are hidden from the model unless explicitly enabled
-- This is intended to keep evaluation closer to practical code scoring rather than oracle-assisted grading
-
-### Stop Rules
-
-Current stepwise/default stopping behavior:
-
-- Intermediate reasoning stops on `</think>` or `</review>`
-- Final generation stops on `</review>`
-
-Review-MCTS config defaults also use:
-
-- `stop: ["</think>", "</review>"]`
-
-See:
-
-- [mcts_code_review_deepseek_r1_distill_qwen_7b.yaml](/data1/xianzhiwei/mcts-code-review/data_collection/configs/mcts_code_review_deepseek_r1_distill_qwen_7b.yaml)
-
-## Current Prompt Contract
-
-### Intermediate reasoning
-
-Current intended contract:
-
-- Intermediate turns should generate one concise native reasoning note
-- No XML `<step>` tags
-- No JSON step objects
-- No `<review>` in intermediate turns
-
-Prompt definitions:
-
-- [prompt_template.py](/data1/xianzhiwei/mcts-code-review/model_training/src/magicoder/prompt_template.py)
-
-### Final review
-
-Current intended contract:
-
-- Final answer must be exactly one `<review>...</review>` JSON block
-- Required keys:
-  - `axiom_grade`
-  - `functional_correctness`
-  - `repair_effort`
-  - `evidence_type`
-  - `summary`
-  - `evidence`
-
-Important branch nuance:
-
-- Data-generation direct final prompts on this branch were relaxed so the model may reason before the last `<review>` block.
-- Eval/final prompts are still stricter and expect a final parseable `<review>` block.
-
-This mismatch is one of the active debugging risks.
-
-## Current Default Generation and Training Workflows
-
-### A. Direct step-count comparison workflow
-
-Default maintained wrapper:
-
-- [run_direct_stepcount_vs_review_deepseek7b.sh](/data1/xianzhiwei/mcts-code-review/data_collection/scripts/run_direct_stepcount_vs_review_deepseek7b.sh)
-
-This wrapper currently means:
-
-- Seed data from CodeCriticBench aligned to AXIOM
-- Train four variants:
-  - `static`
-  - `direct_review`
-  - `direct_stepwise_1step`
-  - `direct_stepwise_2step`
-- Evaluate on AXIOM held-out
-
-Actual underlying implementation is inherited from:
-
-- [run_direct_stepcount_vs_review_qwen3_4b.sh](/data1/xianzhiwei/mcts-code-review/data_collection/scripts/run_direct_stepcount_vs_review_qwen3_4b.sh)
-
-### B. Review-MCTS generation
-
-Primary entrypoint:
-
-- [solver_review.py](/data1/xianzhiwei/mcts-code-review/data_collection/solver_review.py)
-
-Primary config:
-
-- [mcts_code_review_deepseek_r1_distill_qwen_7b.yaml](/data1/xianzhiwei/mcts-code-review/data_collection/configs/mcts_code_review_deepseek_r1_distill_qwen_7b.yaml)
-
-Current config characteristics:
-
-- `max_depth: 3`
-- `n_generate_sample: 3`
-- `iterations: 18`
-- `review_explore_depth: 2`
-- `review_target_leaf_count: 24`
-- `need_value_func: False`
-- `self_review_value_func: False`
-
-Interpretation:
-
-- Current review-MCTS path is still using reward computation from external sample/objective alignment, not a self-scoring value function during data generation.
-
-### C. Training
+### 3. Training
 
 Primary training entry:
 
 - [train_multi.py](/data1/xianzhiwei/mcts-code-review/model_training/src/magicoder/train_multi.py)
 
-Current export/training design:
+Current exported data behavior:
 
-- Training items use chat-format `messages`
-- Intermediate reasoning is placed inside `<think> ... </think>`
-- Final answer is `<review> ... </review>`
-- `assistant_parts` carry `q_value` labels for value supervision at segment boundaries
+- Policy/value training items are written under:
+  - [review_mcts_train_data](/data1/xianzhiwei/mcts-code-review/model_training/review_mcts_train_data)
+- Checkpoints are written under:
+  - [output](/data1/xianzhiwei/mcts-code-review/model_training/src/output)
 
-Primary preprocessing:
+### 4. Evaluation
 
-- [preprocess_review_mcts_data.py](/data1/xianzhiwei/mcts-code-review/model_training/src/magicoder/preprocess_review_mcts_data.py)
+Held-out AXIOM eval is still driven by:
 
-## Current Important Sample/Eval Output Semantics
-
-A frequent confusion point:
-
-- Per-sample eval outputs store the real result under `dimensions[i]`, not top-level `final_review`
-
-Relevant files:
-
-- [batch_review_evaluator.py](/data1/xianzhiwei/mcts-code-review/model_training/src/magicoder/batch_review_evaluator.py)
+- [run_axiom_clean_eval.sh](/data1/xianzhiwei/mcts-code-review/data_collection/scripts/run_axiom_clean_eval.sh)
 - [review_evaluator.py](/data1/xianzhiwei/mcts-code-review/model_training/src/magicoder/review_evaluator.py)
+- [batch_review_evaluator.py](/data1/xianzhiwei/mcts-code-review/model_training/src/magicoder/batch_review_evaluator.py)
 
-Useful interpretation:
+## Current Best-Available Result
 
-- `dimensions[0].trace`
-  - per-step generation trace
-- `dimensions[0].trace[*].candidates[*].continuation`
-  - raw model continuation for that call
-- `dimensions[0].trace[*].candidates[*].reasoning`
-  - extracted native reasoning
-- `dimensions[0].final_review`
-  - final accumulated text after all accepted steps/retries
-- `dimensions[0].final_review_parse`
-  - parse result for final `<review>`
-- `dimensions[0].final_retries`
-  - extra final-review repair attempts after parse failure
+The current source of truth is:
 
-## Known Current Problems
+- [summary.json](/data1/xianzhiwei/mcts-code-review/data_collection/review_mcts_runs/direct_stepcount_axiom_qwen3_4b_nothink_overnight_20260506/summary.json)
 
-These are active issues, not historical curiosities:
+Run directory:
 
-1. The repo is still structurally bloated.
-- There are many legacy wrappers, old prompt backups, and old experiment paths.
-- New sessions can easily read the wrong workflow from old files.
+- [direct_stepcount_axiom_qwen3_4b_nothink_overnight_20260506](/data1/xianzhiwei/mcts-code-review/data_collection/review_mcts_runs/direct_stepcount_axiom_qwen3_4b_nothink_overnight_20260506)
 
-2. Prompt behavior is in transition.
-- Old `<step>`-tag logic and new native-reasoning logic coexist.
-- Some preprocessors still keep backward-compatibility code for `<step>` samples.
+Key metrics on AXIOM held-out:
 
-3. Final review parseability is unstable after the recent prompt rewrite.
-- Recent long runs showed many samples with `missing_review_tags`.
-- The failure mode is often: long freeform reasoning, but no final `<review>`.
+| Method | valid_rate | MAE | median_err | boundary_acc |
+|---|---:|---:|---:|---:|
+| Static | 1.0000 | 1.8200 | 2.0 | 0.5000 |
+| Direct Review | 0.9800 | 1.5714 | 1.0 | 0.5510 |
+| 1-step | 0.9600 | 1.5417 | 1.0 | 0.4792 |
+| 2-step | 1.0000 | 1.8400 | 2.0 | 0.4200 |
+| 3-step | 0.9800 | 1.7143 | 1.0 | 0.4694 |
 
-4. Data-generation and eval prompt contracts may no longer be fully aligned.
-- Direct final generation on this branch allows freeform reasoning before the last `<review>`.
-- Eval still relies on strict recoverable final parsing.
+Current interpretation:
 
-5. Recent long experiment to inspect:
-- Run name: `native_reasoning_prompt_long_20260502`
-- Training finished, but eval was interrupted once by a missing CLI arg and then resumed manually
-- The run should not be treated as a clean benchmark result
+- `1-step` is the best current variant if the target metric is scalar grade MAE.
+- `Direct Review` is the best current variant if the target is safer correctness-boundary behavior.
+- `2-step` is clearly weak and should not be treated as a promising default.
+- `3-step` recovers slightly from `2-step` but still does not beat `1-step` or `Direct Review`.
 
-6. The current branch has likely over-optimized toward freeing the model from prefixes without yet recovering reliable final formatting.
+If another session needs a concise conclusion:
 
-## Recommended Entry Files for a New Debug/Refactor Session
+- The current useful comparison is `Direct Review` vs `1-step`.
+- Do not spend more time on `2-step` or `3-step` unless the prompt contract changes substantially.
+
+## Current Training Data Reality
+
+For the latest AXIOM overnight run:
+
+- `Static`: 150 total, 150 policy
+- `Direct Review`: 152 total, 27 policy
+- `1-step`: 600 total, 31 policy
+- `2-step`: 600 total, 28 policy
+- `3-step`: 600 total, 16 policy
+
+Interpretation:
+
+- Stepwise variants still have many more value-only rows than policy rows.
+- The current stepwise success is therefore limited and fragile.
+- If another session tries to improve results, focus on increasing useful policy-quality final reviews, not merely adding more steps.
+
+## Important Files to Read First on Another Server
 
 Read these first, in order:
 
 1. [README.md](/data1/xianzhiwei/mcts-code-review/README.md)
-2. [docs/codex_change_log.md](/data1/xianzhiwei/mcts-code-review/docs/codex_change_log.md)
-3. [model_training/src/magicoder/prompt_template.py](/data1/xianzhiwei/mcts-code-review/model_training/src/magicoder/prompt_template.py)
-4. [model_training/src/magicoder/review_evaluator.py](/data1/xianzhiwei/mcts-code-review/model_training/src/magicoder/review_evaluator.py)
-5. [data_collection/direct_bootstrap_review.py](/data1/xianzhiwei/mcts-code-review/data_collection/direct_bootstrap_review.py)
-6. [data_collection/mcts_math/review_utils.py](/data1/xianzhiwei/mcts-code-review/data_collection/mcts_math/review_utils.py)
-7. [model_training/src/magicoder/preprocess_review_mcts_data.py](/data1/xianzhiwei/mcts-code-review/model_training/src/magicoder/preprocess_review_mcts_data.py)
+2. [README.zh-CN.md](/data1/xianzhiwei/mcts-code-review/README.zh-CN.md)
+3. [docs/codex_change_log.md](/data1/xianzhiwei/mcts-code-review/docs/codex_change_log.md)
+4. [prepare_axiom_seedset.py](/data1/xianzhiwei/mcts-code-review/data_collection/prepare_axiom_seedset.py)
+5. [run_direct_stepcount_axiom_qwen3_4b.sh](/data1/xianzhiwei/mcts-code-review/data_collection/scripts/run_direct_stepcount_axiom_qwen3_4b.sh)
+6. [run_direct_stepcount_vs_review_qwen3_4b.sh](/data1/xianzhiwei/mcts-code-review/data_collection/scripts/run_direct_stepcount_vs_review_qwen3_4b.sh)
+7. [prompt_contract.py](/data1/xianzhiwei/mcts-code-review/shared/prompt_contract.py)
+8. [review_evaluator.py](/data1/xianzhiwei/mcts-code-review/model_training/src/magicoder/review_evaluator.py)
+9. [train_multi.py](/data1/xianzhiwei/mcts-code-review/model_training/src/magicoder/train_multi.py)
 
-Then inspect actual broken samples rather than reading more wrappers.
+## Known Current Risks
 
-## Immediate Refactor Guidance
+1. The repo still contains older DeepSeek wrappers and older transition-era prompt experiments.
+- Do not infer the active default from file count.
+- Infer it from this handoff plus the latest change log.
 
-If another session is doing cleanup, the safest priorities are:
+2. Stepwise prompting is still an experiment, not a settled architecture.
+- The current useful signal is only for `1-step`.
+- More steps do not currently help.
 
-1. Separate maintained workflows from legacy experiments more explicitly.
-2. Add a compact debug output mode for eval artifacts.
-3. Make one prompt contract authoritative across:
-- direct bootstrap generation
-- stepwise eval
-- training export
-4. Reduce output JSON to the fields actually needed for current debugging.
-5. Do not treat old `<step>`-tag behavior as the mainline design.
+3. Summary/log truth hierarchy still matters.
+- `summary.json`, held-out comparison files, and raw eval artifacts are the source of truth.
+- Notifications are secondary.
+
+4. If a wrapper fails only at the end, inspect whether generation/training/eval already completed before re-running the whole job.
+- This just happened in the AXIOM overnight run and was fixed by `bd00a82`.
 
 ## Background Run Policy
 
-Long jobs are expected to run in `tmux`.
+Maintained long runs should use `tmux`.
 
-Current ignored output roots:
+Useful habits:
 
-- `data_collection/review_mcts_runs/`
-- `model_training/review_mcts_train_data/`
-- `model_training/src/output/`
+- Verify `tmux ls`
+- Check recent log lines with `tail`
+- Check GPU state with `nvidia-smi`
+- Check artifact growth with `wc -l` or file counts
 
-Notifications:
-
-- Many maintained wrappers try to `curl` ntfy on finish/failure
-- Notification success is not a source of truth
-- Real source of truth is log files plus `comparison.json` or `summary.json`
+On a new server, prefer resuming from this AXIOM-only direct-vs-stepcount line before reopening older MCTS or DeepSeek branches.
