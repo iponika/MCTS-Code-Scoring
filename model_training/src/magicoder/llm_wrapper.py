@@ -12,7 +12,17 @@ from transformers.modeling_outputs import ModelOutput
 try:
     from trl import AutoModelForCausalLMWithValueHead
 except ImportError:
-    from trl.experimental.ppo.modeling_value_head import AutoModelForCausalLMWithValueHead
+    import importlib.util
+    from pathlib import Path
+    import trl
+
+    value_head_path = Path(trl.__file__).parent / "experimental" / "ppo" / "modeling_value_head.py"
+    spec = importlib.util.spec_from_file_location("_trl_modeling_value_head", value_head_path)
+    if spec is None or spec.loader is None:
+        raise
+    value_head_module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(value_head_module)
+    AutoModelForCausalLMWithValueHead = value_head_module.AutoModelForCausalLMWithValueHead
 from transformers.utils import cached_file
 from peft import get_peft_model, LoraConfig, TaskType
 
