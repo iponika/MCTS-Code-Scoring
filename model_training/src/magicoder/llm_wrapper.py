@@ -26,6 +26,17 @@ except ImportError:
 from transformers.utils import cached_file
 from peft import get_peft_model, LoraConfig, TaskType
 
+try:
+    import peft.import_utils as _peft_import_utils
+    import peft.tuners.lora.model as _peft_lora_model
+
+    _peft_import_utils.is_bnb_available = lambda: False
+    _peft_import_utils.is_bnb_4bit_available = lambda: False
+    _peft_lora_model.is_bnb_available = lambda: False
+    _peft_lora_model.is_bnb_4bit_available = lambda: False
+except Exception:
+    pass
+
 
 # from peft import PeftModel, PeftConfig
 
