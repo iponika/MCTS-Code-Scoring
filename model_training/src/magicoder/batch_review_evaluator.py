@@ -95,6 +95,13 @@ def build_parser() -> argparse.ArgumentParser:
              "Use --no-use_chat_template to fall back to legacy raw-text prompts.",
     )
     parser.add_argument(
+        "--chat_template_enable_thinking",
+        choices=["auto", "true", "false"],
+        default="auto",
+        help="Explicit Qwen chat-template thinking control for evaluation. "
+             "'auto' leaves the tokenizer default unchanged.",
+    )
+    parser.add_argument(
         "--reasoning_steps",
         type=int,
         default=None,
