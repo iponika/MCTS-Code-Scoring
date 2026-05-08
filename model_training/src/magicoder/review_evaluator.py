@@ -23,6 +23,7 @@ try:
         FINAL_REVIEW_PREFILL,
         build_review_prompt_from_sample,
         prompt_to_chat_messages,
+        render_eval_prompt,
     )
     _HAS_SHARED = True
 except ImportError:
@@ -33,6 +34,7 @@ except ImportError:
         FINAL_REVIEW_PREFILL,
         build_review_prompt_from_sample,
         prompt_to_chat_messages,
+        render_eval_prompt,
     )
     _HAS_SHARED = True
 from magicoder.axiom_scoring import (
@@ -538,14 +540,14 @@ def build_chat_eval_prompt(
         show_tests_in_prompt=show_tests_in_prompt,
     )
     messages = prompt_to_chat_messages(raw_prompt)
-    kwargs: dict[str, Any] = {
-        "tokenize": False,
-        "add_generation_prompt": True,
-    }
-    try:
-        return tokenizer.apply_chat_template(messages, enable_thinking=enable_thinking, **kwargs)
-    except TypeError:
-        return tokenizer.apply_chat_template(messages, **kwargs)
+    user_content = messages[0]["content"]
+    assistant_prefix = messages[1]["content"] if len(messages) > 1 and messages[1]["role"] == "assistant" else ""
+    return render_eval_prompt(
+        tokenizer,
+        user_content,
+        assistant_prefix=assistant_prefix,
+        enable_thinking=enable_thinking,
+    )
 
 
 def _chat_template_enable_thinking(args) -> bool | None:
