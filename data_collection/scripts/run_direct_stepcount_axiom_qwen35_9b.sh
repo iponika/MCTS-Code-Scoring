@@ -45,6 +45,7 @@ MAX_PROBLEM_CHARS="${MAX_PROBLEM_CHARS:-0}"
 MAX_CODE_CHARS="${MAX_CODE_CHARS:-0}"
 MAX_TRAINING_SEQ_LENGTH="${MAX_TRAINING_SEQ_LENGTH:-8192}"
 MAX_STEPS="${MAX_STEPS:-120}"
+SAVE_STRATEGY="${SAVE_STRATEGY:-no}"
 SAVE_STEPS="${SAVE_STEPS:-$((MAX_STEPS + 1))}"
 GRAD_ACCUM_STEPS="${GRAD_ACCUM_STEPS:-8}"
 EVAL_PER_GRADE="${EVAL_PER_GRADE:-10}"
@@ -354,7 +355,7 @@ train_fsdp() {
   local output_model="$3"
   CURRENT_STAGE="train_${tag}"
   local log_file="${LOG_DIR}/train_${tag}.log"
-  if [[ -f "${output_model}/adapter_model.safetensors" && -f "${output_model}/value_head.pth" ]]; then
+  if [[ -f "${output_model}/value_head.pth" && ( -f "${output_model}/adapter_model.safetensors" || -f "${output_model}/adapter_model.bin" ) ]]; then
     echo "[stage:${CURRENT_STAGE}] final checkpoint exists: ${output_model}"
     return
   fi
@@ -362,7 +363,7 @@ train_fsdp() {
   audit_lengths "${train_data}"
   cd "${ROOT}/model_training/src"
   resume_args=()
-  latest_checkpoint="$(find "${output_model}" -maxdepth 1 -type d -name 'checkpoint-*' 2>/dev/null | sort -V | tail -n 1 || true)"
+  latest_checkpoint="$(find "${output_model}" -maxdepth 1 -type d -name 'checkpoint-*' -exec test -f '{}/trainer_state.json' ';' -print 2>/dev/null | sort -V | tail -n 1 || true)"
   if [[ -n "${latest_checkpoint}" ]]; then
     resume_args=(--resume_from_checkpoint "${latest_checkpoint}")
   fi
@@ -403,7 +404,7 @@ train_fsdp() {
       --max_training_seq_length "${MAX_TRAINING_SEQ_LENGTH}" \
       --bf16 "${TRAINING_BF16}" \
       --logging_steps 10 \
-      --save_strategy steps \
+      --save_strategy "${SAVE_STRATEGY}" \
       --save_steps "${SAVE_STEPS}" \
       --save_total_limit 2 \
       --report_to none \
