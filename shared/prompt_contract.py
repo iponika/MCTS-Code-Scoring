@@ -16,9 +16,10 @@ from typing import Any
 # AXIOM scale & evidence constants
 # ---------------------------------------------------------------------------
 
-AXIOM_REFINEMENT_SCALE = """AXIOM refinement-effort scale:
-- First decide functional status. Grades 3-5 mean no verified functional defect; grades 1-2 require a concrete functional defect; grade 0 means the code is fundamentally mismatched or unusable.
-- Then decide repair scope. "minor" means a localized change; "major" means structural algorithm/state/API redesign.
+AXIOM_REFINEMENT_SCALE = """AXIOM pass/fail-first scale:
+- Step 1: decide functional status. Grades 3-5 mean no verified functional defect; grades 1-2 require a concrete functional defect; grade 0 means the code is fundamentally mismatched or unusable.
+- Step 2: after choosing the correct side of that boundary, use repair scope only to refine the grade within that side. Do not let small repair effort move a functionally defective solution into grades 3-5.
+- "minor" means a localized change; "major" means structural algorithm/state/API redesign.
 - 5/5: Production-ready; no code change is needed for the stated requirement.
 - 4/5: Functionally correct; minor quality cleanup would help.
 - 3/5: Functionally correct; major quality refactoring would help.
@@ -96,6 +97,7 @@ Attention, your output MUST be in the following format:
 
 Field rules:
 - axiom_grade is the AXIOM grade.
+- First choose the functional_correctness boundary, then choose axiom_grade inside that boundary.
 - functional_correctness must be true for grades 3-5 and false for grades 0-2.
 - repair_effort must match the selected AXIOM grade: 5 -> none, 4 -> minor_quality, 3 -> major_quality, 2 -> minor_functional, 1 -> major_functional, 0 -> rewrite.
 - evidence_type must be one of provided_test_failure, deduced_counterexample, static_logic_contradiction, uncertain.
@@ -192,6 +194,7 @@ Output must be exactly one JSON object wrapped in <review> tags. Do not output n
 
 Field rules:
 - axiom_grade is the AXIOM grade.
+- First choose the functional_correctness boundary, then choose axiom_grade inside that boundary.
 - functional_correctness must be true for grades 3-5 and false for grades 0-2.
 - repair_effort must match the selected AXIOM grade: 5 -> none, 4 -> minor_quality, 3 -> major_quality, 2 -> minor_functional, 1 -> major_functional, 0 -> rewrite.
 - evidence_type must be one of provided_test_failure, deduced_counterexample, static_logic_contradiction, uncertain.
