@@ -24,7 +24,10 @@ class ReviewPromptVisibilityTest(unittest.TestCase):
             chunks = []
             for message in messages:
                 chunks.append(f"[{message['role']}]\n{message['content']}")
-            return "\n\n".join(chunks)
+            rendered = "\n\n".join(chunks)
+            if kwargs.get("add_generation_prompt"):
+                rendered += "\n\n[assistant]\n"
+            return rendered
 
     def test_build_instruction_hides_dataset_tests_by_default(self) -> None:
         sample = {
@@ -412,7 +415,7 @@ class ReviewPromptVisibilityTest(unittest.TestCase):
         prior_step = "static_logic_check: The function returns x + 1 directly.\n"
         tokenizer = self._FakeChatTokenizer()
 
-        build_chat_eval_prompt(
+        rendered = build_chat_eval_prompt(
             tokenizer,
             sample,
             "Correctness Verification",
@@ -422,10 +425,34 @@ class ReviewPromptVisibilityTest(unittest.TestCase):
             show_tests_in_prompt=False,
         )
 
-        self.assertEqual(len(tokenizer.last_messages), 2)
-        self.assertEqual(tokenizer.last_messages[1]["role"], "assistant")
-        self.assertIn("static_logic_check: The function returns x + 1 directly.", tokenizer.last_messages[1]["content"])
+        self.assertEqual(len(tokenizer.last_messages), 1)
+        self.assertIn("static_logic_check: The function returns x + 1 directly.", rendered)
         self.assertIn("inserted directly as your prior thinking history", tokenizer.last_messages[0]["content"])
+
+    def test_chat_eval_prompt_appends_final_review_prefix_to_active_assistant_turn(self) -> None:
+        sample = {
+            "problem": "Return x + 1.",
+            "candidate_code": "def f(x):\n    return x + 1",
+            "tests": ["assert f(1) == 2"],
+            "language": "python",
+        }
+        tokenizer = self._FakeChatTokenizer()
+
+        rendered = build_chat_eval_prompt(
+            tokenizer,
+            sample,
+            "Correctness Verification",
+            force_final=True,
+            final_only=True,
+            step_context_mode="instruction_context",
+            show_tests_in_prompt=False,
+            enable_thinking=False,
+        )
+
+        self.assertEqual(len(tokenizer.last_messages), 1)
+        self.assertEqual(tokenizer.last_kwargs["enable_thinking"], False)
+        self.assertTrue(rendered.rstrip().endswith('<review>\n{"axiom_grade":'))
+        self.assertEqual(rendered.count("[assistant]"), 1)
 
     def test_stepwise_eval_final_prompt_shows_review_format(self) -> None:
         sample = {
