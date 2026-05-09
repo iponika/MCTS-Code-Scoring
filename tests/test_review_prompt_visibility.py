@@ -9,7 +9,7 @@ from magicoder.preprocess_review_mcts_data import build_instruction
 from magicoder.prompt_template import review_prompt_for_response
 from magicoder.review_evaluator import build_chat_eval_prompt, prompt_for_dimension
 from direct_bootstrap_review import build_prompt as build_direct_bootstrap_prompt
-from direct_bootstrap_review import direct_bootstrap_stop_tokens
+from direct_bootstrap_review import direct_bootstrap_stop_tokens, direct_stepwise_reasoning_budget
 from mcts_math.llms.local_llms import chat_messages_for_prompt, maybe_apply_chat_template
 
 
@@ -316,6 +316,17 @@ class ReviewPromptVisibilityTest(unittest.TestCase):
     def test_direct_stepwise_stop_tokens_include_native_think_close(self) -> None:
         self.assertEqual(direct_bootstrap_stop_tokens("stepwise"), ["</think>"])
         self.assertEqual(direct_bootstrap_stop_tokens("review"), ["</review>"])
+
+    def test_direct_stepwise_auto_budget_uses_frontier_depth(self) -> None:
+        config = OmegaConf.structured(BaseConfig)
+        config.max_depth = 3
+        config.review_explore_depth = 2
+        args = SimpleNamespace(reasoning_steps=-1)
+
+        self.assertEqual(direct_stepwise_reasoning_budget(args, config), (2, "frontier_auto"))
+
+        args.reasoning_steps = 1
+        self.assertEqual(direct_stepwise_reasoning_budget(args, config), (1, "fixed"))
 
     def test_chat_template_treats_response_prefix_as_assistant_history(self) -> None:
         prompt = (
