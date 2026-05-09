@@ -19,6 +19,7 @@ try:
     from shared.prompt_contract import (
         apply_review_prompt_controls,
         build_review_prompt_from_sample,
+        FINAL_REVIEW_PREFILL,
     )
 except ImportError:
     import sys as _sys
@@ -28,6 +29,7 @@ except ImportError:
     from shared.prompt_contract import (
         apply_review_prompt_controls,
         build_review_prompt_from_sample,
+        FINAL_REVIEW_PREFILL,
     )
 
 from mcts_math.constants import *
@@ -39,6 +41,54 @@ import os
 
 python_tool_string = f"{PythonInterpreter().name}: {PythonInterpreter().description}"
 python_tool_name = PythonInterpreter().name
+
+
+def _strip_outer_tag_block(text: str, left_tag: str, right_tag: str) -> str:
+    cleaned = str(text or "").strip()
+    if cleaned.startswith(left_tag):
+        cleaned = cleaned[len(left_tag):].lstrip()
+    if cleaned.endswith(right_tag):
+        cleaned = cleaned[:-len(right_tag)].rstrip()
+    return cleaned.strip()
+
+
+def _normalize_completed_step_history(partial_solution: str) -> str:
+    """Return closed prior step blocks followed by an open step slot."""
+    history = str(partial_solution or "").strip()
+    if history == "None":
+        history = ""
+    if history.endswith("<step>"):
+        return history.rstrip() + "\n"
+    if history:
+        return history.rstrip() + "\n<step>\n"
+    return "<step>\n"
+
+
+def format_review_step_node_text(text: str) -> str:
+    body = _strip_outer_tag_block(text, "<step>", "</step>")
+    return f"<step>\n{body}\n</step>"
+
+
+def format_review_final_node_text(text: str) -> str:
+    cleaned = str(text or "").strip()
+    if "<review>" in cleaned:
+        body = cleaned.split("<review>", 1)[1].strip()
+    else:
+        body = cleaned
+    if "</review>" in body:
+        body = body.split("</review>", 1)[0].strip()
+    return f"<review>\n{body}\n</review>"
+
+
+def _remove_mcts_final_prefill(prompt: str) -> str:
+    """MCTS parses raw model output, so do not hide the opening review tag in a prefix."""
+    marker = "@@ Response"
+    if marker not in prompt:
+        return prompt
+    head, tail = prompt.split(marker, 1)
+    if tail.strip() == FINAL_REVIEW_PREFILL:
+        return f"{head}{marker}\n"
+    return prompt
     
 
 # standard react for Round 1
@@ -140,6 +190,9 @@ def review_prompt_wrap(
 ) -> str:
     del is_value_only
     force_final = review_context.get("force_final_review", False)
+    prompt_partial = partial_solution
+    if not force_final:
+        prompt_partial = _normalize_completed_step_history(partial_solution)
     sample = {
         "question": question,
         "candidate_code": review_context["candidate_code"],
@@ -148,12 +201,14 @@ def review_prompt_wrap(
     }
     prompt = build_review_prompt_from_sample(
         sample,
-        partial_solution=partial_solution,
+        partial_solution=prompt_partial,
         force_final=force_final,
         step_context_mode="assistant_prefix",
         show_tests_in_prompt=bool(review_context.get("show_tests_in_prompt", False)),
         freeform_final_review=False,
     )
+    if force_final:
+        prompt = _remove_mcts_final_prefill(prompt)
     return apply_review_prompt_controls(
         prompt,
         force_final=force_final,
@@ -164,12 +219,7 @@ def review_prompt_wrap(
 
 
 def _strip_outer_step_block(text: str) -> str:
-    cleaned = text.strip()
-    if cleaned.startswith("<step>"):
-        cleaned = cleaned[len("<step>"):].lstrip()
-    if cleaned.endswith("</step>"):
-        cleaned = cleaned[:-len("</step>")].rstrip()
-    return cleaned.strip()
+    return _strip_outer_tag_block(text, "<step>", "</step>")
 
 
 def review_step_result_unwrap(
@@ -182,7 +232,10 @@ def review_step_result_unwrap(
         "final_answer": "",
     }
     if "<review>" in cleaned:
-        parser_result["final_answer"] = cleaned.split("<review>", 1)[1].strip()
+        final_answer = cleaned.split("<review>", 1)[1].strip()
+        if "</review>" in final_answer:
+            final_answer = final_answer.split("</review>", 1)[0].strip()
+        parser_result["final_answer"] = final_answer
         return cleaned, parser_result
     if "<think>" in cleaned:
         think_body = cleaned.split("<think>", 1)[1]

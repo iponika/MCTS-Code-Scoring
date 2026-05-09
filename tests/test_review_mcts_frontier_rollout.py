@@ -36,6 +36,47 @@ class ReviewMCTSFrontierRolloutTest(unittest.TestCase):
         self.assertEqual(solver.root.state["target_dimension"], "Correctness Verification")
         self.assertEqual(solver.current_nodes, [solver.root])
 
+    def test_step_prompt_opens_active_step_slot(self) -> None:
+        solver = make_solver()
+        prompt = solver.create_prompt()[0]
+        self.assertIn("@@ Response\n<step>\n", prompt)
+        self.assertNotIn("<review>\n{\"axiom_grade\":", prompt)
+
+    def test_final_prompt_closes_step_mode_before_review(self) -> None:
+        solver = make_solver()
+        dimension_node = solver.root
+        solver.create_child(
+            "Check the return expression.",
+            {"action": "Check the return expression.", "action_input": "", "final_answer": ""},
+            dimension_node,
+            prior_prob=1.0,
+            idx=0,
+        )
+        frontier = dimension_node.children[0]
+        frontier.state["force_final_review"] = True
+        solver.current_nodes = [frontier]
+
+        prompt = solver.create_prompt()[0]
+        response_tail = prompt.split("@@ Response", 1)[1]
+        self.assertIn("Earlier analysis:\n<step>\nCheck the return expression.\n</step>", prompt)
+        self.assertNotIn("<step>", response_tail)
+        self.assertNotIn("<review>\n{\"axiom_grade\":", response_tail)
+        self.assertIn("Start your very first output token with <review>", prompt)
+
+    def test_step_child_stores_closed_step_block(self) -> None:
+        solver = make_solver()
+        dimension_node = solver.root
+        solver.create_child(
+            "Check the return expression.",
+            {"action": "Check the return expression.", "action_input": "", "final_answer": ""},
+            dimension_node,
+            prior_prob=1.0,
+            idx=0,
+        )
+
+        step_node = dimension_node.children[0]
+        self.assertEqual(step_node.state["text"], "<step>\nCheck the return expression.\n</step>")
+
     def test_exploration_stops_after_explore_depth(self) -> None:
         solver = make_solver()
         dimension_node = solver.root
