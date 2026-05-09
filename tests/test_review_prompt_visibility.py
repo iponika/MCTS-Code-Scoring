@@ -317,13 +317,13 @@ class ReviewPromptVisibilityTest(unittest.TestCase):
         self.assertEqual(direct_bootstrap_stop_tokens("stepwise"), ["</think>"])
         self.assertEqual(direct_bootstrap_stop_tokens("review"), ["</review>"])
 
-    def test_direct_stepwise_auto_budget_uses_frontier_depth(self) -> None:
+    def test_direct_stepwise_auto_budget_uses_mcts_final_path_depth(self) -> None:
         config = OmegaConf.structured(BaseConfig)
         config.max_depth = 3
         config.review_explore_depth = 2
         args = SimpleNamespace(reasoning_steps=-1)
 
-        self.assertEqual(direct_stepwise_reasoning_budget(args, config), (2, "frontier_auto"))
+        self.assertEqual(direct_stepwise_reasoning_budget(args, config), (3, "mcts_final_path_auto"))
 
         args.reasoning_steps = 1
         self.assertEqual(direct_stepwise_reasoning_budget(args, config), (1, "fixed"))
