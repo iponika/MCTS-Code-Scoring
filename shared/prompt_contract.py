@@ -542,6 +542,42 @@ QWEN_USER_PREAMBLE = (
     "Do not put q_value, reward, or training metadata in the answer."
 )
 
+BASE_STATIC_USER_PREAMBLE = (
+    "You are a direct code scoring model for functional correctness.\n"
+    "Use the task, candidate code, and AXIOM refinement-effort scale to assign one stable score.\n"
+    "Return exactly one <review> JSON block. Do not produce intermediate reasoning, <think> blocks, "
+    "<step> blocks, markdown fences, code fixes, q_value, reward, or training metadata."
+)
+
+
+BASE_STATIC_REVIEW_PROMPT = """You are a direct code scoring model for functional correctness.
+@@ Instruction
+You evaluate code based on functional correctness. This prompt is for Base/Static controls, so do not assume any previous analysis notes exist and do not generate intermediate reasoning.
+
+You must score according to the AXIOM 0-5 refinement-effort scale:
+
+{axiom_scale}
+
+{instruction}
+
+Required output format:
+<review>
+{{"axiom_grade": <0-5 integer>, "functional_correctness": true|false, "repair_effort": "none|minor_quality|major_quality|minor_functional|major_functional|rewrite", "evidence_type": "provided_test_failure|deduced_counterexample|static_logic_contradiction|uncertain", "summary": "...", "evidence": ["...", "..."]}}
+</review>
+
+Field rules:
+- First choose the functional_correctness boundary, then choose axiom_grade inside that boundary.
+- functional_correctness must be true for grades 3-5 and false for grades 0-2.
+- repair_effort must match the selected AXIOM grade: 5 -> none, 4 -> minor_quality, 3 -> major_quality, 2 -> minor_functional, 1 -> major_functional, 0 -> rewrite.
+- A grade below 3 requires a concrete functional defect, such as a requirement contradiction, runtime/syntax issue, missing required behavior, or specific counterexample.
+- If no functional defect is verifiable, keep functional_correctness=true and choose grade 3-5.
+- evidence should contain 1-2 short evidence strings grounded in the task, candidate code, or visible tests.
+
+Output exactly one JSON object wrapped in <review> tags. Do not output natural-language text outside the tags, markdown fences, <think> blocks, <step> blocks, or code fixes.
+
+@@ Response
+{partial_solution}"""
+
 
 def build_review_user_content(instruction: str) -> str:
     """Build the user message content that matches the training format.
@@ -551,6 +587,36 @@ def build_review_user_content(instruction: str) -> str:
     produce the same user content for a given instruction.
     """
     return f"{QWEN_USER_PREAMBLE}\n\n{instruction.strip()}"
+
+
+def build_base_static_user_content(instruction: str) -> str:
+    """Build the user message for Base/Static controls without stepwise framing."""
+    return f"{BASE_STATIC_USER_PREAMBLE}\n\n{instruction.strip()}"
+
+
+def build_base_static_prompt_from_sample(
+    sample: dict[str, Any],
+    dimension: str = "Correctness Verification",
+    *,
+    partial_solution: str = "",
+    max_problem_chars: int = 3500,
+    max_code_chars: int = 3500,
+    mark_code_truncation_inside_block: bool = True,
+    show_tests_in_prompt: bool = False,
+) -> str:
+    instruction = build_review_instruction_from_sample(
+        sample,
+        dimension=dimension,
+        max_problem_chars=max_problem_chars,
+        max_code_chars=max_code_chars,
+        mark_code_truncation_inside_block=mark_code_truncation_inside_block,
+        show_tests_in_prompt=show_tests_in_prompt,
+    )
+    return BASE_STATIC_REVIEW_PROMPT.format(
+        axiom_scale=AXIOM_REFINEMENT_SCALE,
+        instruction=instruction,
+        partial_solution=partial_solution,
+    )
 
 
 def prompt_to_chat_messages(prompt_text: str) -> list[dict[str, str]]:

@@ -5,8 +5,14 @@ import json
 from pathlib import Path
 
 from magicoder.axiom_scoring import AXIOM_GRADE_DESCRIPTIONS, axiom_scalar_score, axiom_value_target, axiom_verdict, clamp_axiom_grade
-from magicoder.preprocess_review_mcts_data import attach_qwen_messages, build_instruction
+from magicoder.preprocess_review_mcts_data import (
+    attach_qwen_messages,
+    build_assistant_parts,
+    build_instruction,
+    qwen_assistant_content_from_responses,
+)
 from mcts_math.review_utils import load_codecriticbench_dataset
+from shared.prompt_contract import build_base_static_user_content
 
 
 def parse_args() -> argparse.Namespace:
@@ -16,6 +22,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--dimension", default="Correctness Verification")
     parser.add_argument("--value_loss_weight", type=float, default=1.0)
     parser.add_argument("--lm_loss_weight", type=float, default=0.15)
+    parser.add_argument(
+        "--prompt_variant",
+        choices=["default", "base_static"],
+        default="default",
+        help="default preserves the shared Direct/MCTS training prompt; base_static uses a direct final-only user prompt.",
+    )
     return parser.parse_args()
 
 
@@ -51,6 +63,17 @@ def review_response_for_grade(grade: int) -> str:
     return "<review>\n" + json.dumps(payload, ensure_ascii=False) + "\n</review>"
 
 
+def attach_base_static_messages(item: dict) -> None:
+    responses = [str(segment or "").strip() for segment in item.get("response", []) if str(segment or "").strip()]
+    assistant_content = qwen_assistant_content_from_responses(responses)
+    item["messages"] = [
+        {"role": "user", "content": build_base_static_user_content(str(item.get("instruction") or ""))},
+        {"role": "assistant", "content": assistant_content},
+    ]
+    item["assistant_parts"] = build_assistant_parts(item)
+    item["training_format"] = "qwen_messages_base_static_review"
+
+
 def main() -> None:
     args = parse_args()
     samples = load_codecriticbench_dataset(str(args.input), start=0, limit=None)
@@ -79,7 +102,10 @@ def main() -> None:
             "data_split": "static",
             "synthetic_type": "static_exact",
         }
-        attach_qwen_messages(item)
+        if args.prompt_variant == "base_static":
+            attach_base_static_messages(item)
+        else:
+            attach_qwen_messages(item)
         items.append(item)
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
@@ -91,6 +117,7 @@ def main() -> None:
         "input": str(args.input),
         "output": str(args.output),
         "items": len(items),
+        "prompt_variant": args.prompt_variant,
     }
     print(json.dumps(summary, ensure_ascii=False, indent=2))
 
