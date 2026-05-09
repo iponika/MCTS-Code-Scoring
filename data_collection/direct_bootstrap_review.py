@@ -236,8 +236,7 @@ def direct_stepwise_reasoning_budget(args: argparse.Namespace, config: Any) -> t
     if args.reasoning_steps >= 0:
         return args.reasoning_steps, "fixed"
     max_depth = max(0, int(getattr(config, "max_depth", 3) or 0))
-    explore_depth = int(getattr(config, "review_explore_depth", max_depth) or max_depth)
-    return max(0, min(explore_depth, max_depth)), "frontier_auto"
+    return max_depth, "mcts_final_path_auto"
 
 
 def build_react(candidates: list[dict[str, Any]], dimension: str) -> dict[str, dict[str, Any]]:
