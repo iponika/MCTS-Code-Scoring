@@ -5,6 +5,7 @@ import json
 import os
 import re
 import tempfile
+from pathlib import Path
 from subprocess import PIPE, Popen, TimeoutExpired
 from typing import Any, Dict, List, Tuple
 
@@ -24,6 +25,18 @@ from mcts_math.axiom_scoring import (
 DEFAULT_DIMENSION_RUBRIC: Dict[str, str] = {
     "Correctness Verification": "Judge whether the code satisfies the task requirements and whether there are concrete logic bugs.",
 }
+
+
+DEFAULT_EXCLUDED_SAMPLES_PATH = Path(__file__).resolve().parents[1] / "annotations" / "excluded_samples.jsonl"
+EXCLUSION_MATCH_KEYS = (
+    "dataset_family",
+    "source",
+    "subset",
+    "source_dataset",
+    "original_dataset_index",
+    "dataset_index",
+    "prepared_seed_line_index",
+)
 
 
 def _native_think_sentences(text: str) -> List[str]:
@@ -895,13 +908,44 @@ def prepare_prebuilt_review_sample(raw_sample: Dict[str, Any], dataset_index: in
     return sample
 
 
-def load_codecriticbench_dataset(path: str, start: int = 0, limit: int | None = None) -> List[Dict[str, Any]]:
+def load_excluded_sample_records(path: str | os.PathLike[str] | None = None) -> List[Dict[str, Any]]:
+    exclusion_path = Path(path) if path is not None else DEFAULT_EXCLUDED_SAMPLES_PATH
+    if not exclusion_path.exists():
+        return []
+    with exclusion_path.open("r", encoding="utf-8") as handle:
+        return [
+            record
+            for line in handle
+            if (stripped := line.strip()) and not stripped.startswith("#")
+            if str((record := json.loads(stripped)).get("status", "active")).lower() == "active"
+        ]
+
+
+def _is_excluded_sample(raw_sample: Dict[str, Any], line_index: int, exclusions: List[Dict[str, Any]]) -> bool:
+    sample = {key: str(value) for key, value in raw_sample.items() if key in EXCLUSION_MATCH_KEYS and value is not None}
+    sample["prepared_seed_line_index"] = str(line_index)
+    return any(
+        (criteria := {key: str(record[key]) for key in EXCLUSION_MATCH_KEYS if record.get(key) is not None})
+        and all(sample.get(key) == value for key, value in criteria.items())
+        for record in exclusions
+    )
+
+
+def load_codecriticbench_dataset(
+    path: str,
+    start: int = 0,
+    limit: int | None = None,
+    exclusion_path: str | os.PathLike[str] | None = None,
+) -> List[Dict[str, Any]]:
+    exclusions = load_excluded_sample_records(exclusion_path)
     loaded: List[Dict[str, Any]] = []
     with open(path, "r", encoding="utf-8") as handle:
         for index, line in enumerate(handle):
             if index < start:
                 continue
             raw_sample = json.loads(line)
+            if _is_excluded_sample(raw_sample, index, exclusions):
+                continue
             if raw_sample.get("prepared_review_sample") or (
                 "candidate_code" in raw_sample and "reference_scores" in raw_sample
             ):
