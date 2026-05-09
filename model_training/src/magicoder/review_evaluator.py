@@ -620,6 +620,7 @@ def evaluate_dimension(
                 max_code_chars=args.max_code_chars,
                 mark_code_truncation_inside_block=args.mark_code_truncation_inside_block,
                 show_tests_in_prompt=args.show_tests_in_prompt,
+                enable_thinking=chat_template_enable_thinking,
                 prompt_variant=args.prompt_variant,
             )
         else:
