@@ -5,6 +5,7 @@ This file records Codex-made project changes so work can be resumed safely acros
 ## 2026-05-07
 
 - Added an explicit `base_static` prompt variant for Base/Static controls without changing the default Direct/MCTS prompt contract. Static exact-label data can opt into the direct final-only user prompt with `--prompt_variant base_static`, and AXIOM evaluation can opt in with `PROMPT_VARIANT=base_static`; defaults remain unchanged.
+- Added `run_qwen35_9b_base_static_direct_mcts_full.sh`, a Qwen3.5-9B no-think full pipeline for Base, Static, Direct, and MCTS. It uses one balanced AXIOM seed set, Base/Static-only `base_static` prompts, unchanged Direct/MCTS prompts, equal-size rebalanced training files, FSDP LoRA/value training, and matched AXIOM held-out evaluation.
 - Added shared-server Qwen3.5 environment helpers under `scripts/`: `qwen35_9b_env.sh`, `setup_qwen35_9b_env.sh`, `check_gpus_idle.sh`, and `launch_qwen35_9b_stepwise_tmux.sh`.
 - Configured the Qwen3.5/vLLM stack in an isolated conda prefix under `/data1/ruiqi/conda_envs/mcts-vllm-qwen35`, with pip/Hugging Face/uv caches kept under `/data1/ruiqi` and default mirrors set to Tsinghua PyPI plus `hf-mirror.com`.
 - Downloaded `Qwen/Qwen3.5-9B` into `/data1/ruiqi/hf_home`; offline Transformers loading verifies `model_type=qwen3_5` and a valid chat template.
