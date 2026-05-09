@@ -12,6 +12,7 @@ from mcts_math.nodes import MCTSNode
 from mcts_math.review_utils import compute_review_reward, review_semantic_signature
 from termcolor import colored
 
+from .utils import format_review_final_node_text, format_review_step_node_text
 from .mcts import MCTS
 
 
@@ -288,12 +289,12 @@ class ReviewMCTS(MCTS):
             self.eval_final_answer(new_node)
         elif parser_result["final_answer"] and (self._should_force_final_review(node) or node.state.get("linear_rollout")):
             new_node.is_terminal = True
-            new_node.state["text"] = step_result
+            new_node.state["text"] = format_review_final_node_text(step_result)
             new_node.state["final_answer"] = parser_result["final_answer"]
             self.eval_final_answer(new_node)
         elif parser_result["final_answer"]:
             coerced_step = candidate_step_text or self._premature_review_to_step(step_result)
-            new_node.state["text"] = coerced_step
+            new_node.state["text"] = format_review_step_node_text(coerced_step)
             new_node.state["action"] = coerced_step
             new_node.state["action_input"] = ""
         elif self._should_force_final_review(node):
@@ -302,7 +303,7 @@ class ReviewMCTS(MCTS):
             new_node.state["final_answer"] = NO_VALID_CHILD
             self.eval_final_answer(new_node)
         elif parser_result["action"]:
-            new_node.state["text"] = step_result.strip()
+            new_node.state["text"] = format_review_step_node_text(step_result)
             new_node.state["action"] = parser_result["action"]
             new_node.state["action_input"] = parser_result["action_input"]
         else:
