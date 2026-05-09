@@ -1,6 +1,9 @@
 import unittest
+import json
+import tempfile
+from pathlib import Path
 
-from mcts_math.review_utils import compute_pass_rate, prepare_codecriticbench_sample
+from mcts_math.review_utils import compute_pass_rate, load_codecriticbench_dataset, prepare_codecriticbench_sample
 
 
 class ReviewSeedPreparationTest(unittest.TestCase):
@@ -36,6 +39,50 @@ class ReviewSeedPreparationTest(unittest.TestCase):
         self.assertEqual(sample["objective"]["test_execution_kind"], "non_assertion")
         self.assertEqual(sample["objective"]["full_test_pass_rate"], 0.0)
         self.assertGreaterEqual(sample["axiom_target_grade"], 3)
+
+    def test_loader_skips_active_excluded_prebuilt_axiom_sample(self) -> None:
+        excluded = {
+            "prepared_review_sample": True,
+            "dataset_family": "axiom",
+            "source": "axiom",
+            "subset": "apps",
+            "source_dataset": "apps.jsonl",
+            "original_dataset_index": 420,
+            "dataset_index": "apps:420",
+            "problem": "Bad label.",
+            "candidate_code": "print('bad')",
+            "reference_scores": {"Correctness Verification": 10.0},
+            "axiom_target_grade": 5,
+        }
+        kept = {
+            **excluded,
+            "original_dataset_index": 421,
+            "dataset_index": "apps:421",
+            "problem": "Keep this.",
+        }
+        exclusion = {
+            "status": "active",
+            "dataset_family": "axiom",
+            "source": "axiom",
+            "subset": "apps",
+            "source_dataset": "apps.jsonl",
+            "original_dataset_index": 420,
+            "dataset_index": "apps:420",
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            dataset_path = Path(tmp) / "seed.jsonl"
+            exclusion_path = Path(tmp) / "excluded.jsonl"
+            dataset_path.write_text(
+                json.dumps(excluded) + "\n" + json.dumps(kept) + "\n",
+                encoding="utf-8",
+            )
+            exclusion_path.write_text(json.dumps(exclusion) + "\n", encoding="utf-8")
+
+            loaded = load_codecriticbench_dataset(str(dataset_path), start=0, limit=1, exclusion_path=exclusion_path)
+
+        self.assertEqual(len(loaded), 1)
+        self.assertEqual(loaded[0]["original_dataset_index"], 421)
+        self.assertEqual(loaded[0]["problem"], "Keep this.")
 
 
 if __name__ == "__main__":
