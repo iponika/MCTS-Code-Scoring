@@ -86,22 +86,46 @@ def chat_messages_for_prompt(prompt: str) -> list[dict[str, str]]:
     ]
 
 
+def prompt_parts_for_active_assistant_prefix(prompt: str) -> tuple[str, str]:
+    """Split a raw ``@@ Response`` prompt into user content and active prefix.
+
+    ``@@ Response`` is an internal separator, not a model API feature.  For
+    chat-template models, response text after the separator must be appended
+    after the assistant generation marker so vLLM continues from it.  Passing it
+    as a completed assistant message would open a new assistant turn and allow
+    the model to restart or repeat the prefix.
+    """
+    content = strip_thinking_switch(prompt)
+    if "@@ Response" not in content:
+        return content, ""
+
+    instruction, response = content.split("@@ Response", 1)
+    user_content = instruction.rstrip() + "\n\n@@ Response"
+    response_prefix = response.lstrip("\n").rstrip()
+    return user_content, response_prefix
+
+
 def maybe_apply_chat_template(prompts: List[str], engine: LLM, config: Any | None) -> List[str]:
     if config is None or not getattr(config, "use_chat_template", False):
         return prompts
     tokenizer = engine.get_tokenizer()
     rendered = []
     for prompt in prompts:
+        user_content, response_prefix = prompt_parts_for_active_assistant_prefix(prompt)
+        messages = [{"role": "user", "content": user_content}]
         kwargs = {
             "tokenize": False,
             "add_generation_prompt": True,
             "enable_thinking": chat_template_thinking_enabled(prompt, config),
         }
         try:
-            rendered.append(tokenizer.apply_chat_template(chat_messages_for_prompt(prompt), **kwargs))
+            rendered_prompt = tokenizer.apply_chat_template(messages, **kwargs)
         except TypeError:
             kwargs.pop("enable_thinking", None)
-            rendered.append(tokenizer.apply_chat_template(chat_messages_for_prompt(prompt), **kwargs))
+            rendered_prompt = tokenizer.apply_chat_template(messages, **kwargs)
+        if response_prefix:
+            rendered_prompt += response_prefix
+        rendered.append(rendered_prompt)
     return rendered
 
 
