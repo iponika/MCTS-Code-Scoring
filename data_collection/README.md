@@ -33,7 +33,7 @@ uv run python data_collection/direct_bootstrap_review.py \
   --repeats 2
 ```
 
-Use `--response_mode stepwise --reasoning_steps 3` when testing whether explicit `<step>` supervision helps.
+Use `--response_mode stepwise --reasoning_steps -1` for MCTS-like direct stepwise generation: it generates the configured frontier reasoning depth (`review_explore_depth`, capped by `max_depth`) before the final review. Pass an explicit non-negative `--reasoning_steps` only for fixed-step ablations.
 
 ## Review MCTS
 

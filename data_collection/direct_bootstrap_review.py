@@ -56,8 +56,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--reasoning_steps",
         type=int,
-        default=3,
-        help="Number of sequential native reasoning notes to generate when --response_mode stepwise.",
+        default=-1,
+        help=(
+            "Number of sequential native reasoning notes to generate when --response_mode stepwise. "
+            "Use -1 for MCTS-like auto finalization: generate up to review_explore_depth notes, "
+            "bounded by max_depth."
+        ),
     )
     parser.add_argument(
         "--step_context_mode",
@@ -226,6 +230,14 @@ def direct_bootstrap_stop_tokens(response_mode: str) -> list[str]:
     if response_mode == "stepwise":
         return ["</think>"]
     return ["</review>"]
+
+
+def direct_stepwise_reasoning_budget(args: argparse.Namespace, config: Any) -> tuple[int, str]:
+    if args.reasoning_steps >= 0:
+        return args.reasoning_steps, "fixed"
+    max_depth = max(0, int(getattr(config, "max_depth", 3) or 0))
+    explore_depth = int(getattr(config, "review_explore_depth", max_depth) or max_depth)
+    return max(0, min(explore_depth, max_depth)), "frontier_auto"
 
 
 def build_react(candidates: list[dict[str, Any]], dimension: str) -> dict[str, dict[str, Any]]:
@@ -399,7 +411,8 @@ def generate_stepwise(
     sampling_params.n = 1
     sampling_params.best_of = 1
     sampling_params.stop = ["</think>"]
-    for _ in range(max(0, args.reasoning_steps)):
+    reasoning_steps, finalize_mode = direct_stepwise_reasoning_budget(args, config)
+    for _ in range(reasoning_steps):
         prompts = [
             build_prompt(
                 item["sample"],
@@ -441,6 +454,8 @@ def generate_stepwise(
         sample = item["sample"]
         candidate_index = item["repeat_index"]
         candidate = evaluated_stepwise_candidate(candidate_index, segments, sample, args.dimension)
+        candidate["reasoning_steps"] = reasoning_steps
+        candidate["stepwise_finalize_mode"] = finalize_mode
         by_sample_index[sample_position[id(sample)]].append(candidate)
 
     return [(sample, by_sample_index[index]) for index, sample in enumerate(sample_batch)]
@@ -476,7 +491,13 @@ def main() -> None:
                     "direct_stepwise_rollouts" if args.response_mode == "stepwise" else "direct_independent_rollouts"
                 )
                 record["direct_response_mode"] = args.response_mode
-                record["reasoning_steps"] = args.reasoning_steps if args.response_mode == "stepwise" else 0
+                if args.response_mode == "stepwise":
+                    resolved_reasoning_steps, stepwise_finalize_mode = direct_stepwise_reasoning_budget(args, config)
+                else:
+                    resolved_reasoning_steps, stepwise_finalize_mode = 0, "review_only"
+                record["reasoning_steps"] = resolved_reasoning_steps
+                record["requested_reasoning_steps"] = args.reasoning_steps if args.response_mode == "stepwise" else 0
+                record["stepwise_finalize_mode"] = stepwise_finalize_mode
                 record["generation_repeats"] = args.repeats
                 record["dimension"] = args.dimension
                 record["all_candidates"] = candidates
