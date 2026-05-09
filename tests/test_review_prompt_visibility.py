@@ -1,4 +1,5 @@
 import unittest
+from types import SimpleNamespace
 
 from omegaconf import OmegaConf
 
@@ -9,7 +10,7 @@ from magicoder.prompt_template import review_prompt_for_response
 from magicoder.review_evaluator import build_chat_eval_prompt, prompt_for_dimension
 from direct_bootstrap_review import build_prompt as build_direct_bootstrap_prompt
 from direct_bootstrap_review import direct_bootstrap_stop_tokens
-from mcts_math.llms.local_llms import chat_messages_for_prompt
+from mcts_math.llms.local_llms import chat_messages_for_prompt, maybe_apply_chat_template
 
 
 class ReviewPromptVisibilityTest(unittest.TestCase):
@@ -330,6 +331,33 @@ class ReviewPromptVisibilityTest(unittest.TestCase):
         self.assertIn("@@ Response", messages[0]["content"])
         self.assertIn("static_logic_check", messages[1]["content"])
         self.assertNotIn("/think", messages[1]["content"])
+
+    def test_mcts_chat_template_appends_response_prefix_to_active_assistant_turn(self) -> None:
+        prompt = (
+            "Do the review.\n\n"
+            "@@ Response\n"
+            "static_logic_check: The function returns x + 1 directly.\n\n"
+            "/no_think"
+        )
+        tokenizer = self._FakeChatTokenizer()
+
+        class _FakeEngine:
+            def get_tokenizer(self):
+                return tokenizer
+
+        rendered = maybe_apply_chat_template(
+            [prompt],
+            _FakeEngine(),
+            SimpleNamespace(use_chat_template=True, chat_template_enable_thinking=True),
+        )[0]
+
+        self.assertEqual(len(tokenizer.last_messages), 1)
+        self.assertEqual(tokenizer.last_messages[0]["role"], "user")
+        self.assertIn("@@ Response", tokenizer.last_messages[0]["content"])
+        self.assertNotIn("static_logic_check", tokenizer.last_messages[0]["content"])
+        self.assertEqual(tokenizer.last_kwargs["enable_thinking"], False)
+        self.assertTrue(rendered.rstrip().endswith("static_logic_check: The function returns x + 1 directly."))
+        self.assertEqual(rendered.count("[assistant]"), 1)
 
     def test_stepwise_eval_step_prompt_marks_prior_steps_as_completed(self) -> None:
         sample = {
