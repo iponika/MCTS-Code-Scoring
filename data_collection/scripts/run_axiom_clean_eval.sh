@@ -33,6 +33,7 @@ MAX_RETHINKS="${MAX_RETHINKS:-1}"
 MAX_FINAL_RETRIES="${MAX_FINAL_RETRIES:-2}"
 REASONING_STEPS="${REASONING_STEPS:-}"
 USE_CHAT_TEMPLATE="${USE_CHAT_TEMPLATE:-1}"
+PROMPT_VARIANT="${PROMPT_VARIANT:-default}"
 EVAL_BASE_DIRECT="${EVAL_BASE_DIRECT:-1}"
 EVAL_TRAINED_DIRECT="${EVAL_TRAINED_DIRECT:-1}"
 EVAL_TRAINED_VALUE="${EVAL_TRAINED_VALUE:-1}"
@@ -206,6 +207,7 @@ eval_one() {
       --top_p "${top_p}" \
       --score_key "${SCORE_KEY}" \
       --seed "${seed}" \
+      --prompt_variant "${PROMPT_VARIANT}" \
       "${final_mode_args[@]}" \
       --chat_template_enable_thinking "${CHAT_TEMPLATE_ENABLE_THINKING:-auto}" \
       --max_problem_chars "${MAX_PROBLEM_CHARS}" \

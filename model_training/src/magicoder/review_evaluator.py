@@ -21,6 +21,7 @@ from magicoder.review_value_guided_evaluator import VALUE_SCORE_KEYS
 try:
     from shared.prompt_contract import (
         FINAL_REVIEW_PREFILL,
+        build_base_static_prompt_from_sample,
         build_review_prompt_from_sample,
         prompt_to_chat_messages,
         render_eval_prompt,
@@ -32,6 +33,7 @@ except ImportError:
     _sys.path.insert(0, str(_Path(__file__).resolve().parents[3]))
     from shared.prompt_contract import (
         FINAL_REVIEW_PREFILL,
+        build_base_static_prompt_from_sample,
         build_review_prompt_from_sample,
         prompt_to_chat_messages,
         render_eval_prompt,
@@ -137,7 +139,18 @@ def prompt_for_dimension(
     max_code_chars: int = 3500,
     mark_code_truncation_inside_block: bool = True,
     show_tests_in_prompt: bool = False,
+    prompt_variant: str = "default",
 ) -> str:
+    if prompt_variant == "base_static":
+        return build_base_static_prompt_from_sample(
+            sample,
+            dimension=dimension,
+            partial_solution=partial_response,
+            max_problem_chars=max_problem_chars,
+            max_code_chars=max_code_chars,
+            mark_code_truncation_inside_block=mark_code_truncation_inside_block,
+            show_tests_in_prompt=show_tests_in_prompt,
+        )
     return build_review_prompt_from_sample(
         sample,
         dimension=dimension,
@@ -520,6 +533,7 @@ def build_chat_eval_prompt(
     mark_code_truncation_inside_block: bool = True,
     show_tests_in_prompt: bool = False,
     enable_thinking: bool | None = None,
+    prompt_variant: str = "default",
 ) -> str:
     """Render the existing raw-text prompt contract through the tokenizer chat template.
 
@@ -538,6 +552,7 @@ def build_chat_eval_prompt(
         max_code_chars=max_code_chars,
         mark_code_truncation_inside_block=mark_code_truncation_inside_block,
         show_tests_in_prompt=show_tests_in_prompt,
+        prompt_variant=prompt_variant,
     )
     messages = prompt_to_chat_messages(raw_prompt)
     user_content = messages[0]["content"]
@@ -605,6 +620,7 @@ def evaluate_dimension(
                 max_code_chars=args.max_code_chars,
                 mark_code_truncation_inside_block=args.mark_code_truncation_inside_block,
                 show_tests_in_prompt=args.show_tests_in_prompt,
+                prompt_variant=args.prompt_variant,
             )
         else:
             prompt = prompt_for_dimension(
@@ -618,7 +634,7 @@ def evaluate_dimension(
                 max_code_chars=args.max_code_chars,
                 mark_code_truncation_inside_block=args.mark_code_truncation_inside_block,
                 show_tests_in_prompt=args.show_tests_in_prompt,
-                enable_thinking=chat_template_enable_thinking,
+                prompt_variant=args.prompt_variant,
             )
 
         candidates = []
@@ -709,6 +725,7 @@ def evaluate_dimension(
                 mark_code_truncation_inside_block=args.mark_code_truncation_inside_block,
                 show_tests_in_prompt=args.show_tests_in_prompt,
                 enable_thinking=chat_template_enable_thinking,
+                prompt_variant=args.prompt_variant,
             )
         else:
             retry_prompt = prompt_for_dimension(
@@ -723,6 +740,7 @@ def evaluate_dimension(
                 max_code_chars=args.max_code_chars,
                 mark_code_truncation_inside_block=args.mark_code_truncation_inside_block,
                 show_tests_in_prompt=args.show_tests_in_prompt,
+                prompt_variant=args.prompt_variant,
             )
         with torch.no_grad():
             continuation = generate_response(
@@ -766,6 +784,7 @@ def evaluate_dimension(
             mark_code_truncation_inside_block=args.mark_code_truncation_inside_block,
             show_tests_in_prompt=args.show_tests_in_prompt,
             enable_thinking=chat_template_enable_thinking,
+            prompt_variant=args.prompt_variant,
         )
     else:
         final_prompt = prompt_for_dimension(
@@ -779,6 +798,7 @@ def evaluate_dimension(
             max_code_chars=args.max_code_chars,
             mark_code_truncation_inside_block=args.mark_code_truncation_inside_block,
             show_tests_in_prompt=args.show_tests_in_prompt,
+            prompt_variant=args.prompt_variant,
         )
     final_value_score = score_response(value_model, tokenizer, final_prompt, partial_response) if value_model is not None else neutral_value_score()
     reference_score = sample.get("axiom_target_score")
@@ -878,6 +898,12 @@ def main() -> None:
     parser.add_argument("--score_key", choices=VALUE_SCORE_KEYS, default="last_value")
     parser.add_argument("--seed", type=int)
     parser.add_argument("--final_only_json", action="store_true", help="Generate only one compact final <review> JSON block; no step reasoning.")
+    parser.add_argument(
+        "--prompt_variant",
+        choices=["default", "base_static"],
+        default="default",
+        help="Prompt contract for evaluation. default preserves Direct/MCTS prompts; base_static is a direct final-only control prompt.",
+    )
     parser.add_argument(
         "--step_context_mode",
         choices=["assistant_prefix", "instruction_context"],

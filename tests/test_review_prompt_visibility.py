@@ -541,6 +541,26 @@ class ReviewPromptVisibilityTest(unittest.TestCase):
         self.assertNotIn("You don't have to analyze code by yourself.", prompt)
         self.assertNotIn("Do not continue the numbered analysis notes.", prompt)
 
+    def test_base_static_prompt_variant_avoids_stepwise_framing(self) -> None:
+        sample = {
+            "problem": "Return x + 1.",
+            "candidate_code": "def f(x):\n    return x + 1",
+            "tests": ["assert f(1) == 2"],
+            "language": "python",
+        }
+        prompt = prompt_for_dimension(
+            sample,
+            "Correctness Verification",
+            force_final=True,
+            final_only=True,
+            prompt_variant="base_static",
+        )
+
+        self.assertIn("This prompt is for Base/Static controls", prompt)
+        self.assertIn("do not generate intermediate reasoning", prompt)
+        self.assertNotIn("This is the final turn of a multi-step code review", prompt)
+        self.assertNotIn("Previous analysis notes", prompt)
+
     def test_review_training_prompt_matches_response_shape(self) -> None:
         instruction = "Scoring target: assess candidate code correctness.\n\nTask description:\nReturn x + 1."
 
