@@ -21,6 +21,8 @@ AXIOM_MAX_CODE_CHARS="${AXIOM_MAX_CODE_CHARS:-0}"
 DIRECT_REPEATS="${DIRECT_REPEATS:-3}"
 DIRECT_BATCH_SIZE="${DIRECT_BATCH_SIZE:-4}"
 POLICY_MIN_Q="${POLICY_MIN_Q:-0.8}"
+POLICY_MAX_GRADE_DELTA="${POLICY_MAX_GRADE_DELTA:-1}"
+WEAK_POLICY_LM_WEIGHT="${WEAK_POLICY_LM_WEIGHT:-0.35}"
 MAX_VALUE_PATHS_PER_DIMENSION="${MAX_VALUE_PATHS_PER_DIMENSION:-0}"
 BALANCED_TRAIN_TOTAL="${BALANCED_TRAIN_TOTAL:-600}"
 MAX_TRAINING_SEQ_LENGTH="${MAX_TRAINING_SEQ_LENGTH:-8192}"
@@ -207,6 +209,8 @@ prepare_bootstrap_train() {
       --input "${raw_file}" \
       --output_file "${output_file}" \
       --policy_min_q "${POLICY_MIN_Q}" \
+      --policy_max_grade_delta "${POLICY_MAX_GRADE_DELTA}" \
+      --weak_policy_lm_weight "${WEAK_POLICY_LM_WEIGHT}" \
       --policy_response_mode "${policy_response_mode}" \
       --max_value_paths_per_dimension "${MAX_VALUE_PATHS_PER_DIMENSION}" \
       --max_problem_chars "${MAX_PROBLEM_CHARS}" \
@@ -230,56 +234,80 @@ static = json.loads('''${static_counts}''')
 direct = json.loads('''${direct_counts}''')
 mcts = json.loads('''${mcts_counts}''')
 total = int("${BALANCED_TRAIN_TOTAL}")
-policy = min(static["policy"], direct["policy"], mcts["policy"], total)
-value = max(0, total - policy)
+direct_policy = min(direct["policy"], total)
+mcts_policy = min(mcts["policy"], total)
 print(json.dumps({
     "static_raw": static,
     "direct_raw": direct,
     "mcts_raw": mcts,
     "target_total": total,
-    "target_policy": policy,
-    "target_value": value,
+    "static_target_policy": total,
+    "direct_target_policy": direct_policy,
+    "mcts_target_policy": mcts_policy,
+    "static_target_value": 0,
+    "direct_target_value": max(0, total - direct_policy),
+    "mcts_target_value": max(0, total - mcts_policy),
 }, ensure_ascii=False))
 PY
   )"
   echo "${targets}" | python -m json.tool > "${BALANCE_META}"
-  local target_total target_policy target_value
+  local target_total static_target_policy direct_target_policy mcts_target_policy static_target_value direct_target_value mcts_target_value
   target_total="$(python - <<PY
 import json
 print(json.loads('''${targets}''')["target_total"])
 PY
 )"
-  target_policy="$(python - <<PY
+  static_target_policy="$(python - <<PY
 import json
-print(json.loads('''${targets}''')["target_policy"])
+print(json.loads('''${targets}''')["static_target_policy"])
 PY
 )"
-  target_value="$(python - <<PY
+  direct_target_policy="$(python - <<PY
 import json
-print(json.loads('''${targets}''')["target_value"])
+print(json.loads('''${targets}''')["direct_target_policy"])
+PY
+)"
+  mcts_target_policy="$(python - <<PY
+import json
+print(json.loads('''${targets}''')["mcts_target_policy"])
+PY
+)"
+  static_target_value="$(python - <<PY
+import json
+print(json.loads('''${targets}''')["static_target_value"])
+PY
+)"
+  direct_target_value="$(python - <<PY
+import json
+print(json.loads('''${targets}''')["direct_target_value"])
+PY
+)"
+  mcts_target_value="$(python - <<PY
+import json
+print(json.loads('''${targets}''')["mcts_target_value"])
 PY
 )"
   cd "${ROOT}"
   PYTHONPATH="${ROOT}" python data_collection/rebalance_review_train_data.py \
     --input "${STATIC_TRAIN_RAW}" \
     --output "${STATIC_TRAIN}" \
-    --target_policy_count "${target_total}" \
-    --target_value_count 0 \
+    --target_policy_count "${static_target_policy}" \
+    --target_value_count "${static_target_value}" \
     --target_total_count "${target_total}" \
     --stratify_by_dataset
   PYTHONPATH="${ROOT}" python data_collection/rebalance_review_train_data.py \
     --input "${DIRECT_TRAIN_RAW}" \
     --output "${DIRECT_TRAIN}" \
-    --target_policy_count "${target_policy}" \
-    --target_value_count "${target_value}" \
+    --target_policy_count "${direct_target_policy}" \
+    --target_value_count "${direct_target_value}" \
     --target_total_count "${target_total}" \
     --stratify_by_dataset \
     --stratify_by_delta_bucket
   PYTHONPATH="${ROOT}" python data_collection/rebalance_review_train_data.py \
     --input "${MCTS_TRAIN_RAW}" \
     --output "${MCTS_TRAIN}" \
-    --target_policy_count "${target_policy}" \
-    --target_value_count "${target_value}" \
+    --target_policy_count "${mcts_target_policy}" \
+    --target_value_count "${mcts_target_value}" \
     --target_total_count "${target_total}" \
     --stratify_by_dataset \
     --stratify_by_delta_bucket

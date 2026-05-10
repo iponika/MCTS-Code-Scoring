@@ -793,6 +793,15 @@ def policy_grade_matches(parsed_grade: Any, target_grade: Any) -> bool:
         return False
 
 
+def policy_grade_delta(parsed_grade: Any, target_grade: Any) -> int | None:
+    if parsed_grade is None or target_grade is None:
+        return None
+    try:
+        return int(clamp_axiom_grade(float(parsed_grade)) - clamp_axiom_grade(float(target_grade)))
+    except (TypeError, ValueError):
+        return None
+
+
 def policy_grade_matches_details(details: dict[str, Any]) -> bool:
     parsed = details.get("parsed") if isinstance(details.get("parsed"), dict) else {}
     parsed_grade = details.get("predicted_axiom_grade")
@@ -803,6 +812,22 @@ def policy_grade_matches_details(details: dict[str, Any]) -> bool:
 
 def policy_grade_matches_item(item: dict[str, Any]) -> bool:
     return policy_grade_matches(item.get("parsed_axiom_grade"), item.get("target_axiom_grade"))
+
+
+def policy_grade_delta_item(item: dict[str, Any]) -> int | None:
+    return policy_grade_delta(item.get("parsed_axiom_grade"), item.get("target_axiom_grade"))
+
+
+def mark_policy_strength(item: dict[str, Any], *, grade_delta: int | None, weak_lm_weight: float) -> None:
+    if grade_delta is None:
+        item["policy_strength"] = "unknown"
+        return
+    item["policy_grade_delta"] = grade_delta
+    if grade_delta == 0:
+        item["policy_strength"] = "exact"
+        return
+    item["policy_strength"] = f"weak_grade_delta_{abs(grade_delta)}"
+    item["lm_loss_weight"] = min(float(item.get("lm_loss_weight", 1.0) or 1.0), weak_lm_weight)
 
 
 def parse_response_review_payload(segment: str) -> dict[str, Any]:
@@ -877,6 +902,8 @@ def convert_records(
     records: Iterable[dict[str, Any]],
     policy_min_q: float,
     max_value_paths_per_dimension: int,
+    policy_max_grade_delta: int = 0,
+    weak_policy_lm_weight: float = 0.35,
     data_split: str = "main",
     emit_verifier_corrections: bool = False,
     verifier_correction_mode: str = "value_only",
@@ -927,9 +954,15 @@ def convert_records(
                     continue
                 seen_review_signatures.add(semantic_key)
             has_verifier_issues = bool(verifier_issue_messages(details))
-            grade_matches = policy_grade_matches_details(details)
+            parsed = details.get("parsed") if isinstance(details.get("parsed"), dict) else {}
+            parsed_grade = details.get("predicted_axiom_grade")
+            if parsed_grade is None:
+                parsed_grade = parse_axiom_grade(parsed)
+            grade_delta = policy_grade_delta(parsed_grade, details.get("target_axiom_grade"))
+            grade_matches = grade_delta == 0
+            grade_within_policy_delta = grade_delta is not None and abs(grade_delta) <= max(0, policy_max_grade_delta)
             policy_candidate = tag in best and q_value >= policy_min_q and error is None and not has_verifier_issues
-            train_lm = policy_candidate and grade_matches
+            train_lm = policy_candidate and grade_within_policy_delta
             item = path_to_training_item(
                 record,
                 tag,
@@ -952,11 +985,19 @@ def convert_records(
                 item["policy_reasoning_quality_issue"] = quality_issue
                 stats["policy_reasoning_quality_blocked"] += 1
                 stats[f"policy_reasoning_quality_{quality_issue}"] += 1
-            if policy_candidate and not grade_matches:
+            if train_lm:
+                mark_policy_strength(item, grade_delta=grade_delta, weak_lm_weight=weak_policy_lm_weight)
+                if grade_matches:
+                    stats["policy_exact_grade_paths"] += 1
+                else:
+                    stats["policy_weak_grade_delta_paths"] += 1
+            if policy_candidate and not grade_within_policy_delta:
                 item["force_value_only"] = True
                 item["lm_loss_weight"] = 0.0
-                item["policy_block_reason"] = "axiom_grade_mismatch"
-                stats["policy_grade_mismatch_paths"] += 1
+                item["policy_block_reason"] = "axiom_grade_delta_too_large"
+                if grade_delta is not None:
+                    item["policy_grade_delta"] = grade_delta
+                stats["policy_grade_delta_too_large_paths"] += 1
             dedupe_key = (record.get("source"), record.get("subset"), record.get("dataset_index"), tag)
             if dedupe_key in seen:
                 stats["duplicate_paths"] += 1
@@ -1286,18 +1327,25 @@ def apply_score_consensus(
     return dict(stats)
 
 
-def refresh_policy_flags(items: list[dict[str, Any]], policy_min_q: float) -> dict[str, int]:
+def refresh_policy_flags(
+    items: list[dict[str, Any]],
+    policy_min_q: float,
+    policy_max_grade_delta: int = 0,
+    weak_policy_lm_weight: float = 0.35,
+) -> dict[str, int]:
     stats = defaultdict(int)
     for item in items:
         old_train_lm = bool(item.get("train_lm"))
         terminal_q = numeric_q_value(item.get("terminal_q_value"))
         quality_issue = policy_reasoning_quality_issue(item)
+        grade_delta = policy_grade_delta_item(item)
+        grade_within_policy_delta = grade_delta is not None and abs(grade_delta) <= max(0, policy_max_grade_delta)
         policy_eligible_without_quality = (
             bool(item.get("is_best_path"))
             and terminal_q >= policy_min_q
             and item.get("terminal_error") is None
             and not item.get("force_value_only")
-            and policy_grade_matches_item(item)
+            and grade_within_policy_delta
             and (not item.get("verifier_feedback") or item.get("allow_verifier_policy"))
         )
         if quality_issue and (old_train_lm or policy_eligible_without_quality):
@@ -1309,6 +1357,13 @@ def refresh_policy_flags(items: list[dict[str, Any]], policy_min_q: float) -> di
             stats[f"policy_reasoning_quality_{quality_issue}"] += 1
         new_train_lm = policy_eligible_without_quality and quality_issue is None
         item["train_lm"] = new_train_lm
+        if new_train_lm:
+            mark_policy_strength(item, grade_delta=grade_delta, weak_lm_weight=weak_policy_lm_weight)
+            stats["policy_exact_grade_paths" if grade_delta == 0 else "policy_weak_grade_delta_paths"] += 1
+        elif bool(item.get("is_best_path")) and terminal_q >= policy_min_q and grade_delta is not None:
+            item["policy_grade_delta"] = grade_delta
+            if abs(grade_delta) > max(0, policy_max_grade_delta):
+                item["policy_block_reason"] = "axiom_grade_delta_too_large"
         if not new_train_lm and item.get("force_value_only"):
             item["lm_loss_weight"] = 0.0
         if old_train_lm != new_train_lm:
@@ -1387,6 +1442,21 @@ def main() -> None:
     )
     parser.add_argument("--output_file", required=True, help="Output JSONL consumed by magicoder.train_multi --task review.")
     parser.add_argument("--policy_min_q", type=float, default=0.5, help="Minimum terminal q_value for LM imitation.")
+    parser.add_argument(
+        "--policy_max_grade_delta",
+        type=int,
+        default=0,
+        help=(
+            "Maximum absolute AXIOM-grade delta allowed for policy imitation. "
+            "0 keeps only exact-grade paths; 1 admits high-q near misses as weak policy."
+        ),
+    )
+    parser.add_argument(
+        "--weak_policy_lm_weight",
+        type=float,
+        default=0.35,
+        help="LM loss weight cap for admitted non-exact policy paths.",
+    )
     parser.add_argument(
         "--policy_response_mode",
         choices=["path", "final_review"],
@@ -1528,6 +1598,8 @@ def main() -> None:
         new_records,
         policy_min_q=args.policy_min_q,
         max_value_paths_per_dimension=args.max_value_paths_per_dimension,
+        policy_max_grade_delta=args.policy_max_grade_delta,
+        weak_policy_lm_weight=args.weak_policy_lm_weight,
         data_split="new",
         emit_verifier_corrections=args.emit_verifier_corrections,
         verifier_correction_mode=args.verifier_correction_mode,
@@ -1551,6 +1623,8 @@ def main() -> None:
         replay_records,
         policy_min_q=args.policy_min_q,
         max_value_paths_per_dimension=args.max_value_paths_per_dimension,
+        policy_max_grade_delta=args.policy_max_grade_delta,
+        weak_policy_lm_weight=args.weak_policy_lm_weight,
         data_split="replay",
         emit_verifier_corrections=args.emit_verifier_corrections,
         verifier_correction_mode=args.verifier_correction_mode,
@@ -1591,7 +1665,15 @@ def main() -> None:
         stats.update(apply_score_consensus(items, consensus, strength=args.score_consensus_strength, mode=args.score_consensus_mode))
     else:
         stats["score_consensus_enabled"] = 0
-    stats.update({f"final_{key}": value for key, value in refresh_policy_flags(items, args.policy_min_q).items()})
+    stats.update({
+        f"final_{key}": value
+        for key, value in refresh_policy_flags(
+            items,
+            args.policy_min_q,
+            args.policy_max_grade_delta,
+            args.weak_policy_lm_weight,
+        ).items()
+    })
     if args.policy_response_mode == "final_review":
         stats.update(collapse_policy_responses_to_final_review(items))
     stats.update(refresh_qwen_message_fields(items))
