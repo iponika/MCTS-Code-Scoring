@@ -136,10 +136,49 @@ def summarize_targets(items: list[dict]) -> dict[str, int]:
     return dict(sorted(Counter(str(item.get("target_axiom_grade")) for item in items).items()))
 
 
+SCHEMA_DEFAULTS = {
+    "force_value_only": False,
+    "lm_loss_weight": 1.0,
+    "parsed_axiom_grade": -1,
+    "parsed_score": -1.0,
+    "policy_block_reason": "",
+    "policy_grade_delta": 999,
+    "policy_reasoning_quality_issue": "",
+    "policy_strength": "",
+    "q_label_method": "",
+    "q_label_weights": "",
+    "rebalance_repeat_index": -1,
+    "target_axiom_grade": -1,
+    "target_score": -1.0,
+    "terminal_error": "",
+    "value_loss_weight": 1.0,
+}
+
+
+def normalize_schema_value(key: str, value):
+    if key == "q_label_weights":
+        if value is None:
+            return ""
+        if isinstance(value, str):
+            return value
+        return json.dumps(value, sort_keys=True, ensure_ascii=False)
+    if value is None and key in SCHEMA_DEFAULTS:
+        return SCHEMA_DEFAULTS[key]
+    if key in {"lm_loss_weight", "parsed_score", "target_score", "value_loss_weight"}:
+        return float(value)
+    if key in {"parsed_axiom_grade", "policy_grade_delta", "rebalance_repeat_index", "target_axiom_grade"}:
+        return int(value)
+    if key == "force_value_only":
+        return bool(value)
+    if key in {"policy_block_reason", "policy_reasoning_quality_issue", "policy_strength", "q_label_method", "terminal_error"}:
+        return str(value)
+    return value
+
+
 def normalize_top_level_schema(items: list[dict]) -> list[dict]:
     """Make JSONL rows schema-stable for HuggingFace's JSON loader."""
-    keys = sorted({key for item in items for key in item})
-    return [{key: item.get(key) for key in keys} for item in items]
+    keys = sorted({key for item in items for key in item} | set(SCHEMA_DEFAULTS))
+    return [{key: normalize_schema_value(key, item.get(key)) for key in keys} for item in items]
 
 
 def main() -> None:
