@@ -136,6 +136,12 @@ def summarize_targets(items: list[dict]) -> dict[str, int]:
     return dict(sorted(Counter(str(item.get("target_axiom_grade")) for item in items).items()))
 
 
+def normalize_top_level_schema(items: list[dict]) -> list[dict]:
+    """Make JSONL rows schema-stable for HuggingFace's JSON loader."""
+    keys = sorted({key for item in items for key in item})
+    return [{key: item.get(key) for key in keys} for item in items]
+
+
 def main() -> None:
     args = parse_args()
     rng = random.Random(args.seed)
@@ -175,6 +181,7 @@ def main() -> None:
             selected = extra
 
     rng.shuffle(selected)
+    selected = normalize_top_level_schema(selected)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     with args.output.open("w", encoding="utf-8") as writer:
         for item in selected:
