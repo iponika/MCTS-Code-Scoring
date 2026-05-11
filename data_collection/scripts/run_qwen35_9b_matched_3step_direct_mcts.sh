@@ -37,6 +37,7 @@ DIRECT_TRAIN_CUDA_VISIBLE_DEVICES="${DIRECT_TRAIN_CUDA_VISIBLE_DEVICES:-0,1}"
 MCTS_TRAIN_CUDA_VISIBLE_DEVICES="${MCTS_TRAIN_CUDA_VISIBLE_DEVICES:-0,1,2}"
 EVAL_CUDA_VISIBLE_DEVICES="${EVAL_CUDA_VISIBLE_DEVICES:-0}"
 NTFY_URL="${NTFY_URL:-https://ntfy.sh/iponika_mcts}"
+REUSE_SOURCE_MCTS_RAW="${REUSE_SOURCE_MCTS_RAW:-1}"
 
 ACCELERATE_MIXED_PRECISION="${ACCELERATE_MIXED_PRECISION:-no}"
 TRAINING_BF16="${TRAINING_BF16:-False}"
@@ -119,7 +120,7 @@ prepare_reused_inputs() {
   if [[ ! -f "${SEED_META}" && -f "${SOURCE_RUN_DIR}/seed_axiom.metadata.json" ]]; then
     cp "${SOURCE_RUN_DIR}/seed_axiom.metadata.json" "${SEED_META}"
   fi
-  if [[ ! -f "${MCTS_RAW}" ]]; then
+  if [[ "${REUSE_SOURCE_MCTS_RAW}" == "1" && ! -f "${MCTS_RAW}" ]]; then
     cp "${SOURCE_RUN_DIR}/mcts_bootstrap_raw.jsonl" "${MCTS_RAW}"
   fi
 }
@@ -146,6 +147,26 @@ generate_direct_3step() {
     --repeats "${DIRECT_REPEATS}" \
     --response_mode stepwise \
     --reasoning_steps "${REASONING_STEPS}"
+}
+
+generate_mcts() {
+  CURRENT_STAGE="generate_mcts"
+  if [[ -f "${MCTS_RAW}" ]]; then
+    echo "[stage:${CURRENT_STAGE}] exists: ${MCTS_RAW}"
+    return
+  fi
+  require_idle_gpus
+  cd "${ROOT}"
+  CUDA_VISIBLE_DEVICES="${GEN_CUDA_VISIBLE_DEVICES}" \
+  PYTHONPATH="${ROOT}/data_collection" \
+  HF_HUB_OFFLINE=1 \
+  python data_collection/solver_review.py \
+    --custom_cfg "${CFG}" \
+    --dataset "${SEED_DATA}" \
+    --start 0 \
+    --limit "$(wc -l < "${SEED_DATA}" | tr -d ' ')" \
+    --output "${MCTS_RAW}" \
+    --output_dir "${RUN_DIR}/mcts_samples"
 }
 
 prepare_bootstrap_train() {
@@ -441,6 +462,7 @@ main() {
   echo "[start] run=${RUN_NAME} source=${SOURCE_RUN_NAME} reasoning_steps=${REASONING_STEPS} time=$(date -Is) log=${LOG_FILE}"
   prepare_reused_inputs
   generate_direct_3step
+  generate_mcts
   prepare_bootstrap_train "direct_3step" "${DIRECT_RAW}" "${DIRECT_TRAIN_RAW}"
   prepare_bootstrap_train "mcts_3step" "${MCTS_RAW}" "${MCTS_TRAIN_RAW}"
   balance_train_sets

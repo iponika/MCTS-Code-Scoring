@@ -9,6 +9,7 @@ here so that legacy training-side import paths continue to work.
 
 from __future__ import annotations
 
+import os
 from typing import Any
 
 
@@ -53,6 +54,23 @@ REVIEW_FINAL_FORMAT_SECTION = """Structured final review format:
 
 # Greedy prefill for anchoring final review format during generation.
 FINAL_REVIEW_PREFILL = '<review>\n{"axiom_grade": '
+
+
+def review_step_budget_instruction() -> str:
+    """Return optional bounded-step wording for controlled experiments."""
+    words = int(os.environ.get("REVIEW_STEP_WORD_BUDGET", "0") or 0)
+    sentences = int(os.environ.get("REVIEW_STEP_SENTENCE_BUDGET", "0") or 0)
+    if words <= 0 and sentences <= 0:
+        return ""
+    parts = ["Step budget for intermediate reasoning:"]
+    if sentences > 0 and words > 0:
+        parts.append(f"use 2-{sentences} sentences and at most {words} words.")
+    elif sentences > 0:
+        parts.append(f"use at most {sentences} sentences.")
+    else:
+        parts.append(f"use at most {words} words.")
+    parts.append("Stop once the evidence point is clear; do not pad the note.")
+    return " ".join(parts)
 
 
 # ---------------------------------------------------------------------------
@@ -475,12 +493,15 @@ def build_review_prompt_from_sample(
         return relax_freeform_final_prompt(prompt) if freeform_final_review else prompt
 
     if step_context_mode == "instruction_context":
+        step_budget = review_step_budget_instruction()
         instruction += (
             "\n\nThis is an intermediate scoring turn. "
             "Use previous analysis notes as context, not as guaranteed facts. "
             "Generate one concise native reasoning note. Do not output XML tags, JSON, or <review> yet. "
             "Do not repeat previous notes; add one independent check that helps the final scorer."
         )
+        if step_budget:
+            instruction += f"\n\n{step_budget}"
         if completed_steps:
             instruction += f"\n\nPrevious analysis notes:\n{completed_steps}"
         prompt = REVIEW_STEP_PROMPT.format(
@@ -495,6 +516,7 @@ def build_review_prompt_from_sample(
             "If previous analysis notes are provided below, use them as fixed context and add one new evidence item without repeating them.\n",
         )
 
+    step_budget = review_step_budget_instruction()
     instruction += (
         "\n\nPrevious analysis notes may already appear in the assistant history for this conversation. "
         "Use them as context and continue the analysis, but do not assume they are correct. "
@@ -502,6 +524,8 @@ def build_review_prompt_from_sample(
         "Generate one concise native reasoning note. Do not output XML tags, JSON, or <review> yet. "
         "Do not repeat, paraphrase, or restart previous steps."
     )
+    if step_budget:
+        instruction += f"\n\n{step_budget}"
     return REVIEW_STEP_PROMPT.format(
         instruction=instruction,
         partial_solution=response_prefix,
@@ -586,7 +610,9 @@ def build_review_user_content(instruction: str) -> str:
     Training preprocessing, evaluation, and data generation should all
     produce the same user content for a given instruction.
     """
-    return f"{QWEN_USER_PREAMBLE}\n\n{instruction.strip()}"
+    step_budget = review_step_budget_instruction()
+    budget = f"\n{step_budget}" if step_budget else ""
+    return f"{QWEN_USER_PREAMBLE}{budget}\n\n{instruction.strip()}"
 
 
 def build_base_static_user_content(instruction: str) -> str:
