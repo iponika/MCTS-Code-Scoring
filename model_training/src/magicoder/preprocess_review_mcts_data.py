@@ -821,6 +821,19 @@ def codecritic_score_delta(details: dict[str, Any]) -> int | None:
         return None
 
 
+def codecritic_score_delta_item(item: dict[str, Any]) -> int | None:
+    predicted = item.get("parsed_score")
+    target = item.get("target_correctness_score")
+    if target is None:
+        target = item.get("target_score")
+    if predicted is None or target is None:
+        return None
+    try:
+        return int(round(float(predicted) - float(target)))
+    except (TypeError, ValueError):
+        return None
+
+
 def policy_grade_matches_details(details: dict[str, Any]) -> bool:
     parsed = details.get("parsed") if isinstance(details.get("parsed"), dict) else {}
     parsed_grade = details.get("predicted_axiom_grade")
@@ -847,6 +860,27 @@ def mark_policy_strength(item: dict[str, Any], *, grade_delta: int | None, weak_
         return
     item["policy_strength"] = f"weak_grade_delta_{abs(grade_delta)}"
     item["lm_loss_weight"] = min(float(item.get("lm_loss_weight", 1.0) or 1.0), weak_lm_weight)
+
+
+def codecritic_policy_best_tags(record: dict[str, Any], max_score_delta: int) -> set[str]:
+    """Select the best terminal path among CodeCritic leaves within target +/- delta."""
+    candidates: list[tuple[float, str]] = []
+    for tag, node in record.get("react", {}).items():
+        if not isinstance(node, dict) or not node.get("final_answer"):
+            continue
+        details = terminal_reward_details(node)
+        if details.get("score_scale") != "codecritic_correctness_1_10":
+            continue
+        if details.get("error") or verifier_issue_messages(details):
+            continue
+        delta = codecritic_score_delta(details)
+        if delta is None or abs(delta) > max(0, max_score_delta):
+            continue
+        candidates.append((numeric_q_value(node.get("q_value"), default=-999.0), str(tag)))
+    if not candidates:
+        return set()
+    candidates.sort(key=lambda item: item[0], reverse=True)
+    return {candidates[0][1]}
 
 
 def parse_response_review_payload(segment: str) -> dict[str, Any]:
@@ -947,6 +981,7 @@ def convert_records(
     for record in records:
         stats["records"] += 1
         best = best_tags(record)
+        codecritic_best = codecritic_policy_best_tags(record, policy_max_grade_delta)
         per_dimension_counts: dict[str, int] = defaultdict(int)
         terminal_tags = sorted(collect_terminal_tags(record), key=lambda item_tag: item_tag not in best)
         for tag in terminal_tags:
@@ -979,11 +1014,13 @@ def convert_records(
                 parsed_grade = parse_axiom_grade(parsed)
             if details.get("score_scale") == "codecritic_correctness_1_10":
                 grade_delta = codecritic_score_delta(details)
+                is_policy_best = tag in codecritic_best
             else:
                 grade_delta = policy_grade_delta(parsed_grade, details.get("target_axiom_grade"))
+                is_policy_best = tag in best
             grade_matches = grade_delta == 0
             grade_within_policy_delta = grade_delta is not None and abs(grade_delta) <= max(0, policy_max_grade_delta)
-            policy_candidate = tag in best and q_value >= policy_min_q and error is None and not has_verifier_issues
+            policy_candidate = is_policy_best and q_value >= policy_min_q and error is None and not has_verifier_issues
             train_lm = policy_candidate and grade_within_policy_delta
             item = path_to_training_item(
                 record,
@@ -995,7 +1032,7 @@ def convert_records(
             if item is None:
                 stats["skipped_paths"] += 1
                 continue
-            item["is_best_path"] = tag in best
+            item["is_best_path"] = is_policy_best
             item["data_split"] = data_split
             quality_issue = policy_reasoning_quality_issue(item) if train_lm else None
             if quality_issue:
@@ -1360,7 +1397,10 @@ def refresh_policy_flags(
         old_train_lm = bool(item.get("train_lm"))
         terminal_q = numeric_q_value(item.get("terminal_q_value"))
         quality_issue = policy_reasoning_quality_issue(item)
-        grade_delta = policy_grade_delta_item(item)
+        if item.get("score_scale") == "codecritic_correctness_1_10":
+            grade_delta = codecritic_score_delta_item(item)
+        else:
+            grade_delta = policy_grade_delta_item(item)
         grade_within_policy_delta = grade_delta is not None and abs(grade_delta) <= max(0, policy_max_grade_delta)
         policy_eligible_without_quality = (
             bool(item.get("is_best_path"))
@@ -1385,7 +1425,7 @@ def refresh_policy_flags(
         elif bool(item.get("is_best_path")) and terminal_q >= policy_min_q and grade_delta is not None:
             item["policy_grade_delta"] = grade_delta
             if abs(grade_delta) > max(0, policy_max_grade_delta):
-                item["policy_block_reason"] = "axiom_grade_delta_too_large"
+                item["policy_block_reason"] = "score_delta_too_large"
         if not new_train_lm and item.get("force_value_only"):
             item["lm_loss_weight"] = 0.0
         if old_train_lm != new_train_lm:
