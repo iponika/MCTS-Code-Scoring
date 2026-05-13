@@ -967,9 +967,14 @@ def prepare_prebuilt_review_sample(raw_sample: Dict[str, Any], dataset_index: in
     sample.setdefault("subset", "prepared")
     sample.setdefault("tests", [])
     sample.setdefault("tests_for_prompt", format_public_tests({"tests": sample["tests"]}))
+    sample.setdefault("scoring_target", raw_sample.get("scoring_target"))
+    sample.setdefault("score_scale", raw_sample.get("score_scale"))
     existing_reference_scores = sample.get("reference_scores") if isinstance(sample.get("reference_scores"), dict) else {}
     correctness_score = float(existing_reference_scores.get("Correctness Verification", sample.get("overall_score", 0) or 0))
     sample["reference_scores"] = {"Correctness Verification": correctness_score}
+    if sample.get("scoring_target") == "codecritic_correctness":
+        sample.setdefault("score_scale", "codecritic_correctness_1_10")
+        sample.setdefault("target_correctness_score", correctness_score)
     existing_rubrics = sample.get("dimension_rubrics") if isinstance(sample.get("dimension_rubrics"), dict) else {}
     sample["dimension_rubrics"] = {
         "Correctness Verification": existing_rubrics.get(
