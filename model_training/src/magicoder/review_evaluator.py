@@ -96,15 +96,27 @@ def sample_from_record(record: dict[str, Any]) -> dict[str, Any]:
         }
     if "answer" in record and "question" in record:
         axiom_grade = axiom_grade_from_codecritic(record.get("correctness"), record.get("score"))
+        reference_scores = {
+            dimension: score
+            for dimension, score in zip(record.get("checklist_dimensions", []), record.get("checklist_scores", []))
+        }
+        correctness_score = float(reference_scores.get("Correctness Verification", record.get("score") or 0))
+        dimension_rubrics = {
+            dimension: checklist
+            for dimension, checklist in zip(record.get("checklist_dimensions", []), record.get("checklists", []))
+            if dimension == "Correctness Verification"
+        }
         return {
+            "scoring_target": "codecritic_correctness",
+            "score_scale": "codecritic_correctness_1_10",
+            "target_correctness_score": correctness_score,
             "problem": record["question"],
             "candidate_code": record["answer"],
             "tests": list(record.get("public_test", {}).get("input", []) or [])
             + list(record.get("private_test", {}).get("input", []) or []),
-            "reference_scores": {
-                dimension: score
-                for dimension, score in zip(record.get("checklist_dimensions", []), record.get("checklist_scores", []))
-            },
+            "tests_for_prompt": "\n".join(str(item) for item in list(record.get("public_test", {}).get("input", []) or [])[:5]),
+            "reference_scores": {"Correctness Verification": correctness_score},
+            "dimension_rubrics": dimension_rubrics,
             "source": record.get("source"),
             "subset": record.get("subset"),
             "dataset_index": record.get("dataset_index"),
@@ -164,6 +176,7 @@ def prompt_for_dimension(
         max_code_chars=max_code_chars,
         mark_code_truncation_inside_block=mark_code_truncation_inside_block,
         show_tests_in_prompt=show_tests_in_prompt,
+        prompt_variant=prompt_variant,
     )
 
 
@@ -406,6 +419,12 @@ def parsed_review_score(final_review_parse: dict[str, Any]) -> float | None:
     if not final_review_parse.get("ok"):
         return None
     parsed = final_review_parse.get("parsed", {})
+    correctness_score = parsed.get("correctness_score")
+    try:
+        if correctness_score is not None:
+            return float(correctness_score)
+    except (TypeError, ValueError):
+        pass
     grade = parse_axiom_grade(parsed)
     if grade is not None:
         return axiom_scalar_score(grade)
@@ -901,9 +920,9 @@ def main() -> None:
     parser.add_argument("--final_only_json", action="store_true", help="Generate only one compact final <review> JSON block; no step reasoning.")
     parser.add_argument(
         "--prompt_variant",
-        choices=["default", "base_static"],
+        choices=["default", "base_static", "codecritic_correctness"],
         default="default",
-        help="Prompt contract for evaluation. default preserves Direct/MCTS prompts; base_static is a direct final-only control prompt.",
+        help="Prompt contract for evaluation. default preserves Direct/MCTS prompts; base_static is a direct final-only control prompt; codecritic_correctness uses CodeCriticBench 1-10 correctness scoring.",
     )
     parser.add_argument(
         "--step_context_mode",

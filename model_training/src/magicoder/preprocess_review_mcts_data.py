@@ -147,7 +147,7 @@ def _try_extract_review_json(text: str) -> str | None:
     """Try to extract a review JSON object from reasoning text.
 
     Returns a ``<review>...</review>`` block if a parseable JSON object
-    containing ``axiom_grade`` is found, otherwise *None*.
+    containing a supported review score field is found, otherwise *None*.
     """
     payload = str(text or "")
     # Strip markdown code fences
@@ -162,7 +162,7 @@ def _try_extract_review_json(text: str) -> str | None:
                 extracted = _canonical_review_block(candidate)
                 if extracted is not None:
                     return extracted
-    # Fallback: find outermost { … } containing axiom_grade
+    # Fallback: find outermost { … } containing a supported score field.
     if "{" in payload and "}" in payload:
         candidate = payload[payload.find("{"):payload.rfind("}") + 1]
         extracted = _canonical_review_block(candidate)
@@ -181,7 +181,7 @@ def _canonical_review_block(payload: str) -> str | None:
             parsed = json.loads(item)
         except (json.JSONDecodeError, ValueError):
             continue
-        if isinstance(parsed, dict) and "axiom_grade" in parsed:
+        if isinstance(parsed, dict) and ("axiom_grade" in parsed or "correctness_score" in parsed):
             return f'<review>\n{json.dumps(parsed, ensure_ascii=False)}\n</review>'
     return None
 
@@ -553,6 +553,12 @@ def path_to_training_item(
     parsed_axiom_grade = details.get("predicted_axiom_grade")
     if parsed_axiom_grade is None:
         parsed_axiom_grade = parse_axiom_grade(parsed)
+    parsed_score = details.get("predicted_correctness_score")
+    if parsed_score is None:
+        parsed_score = parsed.get("score")
+    target_score = details.get("target_correctness_score")
+    if target_score is None:
+        target_score = details.get("target_score")
 
     item = {
         "instruction": build_instruction(record, dimension, max_problem_chars=max_problem_chars, max_code_chars=max_code_chars),
@@ -570,9 +576,11 @@ def path_to_training_item(
         "terminal_tag": tag,
         "terminal_q_value": float(terminal.get("q_value", IGNORED_INDEX)),
         "terminal_error": details.get("error"),
-        "parsed_score": parsed.get("score"),
+        "score_scale": details.get("score_scale"),
+        "parsed_score": parsed_score,
         "parsed_axiom_grade": parsed_axiom_grade,
-        "target_score": details.get("target_score"),
+        "target_score": target_score,
+        "target_correctness_score": details.get("target_correctness_score"),
         "target_axiom_grade": details.get("target_axiom_grade"),
     }
     if verifier_feedback:
@@ -802,6 +810,17 @@ def policy_grade_delta(parsed_grade: Any, target_grade: Any) -> int | None:
         return None
 
 
+def codecritic_score_delta(details: dict[str, Any]) -> int | None:
+    predicted = details.get("predicted_correctness_score")
+    target = details.get("target_correctness_score")
+    if predicted is None or target is None:
+        return None
+    try:
+        return int(round(float(predicted) - float(target)))
+    except (TypeError, ValueError):
+        return None
+
+
 def policy_grade_matches_details(details: dict[str, Any]) -> bool:
     parsed = details.get("parsed") if isinstance(details.get("parsed"), dict) else {}
     parsed_grade = details.get("predicted_axiom_grade")
@@ -958,7 +977,10 @@ def convert_records(
             parsed_grade = details.get("predicted_axiom_grade")
             if parsed_grade is None:
                 parsed_grade = parse_axiom_grade(parsed)
-            grade_delta = policy_grade_delta(parsed_grade, details.get("target_axiom_grade"))
+            if details.get("score_scale") == "codecritic_correctness_1_10":
+                grade_delta = codecritic_score_delta(details)
+            else:
+                grade_delta = policy_grade_delta(parsed_grade, details.get("target_axiom_grade"))
             grade_matches = grade_delta == 0
             grade_within_policy_delta = grade_delta is not None and abs(grade_delta) <= max(0, policy_max_grade_delta)
             policy_candidate = tag in best and q_value >= policy_min_q and error is None and not has_verifier_issues
@@ -994,10 +1016,10 @@ def convert_records(
             if policy_candidate and not grade_within_policy_delta:
                 item["force_value_only"] = True
                 item["lm_loss_weight"] = 0.0
-                item["policy_block_reason"] = "axiom_grade_delta_too_large"
+                item["policy_block_reason"] = "score_delta_too_large"
                 if grade_delta is not None:
                     item["policy_grade_delta"] = grade_delta
-                stats["policy_grade_delta_too_large_paths"] += 1
+                stats["policy_score_delta_too_large_paths"] += 1
             dedupe_key = (record.get("source"), record.get("subset"), record.get("dataset_index"), tag)
             if dedupe_key in seen:
                 stats["duplicate_paths"] += 1

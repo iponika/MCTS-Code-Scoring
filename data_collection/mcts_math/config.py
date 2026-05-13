@@ -216,6 +216,9 @@ class BaseConfig:
     qwen_thinking_mode: str = field(
         default="", metadata={"help": "Optional Qwen3 soft thinking directive for prompts: think, no_think, or empty."}
     )
+    review_prompt_variant: str = field(
+        default="default", metadata={"help": "Review prompt contract variant, e.g. default or codecritic_correctness."}
+    )
     use_chat_template: bool = field(
         default=False, metadata={"help": "Apply the tokenizer chat template before vLLM generation."}
     )
