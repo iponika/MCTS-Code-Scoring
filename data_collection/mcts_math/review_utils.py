@@ -600,6 +600,14 @@ def review_semantic_signature(final_answer: str) -> Tuple[Any, ...] | None:
     parsed = parse_review_payload(final_answer)
     if parsed is None:
         return None
+    correctness_score = parse_codecritic_correctness_score(parsed)
+    if correctness_score is not None:
+        return (
+            "codecritic_correctness",
+            correctness_score,
+            str(parsed.get("dimension", "")).strip().lower(),
+            str(parsed.get("evidence_type", "")).strip().lower(),
+        )
     grade = parse_axiom_grade(parsed)
     if grade is None:
         return None
@@ -612,12 +620,34 @@ def review_semantic_signature(final_answer: str) -> Tuple[Any, ...] | None:
     )
 
 
+def parse_codecritic_correctness_score(payload: Dict[str, Any]) -> int | None:
+    if not isinstance(payload, dict):
+        return None
+    for key in ("correctness_score", "correctness", "score"):
+        if key not in payload:
+            continue
+        try:
+            value = int(round(float(payload[key])))
+        except (TypeError, ValueError):
+            continue
+        if 1 <= value <= 10:
+            return value
+    return None
+
+
+def score_alignment_1_to_10(predicted: int, target: float) -> float:
+    return max(0.0, 1.0 - abs(float(predicted) - float(target)) / 9.0)
+
+
 def build_dimension_target_scores(sample: Dict[str, Any]) -> Dict[str, float]:
     targets: Dict[str, float] = {}
     pass_rate = sample["objective"]["full_test_pass_rate"]
     hard_correctness_score = 10.0 * pass_rate
     has_executable_tests = bool(sample.get("objective", {}).get("has_executable_tests"))
     for dimension, reference_score in sample["reference_scores"].items():
+        if sample.get("scoring_target") == "codecritic_correctness":
+            targets[dimension] = float(reference_score)
+            continue
         if dimension == "Correctness Verification":
             if has_executable_tests:
                 targets[dimension] = round(0.6 * reference_score + 0.4 * hard_correctness_score, 2)
@@ -650,6 +680,52 @@ def compute_review_reward(target_dimension: str, final_answer: str, sample: Dict
     parsed = parse_review_payload(final_answer)
     if parsed is None:
         return -1.0, {"error": "invalid_review_json"}
+
+    if str(sample.get("scoring_target") or "").strip() == "codecritic_correctness":
+        predicted_score = parse_codecritic_correctness_score(parsed)
+        if predicted_score is None:
+            return -1.0, {"error": "missing_or_invalid_correctness_score", "parsed": parsed}
+        predicted_dimension = str(parsed.get("dimension", "")).strip()
+        target_score = float(
+            sample.get("target_correctness_score")
+            or sample.get("dimension_target_scores", {}).get(target_dimension)
+            or sample.get("reference_scores", {}).get(target_dimension)
+            or 0.0
+        )
+        score_alignment = score_alignment_1_to_10(predicted_score, target_score)
+        dimension_alignment = 1.0 if not predicted_dimension or predicted_dimension == target_dimension else 0.0
+        evidence_type = str(parsed.get("evidence_type", "")).strip()
+        evidence_alignment, evidence_details = validate_review_evidence(parsed, sample)
+        reward_01 = 0.75 * score_alignment + 0.10 * dimension_alignment + 0.15 * evidence_alignment
+
+        score_distance = abs(float(predicted_score) - float(target_score))
+        reward_caps: List[Tuple[str, float]] = []
+        if evidence_details["false_claim_count"] > 0:
+            reward_caps.append(("false_executable_evidence_claim", 0.60))
+        if score_distance >= 3:
+            reward_caps.append(("codecritic_correctness_score_distance", max(0.10, 0.55 - 0.10 * (score_distance - 3))))
+        if reward_caps:
+            reward_01 = min(reward_01, *(cap for _, cap in reward_caps))
+        reward = round(reward_01 * 2.0 - 1.0, 4)
+        details = {
+            "parsed": parsed,
+            "target_dimension": target_dimension,
+            "score_scale": "codecritic_correctness_1_10",
+            "target_correctness_score": target_score,
+            "predicted_correctness_score": predicted_score,
+            "score_distance": round(score_distance, 4),
+            "score_alignment": round(score_alignment, 4),
+            "dimension_alignment": round(dimension_alignment, 4),
+            "evidence_type": evidence_type,
+            "evidence_alignment": round(evidence_alignment, 4),
+            "evidence_details": evidence_details,
+            "reward_01": round(reward_01, 4),
+            "hard_alignment": round(score_alignment, 4),
+            "full_test_pass_rate": sample["objective"]["full_test_pass_rate"],
+        }
+        if reward_caps:
+            details["reward_caps"] = [{"reason": reason, "cap": cap} for reason, cap in reward_caps]
+        return reward, details
 
     predicted_dimension = str(parsed.get("dimension", "")).strip()
     predicted_grade = parse_axiom_grade(parsed)
@@ -814,6 +890,9 @@ def prepare_codecriticbench_sample(
 
     sample = {
         "dataset_index": dataset_index,
+        "scoring_target": "codecritic_correctness",
+        "score_scale": "codecritic_correctness_1_10",
+        "target_correctness_score": correctness_score,
         "problem": raw_sample["question"],
         "candidate_code": candidate_code,
         "code_language": raw_sample.get("lang") or raw_sample.get("language") or "python",

@@ -19,6 +19,7 @@ try:
     from shared.prompt_contract import (
         apply_review_prompt_controls,
         build_review_prompt_from_sample,
+        CODECRITIC_FINAL_REVIEW_PREFILL,
         FINAL_REVIEW_PREFILL,
     )
 except ImportError:
@@ -29,6 +30,7 @@ except ImportError:
     from shared.prompt_contract import (
         apply_review_prompt_controls,
         build_review_prompt_from_sample,
+        CODECRITIC_FINAL_REVIEW_PREFILL,
         FINAL_REVIEW_PREFILL,
     )
 
@@ -86,7 +88,7 @@ def _remove_mcts_final_prefill(prompt: str) -> str:
     if marker not in prompt:
         return prompt
     head, tail = prompt.split(marker, 1)
-    if tail.strip() == FINAL_REVIEW_PREFILL:
+    if tail.strip() in {FINAL_REVIEW_PREFILL, CODECRITIC_FINAL_REVIEW_PREFILL}:
         return f"{head}{marker}\n"
     return prompt
     
@@ -203,6 +205,7 @@ def review_prompt_wrap(
         sample,
         partial_solution=prompt_partial,
         force_final=force_final,
+        prompt_variant=getattr(config, "review_prompt_variant", "default"),
         step_context_mode="assistant_prefix",
         show_tests_in_prompt=bool(review_context.get("show_tests_in_prompt", False)),
         freeform_final_review=False,

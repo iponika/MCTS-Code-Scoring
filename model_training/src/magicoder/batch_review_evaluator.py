@@ -62,9 +62,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--final_only_json", action="store_true", help="Generate only one compact final <review> JSON block; no step reasoning.")
     parser.add_argument(
         "--prompt_variant",
-        choices=["default", "base_static"],
+        choices=["default", "base_static", "codecritic_correctness"],
         default="default",
-        help="Prompt contract for evaluation. default preserves Direct/MCTS prompts; base_static is a direct final-only control prompt.",
+        help="Prompt contract for evaluation. default preserves Direct/MCTS prompts; base_static is a direct final-only control prompt; codecritic_correctness uses CodeCriticBench 1-10 correctness scoring.",
     )
     parser.add_argument(
         "--step_context_mode",

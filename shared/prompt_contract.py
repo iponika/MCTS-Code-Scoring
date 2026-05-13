@@ -54,6 +54,24 @@ REVIEW_FINAL_FORMAT_SECTION = """Structured final review format:
 
 # Greedy prefill for anchoring final review format during generation.
 FINAL_REVIEW_PREFILL = '<review>\n{"axiom_grade": '
+CODECRITIC_FINAL_REVIEW_PREFILL = '<review>\n{"correctness_score": '
+
+
+CODECRITIC_CORRECTNESS_SCALE = """CodeCriticBench Correctness Verification scale:
+- Score only the Correctness Verification dimension: whether the answer/code correctly solves the given problem and would pass the intended tests.
+- Use an integer score from 1 to 10.
+- 1-2: critical correctness flaws; fails the core requirements.
+- 3-4: significant correctness deficiencies; largely unusable for the requested task.
+- 5-6: partially functional but misses important cases or requires substantial correctness improvement.
+- 7-8: mostly correct with minor correctness issues, edge-case gaps, or small deviations.
+- 9-10: fully or near-fully correct for the stated task.
+"""
+
+
+CODECRITIC_FINAL_FORMAT_SECTION = """Structured final review format:
+<review>
+{{"correctness_score": <1-10 integer>, "dimension": "Correctness Verification", "evidence_type": "provided_test_failure|deduced_counterexample|static_logic_contradiction|uncertain", "summary": "...", "evidence": ["...", "..."]}}
+</review>"""
 
 
 def review_step_budget_instruction() -> str:
@@ -123,6 +141,59 @@ Field rules:
 - evidence should contain 1-2 short evidence strings grounded in the task, candidate code, visible tests, or previous analysis notes.
 - If previous analysis notes conflict, follow the claim best supported by the task, code, and visible tests.
 - Previous analysis notes are evidence to weigh, not binding conclusions.
+
+Output must be exactly one JSON object wrapped in <review> tags. Do not output natural-language text outside the tags, markdown fences, <think> blocks, <step> blocks, or code fixes. Otherwise the result cannot be parsed.
+
+@@ Response
+{partial_solution}"""
+
+
+CODECRITIC_REVIEW_STEP_PROMPT = """You are a professional code correctness evaluation model.
+@@ Instruction
+This is an intermediate turn of a multi-step CodeCriticBench-style review. You are not assigning the final score in this turn. Your job is to make one independent correctness check that helps the final scorer.
+
+Use this scoring scale as background:
+
+{score_scale}
+
+Intermediate reasoning rules:
+- Output only one short note; do not discuss these instructions.
+- Do not repeat the task or earlier notes.
+- The note may support the answer, identify a correctness defect, or question a prior note.
+- A defect claim must be grounded in the problem, answer behavior, visible tests, or a concrete counterexample.
+- Focus only on Correctness Verification; ignore style, maintainability, performance, and other dimensions unless they cause wrong behavior.
+
+Your analysis object is as follows:
+
+{instruction}
+
+@@ Response
+{partial_solution}"""
+
+
+CODECRITIC_REVIEW_FINAL_PROMPT = """You are a professional CodeCriticBench correctness evaluation model.
+@@ Instruction
+Evaluate only the Correctness Verification dimension.
+
+Use this 1-10 scoring scale:
+
+{score_scale}
+
+{instruction}
+
+Attention, your output MUST be in the following format:
+
+{final_format_section}
+
+Field rules:
+- correctness_score is an integer from 1 to 10.
+- dimension must be exactly "Correctness Verification".
+- evidence_type must be one of provided_test_failure, deduced_counterexample, static_logic_contradiction, uncertain.
+- summary should be one short sentence explaining the final correctness judgment.
+- evidence should contain 1-2 short evidence strings grounded in the problem, answer, visible tests, or previous analysis notes.
+- If previous analysis notes conflict, follow the claim best supported by the problem, answer, and visible tests.
+- Previous analysis notes are evidence to weigh, not binding conclusions.
+- Ignore non-correctness quality concerns unless they cause incorrect behavior.
 
 Output must be exactly one JSON object wrapped in <review> tags. Do not output natural-language text outside the tags, markdown fences, <think> blocks, <step> blocks, or code fixes. Otherwise the result cannot be parsed.
 
@@ -312,6 +383,54 @@ def build_review_instruction(
     )
 
 
+def build_codecritic_correctness_instruction(
+    problem: str,
+    candidate_code: str,
+    code_language: str = "python",
+    tests_text: str = "No tests are available to the reviewer.",
+    checklist_text: str = "",
+    *,
+    max_problem_chars: int = 3500,
+    max_code_chars: int = 3500,
+    mark_code_truncation_inside_block: bool = True,
+) -> str:
+    """Build the CodeCriticBench Correctness Verification instruction body."""
+    language = str(code_language or "python").strip() or "python"
+    problem_text, problem_truncated = truncate_for_review(problem, max_problem_chars)
+    code_marker = "\n... [truncated]" if mark_code_truncation_inside_block else ""
+    code_text, code_truncated = truncate_for_review(candidate_code, max_code_chars, marker=code_marker)
+    truncation_notice = ""
+    if code_truncated and not mark_code_truncation_inside_block:
+        truncation_notice = (
+            "\n\nPrompt-budget note: the answer/code was shortened for evaluation input length. "
+            "Do not treat the shortening itself as evidence of a syntax error, missing implementation, "
+            "or truncated user code; score only the visible answer and task evidence."
+        )
+    if problem_truncated:
+        truncation_notice += (
+            "\nPrompt-budget note: the problem statement was shortened; do not treat omitted text as an answer defect."
+        )
+    checklist = str(checklist_text or "").strip()
+    checklist_section = (
+        f"\n\nCorrectness checklist:\n{checklist}"
+        if checklist
+        else "\n\nCorrectness checklist:\nAssess whether the answer/code correctly solves the problem and can pass the intended tests."
+    )
+
+    return (
+        "Scoring target: assign the CodeCriticBench Correctness Verification score only.\n\n"
+        f"Problem:\n{problem_text}\n\n"
+        "Answer/code to evaluate:\n"
+        f"```{language}\n"
+        f"{code_text}\n"
+        "```\n\n"
+        f"Visible tests:\n{tests_text}"
+        f"{checklist_section}\n\n"
+        "Assess correctness using concrete evidence from the problem, answer/code, and any reviewer-visible tests."
+        f"{truncation_notice}"
+    )
+
+
 def build_review_instruction_from_sample(
     sample: dict[str, Any],
     dimension: str = "Correctness Verification",
@@ -339,6 +458,20 @@ def build_review_instruction_from_sample(
     else:
         tests_text = "No tests are available."
 
+    if str(sample.get("scoring_target") or "").strip() == "codecritic_correctness":
+        rubrics = sample.get("dimension_rubrics") if isinstance(sample.get("dimension_rubrics"), dict) else {}
+        checklist_text = str(rubrics.get(dimension) or "")
+        return build_codecritic_correctness_instruction(
+            problem=problem,
+            candidate_code=candidate_code,
+            code_language=code_language,
+            tests_text=tests_text,
+            checklist_text=checklist_text,
+            max_problem_chars=max_problem_chars,
+            max_code_chars=max_code_chars,
+            mark_code_truncation_inside_block=mark_code_truncation_inside_block,
+        )
+
     return build_review_instruction(
         problem=problem,
         candidate_code=candidate_code,
@@ -359,6 +492,7 @@ def build_review_prompt(
     partial_solution: str = "",
     *,
     force_final: bool = False,
+    prompt_variant: str = "default",
 ) -> str:
     """Format a complete prompt string from an instruction and partial solution.
 
@@ -380,6 +514,22 @@ def build_review_prompt(
         partial = ""
     if partial:
         partial = partial.rstrip() + "\n"
+    if prompt_variant == "codecritic_correctness":
+        if force_final:
+            partial += CODECRITIC_FINAL_REVIEW_PREFILL
+            return CODECRITIC_REVIEW_FINAL_PROMPT.format(
+                instruction=instruction,
+                partial_solution=partial,
+                score_scale=CODECRITIC_CORRECTNESS_SCALE,
+                final_format_section=CODECRITIC_FINAL_FORMAT_SECTION,
+            )
+        if not partial:
+            partial = "1. "
+        return CODECRITIC_REVIEW_STEP_PROMPT.format(
+            instruction=instruction,
+            partial_solution=partial,
+            score_scale=CODECRITIC_CORRECTNESS_SCALE,
+        )
     if force_final:
         partial += FINAL_REVIEW_PREFILL
         return REVIEW_FINAL_PROMPT.format(
@@ -439,6 +589,7 @@ def build_review_prompt_from_sample(
     max_code_chars: int = 3500,
     mark_code_truncation_inside_block: bool = True,
     show_tests_in_prompt: bool = False,
+    prompt_variant: str = "default",
 ) -> str:
     """Build the canonical raw-text review prompt from one sample.
 
@@ -456,6 +607,8 @@ def build_review_prompt_from_sample(
         show_tests_in_prompt=show_tests_in_prompt,
     )
     completed_steps, response_prefix = normalize_partial_solution(partial_solution)
+    if prompt_variant == "default" and str(sample.get("scoring_target") or "").strip() == "codecritic_correctness":
+        prompt_variant = "codecritic_correctness"
 
     if final_only or force_final:
         instruction += (
@@ -465,9 +618,9 @@ def build_review_prompt_from_sample(
         if completed_steps:
             instruction += (
                 "\n\nThis is the final turn of a multi-step code review. "
-                "Synthesize all available earlier analysis with the task, code, and visible tests, then assign one AXIOM grade."
-                f"\n\n{REVIEW_FINAL_CONSISTENCY_RULE}"
-                "\n\nEarlier analysis notes are hypotheses to weigh against the task and code, not facts to repeat."
+                "Synthesize all available earlier analysis with the task, code, and visible tests, then assign one final score."
+                + (f"\n\n{REVIEW_FINAL_CONSISTENCY_RULE}" if prompt_variant != "codecritic_correctness" else "")
+                + "\n\nEarlier analysis notes are hypotheses to weigh against the task and code, not facts to repeat."
                 "\n\nYou don't have to re-analyze every detail by yourself."
                 "\n\nDo not continue the numbered analysis notes. "
                 "Start your very first output token with <review> and immediately write the final JSON object."
@@ -481,15 +634,23 @@ def build_review_prompt_from_sample(
             )
         final_response_prefix = ""
         if not completed_steps and not freeform_final_review:
-            final_response_prefix = FINAL_REVIEW_PREFILL
-        prompt = REVIEW_FINAL_PROMPT.format(
-            instruction=instruction,
-            partial_solution=final_response_prefix,
-            axiom_scale=AXIOM_REFINEMENT_SCALE,
-            evidence_rules=REVIEW_EVIDENCE_RULES,
-            final_consistency_rule=REVIEW_FINAL_CONSISTENCY_RULE,
-            final_format_section=REVIEW_FINAL_FORMAT_SECTION,
-        )
+            final_response_prefix = CODECRITIC_FINAL_REVIEW_PREFILL if prompt_variant == "codecritic_correctness" else FINAL_REVIEW_PREFILL
+        if prompt_variant == "codecritic_correctness":
+            prompt = CODECRITIC_REVIEW_FINAL_PROMPT.format(
+                instruction=instruction,
+                partial_solution=final_response_prefix,
+                score_scale=CODECRITIC_CORRECTNESS_SCALE,
+                final_format_section=CODECRITIC_FINAL_FORMAT_SECTION,
+            )
+        else:
+            prompt = REVIEW_FINAL_PROMPT.format(
+                instruction=instruction,
+                partial_solution=final_response_prefix,
+                axiom_scale=AXIOM_REFINEMENT_SCALE,
+                evidence_rules=REVIEW_EVIDENCE_RULES,
+                final_consistency_rule=REVIEW_FINAL_CONSISTENCY_RULE,
+                final_format_section=REVIEW_FINAL_FORMAT_SECTION,
+            )
         return relax_freeform_final_prompt(prompt) if freeform_final_review else prompt
 
     if step_context_mode == "instruction_context":
@@ -504,6 +665,13 @@ def build_review_prompt_from_sample(
             instruction += f"\n\n{step_budget}"
         if completed_steps:
             instruction += f"\n\nPrevious analysis notes:\n{completed_steps}"
+        if prompt_variant == "codecritic_correctness":
+            prompt = CODECRITIC_REVIEW_STEP_PROMPT.format(
+                instruction=instruction,
+                partial_solution="",
+                score_scale=CODECRITIC_CORRECTNESS_SCALE,
+            )
+            return prompt
         prompt = REVIEW_STEP_PROMPT.format(
             instruction=instruction,
             partial_solution="",
@@ -526,6 +694,12 @@ def build_review_prompt_from_sample(
     )
     if step_budget:
         instruction += f"\n\n{step_budget}"
+    if prompt_variant == "codecritic_correctness":
+        return CODECRITIC_REVIEW_STEP_PROMPT.format(
+            instruction=instruction,
+            partial_solution=response_prefix,
+            score_scale=CODECRITIC_CORRECTNESS_SCALE,
+        )
     return REVIEW_STEP_PROMPT.format(
         instruction=instruction,
         partial_solution=response_prefix,
@@ -563,6 +737,15 @@ QWEN_USER_PREAMBLE = (
     "Use the task, candidate code, and AXIOM refinement-effort scale to assign one stable score.\n"
     "Put intermediate evidence inside <think> as concise reasoning notes, then finish with exactly one "
     "<review> JSON block.\n"
+    "Do not put q_value, reward, or training metadata in the answer."
+)
+
+CODECRITIC_USER_PREAMBLE = (
+    "You are a CodeCriticBench correctness scoring model.\n"
+    "Evaluate only Correctness Verification on a 1-10 integer scale using the problem, answer/code, "
+    "visible tests, and provided correctness checklist.\n"
+    "Put intermediate evidence inside <think> as concise reasoning notes, then finish with exactly one "
+    "<review> JSON block containing correctness_score.\n"
     "Do not put q_value, reward, or training metadata in the answer."
 )
 
@@ -612,6 +795,8 @@ def build_review_user_content(instruction: str) -> str:
     """
     step_budget = review_step_budget_instruction()
     budget = f"\n{step_budget}" if step_budget else ""
+    if "CodeCriticBench Correctness Verification" in instruction or "Correctness checklist:" in instruction:
+        return f"{CODECRITIC_USER_PREAMBLE}{budget}\n\n{instruction.strip()}"
     return f"{QWEN_USER_PREAMBLE}{budget}\n\n{instruction.strip()}"
 
 

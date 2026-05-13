@@ -4,6 +4,8 @@ from pathlib import Path as _Path
 _sys.path.insert(0, str(_Path(__file__).resolve().parents[3]))
 from shared.prompt_contract import (  # noqa: F401, E402
     AXIOM_REFINEMENT_SCALE,
+    CODECRITIC_CORRECTNESS_SCALE,
+    CODECRITIC_FINAL_REVIEW_PREFILL,
     REVIEW_EVIDENCE_RULES,
     REVIEW_FINAL_CONSISTENCY_RULE,
     REVIEW_FINAL_FORMAT_SECTION,
