@@ -834,6 +834,23 @@ def codecritic_score_delta_item(item: dict[str, Any]) -> int | None:
         return None
 
 
+def value_path_label_bucket(details: dict[str, Any]) -> str | None:
+    """Bucket a terminal review path for per-seed value sampling."""
+    if details.get("error"):
+        return "incorrect"
+    if details.get("score_scale") == "codecritic_correctness_1_10":
+        delta = codecritic_score_delta(details)
+    else:
+        parsed = details.get("parsed") if isinstance(details.get("parsed"), dict) else {}
+        parsed_grade = details.get("predicted_axiom_grade")
+        if parsed_grade is None:
+            parsed_grade = parse_axiom_grade(parsed)
+        delta = policy_grade_delta(parsed_grade, details.get("target_axiom_grade"))
+    if delta is None:
+        return None
+    return "correct" if delta == 0 else "incorrect"
+
+
 def policy_grade_matches_details(details: dict[str, Any]) -> bool:
     parsed = details.get("parsed") if isinstance(details.get("parsed"), dict) else {}
     parsed_grade = details.get("predicted_axiom_grade")
@@ -971,6 +988,9 @@ def convert_records(
     stage_standardized_weight: float = 0.2,
     max_problem_chars: int = 3500,
     max_code_chars: int = 3500,
+    max_value_paths_per_sample_label: int = 0,
+    value_only_from_policy_records_only: bool = False,
+    value_sampling_seed: int = 42,
 ) -> tuple[list[dict[str, Any]], dict[str, int]]:
     items: list[dict[str, Any]] = []
     stats = defaultdict(int)
@@ -983,11 +1003,18 @@ def convert_records(
         best = best_tags(record)
         codecritic_best = codecritic_policy_best_tags(record, policy_max_grade_delta)
         per_dimension_counts: dict[str, int] = defaultdict(int)
+        record_policy_items: list[dict[str, Any]] = []
+        record_value_items_by_bucket: dict[str, list[dict[str, Any]]] = {"correct": [], "incorrect": []}
+        record_value_unknown: list[dict[str, Any]] = []
         terminal_tags = sorted(collect_terminal_tags(record), key=lambda item_tag: item_tag not in best)
         for tag in terminal_tags:
             node = record["react"][tag]
             dimension = node.get("target_dimension") or ""
-            if max_value_paths_per_dimension > 0 and per_dimension_counts[dimension] >= max_value_paths_per_dimension:
+            if (
+                max_value_paths_per_sample_label <= 0
+                and max_value_paths_per_dimension > 0
+                and per_dimension_counts[dimension] >= max_value_paths_per_dimension
+            ):
                 continue
             q_value = float(node.get("q_value", IGNORED_INDEX))
             error = terminal_error(node)
@@ -1057,17 +1084,26 @@ def convert_records(
                 if grade_delta is not None:
                     item["policy_grade_delta"] = grade_delta
                 stats["policy_score_delta_too_large_paths"] += 1
+                stats["policy_grade_mismatch_paths"] += 1
             dedupe_key = (record.get("source"), record.get("subset"), record.get("dataset_index"), tag)
             if dedupe_key in seen:
                 stats["duplicate_paths"] += 1
                 continue
             seen.add(dedupe_key)
-            items.append(item)
             per_dimension_counts[dimension] += 1
             stats["paths"] += 1
-            stats["policy_paths" if train_lm else "value_only_paths"] += 1
             if error:
                 stats[f"error_{error}"] += 1
+            if train_lm:
+                record_policy_items.append(item)
+            else:
+                bucket = value_path_label_bucket(details)
+                if bucket in record_value_items_by_bucket:
+                    item["value_sample_bucket"] = bucket
+                    record_value_items_by_bucket[bucket].append(item)
+                else:
+                    item["value_sample_bucket"] = "unknown"
+                    record_value_unknown.append(item)
 
             if emit_verifier_corrections and (max_verifier_corrections <= 0 or verifier_corrections < max_verifier_corrections):
                 correction = verifier_correction_training_item(
@@ -1109,6 +1145,46 @@ def convert_records(
                         stats["verifier_correction_paths"] += 1
                         stats[f"verifier_correction_mode_{verifier_correction_mode}"] += 1
                     verifier_corrections += 1
+
+        if record_policy_items:
+            items.extend(record_policy_items)
+            stats["policy_paths"] += len(record_policy_items)
+            if max_value_paths_per_sample_label > 0:
+                record_key = (record.get("source"), record.get("subset"), record.get("dataset_index"))
+                rng = random.Random(f"{value_sampling_seed}:{record_key!r}")
+                for bucket, bucket_items in record_value_items_by_bucket.items():
+                    limit = max_value_paths_per_sample_label
+                    if len(bucket_items) > limit:
+                        sampled_items = rng.sample(bucket_items, limit)
+                        stats[f"value_sample_dropped_{bucket}_paths"] += len(bucket_items) - limit
+                    else:
+                        sampled_items = list(bucket_items)
+                    items.extend(sampled_items)
+                    stats["value_only_paths"] += len(sampled_items)
+                    stats[f"value_sampled_{bucket}_paths"] += len(sampled_items)
+                if record_value_unknown:
+                    stats["value_sample_dropped_unknown_paths"] += len(record_value_unknown)
+                stats["policy_records_with_value_sampling"] += 1
+            else:
+                record_value_items = [
+                    value_item
+                    for bucket_items in record_value_items_by_bucket.values()
+                    for value_item in bucket_items
+                ] + record_value_unknown
+                items.extend(record_value_items)
+                stats["value_only_paths"] += len(record_value_items)
+        else:
+            record_value_items = [
+                value_item
+                for bucket_items in record_value_items_by_bucket.values()
+                for value_item in bucket_items
+            ] + record_value_unknown
+            if value_only_from_policy_records_only:
+                stats["records_without_policy"] += 1
+                stats["value_only_paths_dropped_no_policy_record"] += len(record_value_items)
+            else:
+                items.extend(record_value_items)
+                stats["value_only_paths"] += len(record_value_items)
 
     if stage_value_labels:
         stats.update(
@@ -1531,6 +1607,21 @@ def main() -> None:
         default=0,
         help="0 keeps all terminal paths; otherwise cap value-only paths per sample dimension.",
     )
+    parser.add_argument(
+        "--max_value_paths_per_sample_label",
+        type=int,
+        default=0,
+        help=(
+            "0 keeps legacy value-path behavior. Otherwise, for each seed/tree, sample at most this many "
+            "value-only correct paths and this many value-only incorrect paths."
+        ),
+    )
+    parser.add_argument(
+        "--value_only_from_policy_records_only",
+        action="store_true",
+        help="When value sampling is enabled, drop value-only paths from seed trees that produce no policy item.",
+    )
+    parser.add_argument("--value_sampling_seed", type=int, default=42, help="Seed for deterministic per-tree value path sampling.")
     parser.add_argument("--max_problem_chars", type=int, default=3500, help="Maximum problem characters included in review training prompts. 0 keeps full text.")
     parser.add_argument("--max_code_chars", type=int, default=3500, help="Maximum candidate-code characters included in review training prompts. 0 keeps full text.")
     parser.add_argument(
@@ -1676,6 +1767,9 @@ def main() -> None:
         stage_standardized_weight=args.stage_standardized_weight,
         max_problem_chars=args.max_problem_chars,
         max_code_chars=args.max_code_chars,
+        max_value_paths_per_sample_label=args.max_value_paths_per_sample_label,
+        value_only_from_policy_records_only=args.value_only_from_policy_records_only,
+        value_sampling_seed=args.value_sampling_seed,
     )
     stats = {f"new_{key}": value for key, value in new_stats.items()}
 
@@ -1701,6 +1795,9 @@ def main() -> None:
         stage_standardized_weight=args.stage_standardized_weight,
         max_problem_chars=args.max_problem_chars,
         max_code_chars=args.max_code_chars,
+        max_value_paths_per_sample_label=args.max_value_paths_per_sample_label,
+        value_only_from_policy_records_only=args.value_only_from_policy_records_only,
+        value_sampling_seed=args.value_sampling_seed,
     )
     stats.update({f"replay_{key}": value for key, value in replay_stats.items()})
     selected_replay_items = select_replay_items(

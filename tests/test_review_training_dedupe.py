@@ -24,6 +24,21 @@ def terminal_node(tag: str, final_answer: str) -> tuple[str, dict]:
     }
 
 
+def review_for_grade(grade: int) -> str:
+    return json.dumps(
+        {
+            "axiom_grade": grade,
+            "score": grade * 20,
+            "verdict": "accept" if grade >= 3 else "reject",
+            "functional_correctness": grade >= 3,
+            "repair_effort": "none" if grade == 5 else "major_functional",
+            "evidence_type": f"unit_grade_{grade}",
+            "summary": f"Grade {grade} review.",
+            "evidence": [f"Evidence for grade {grade}."],
+        }
+    )
+
+
 class ReviewTrainingDedupeTest(unittest.TestCase):
     def test_extract_response_segments_preserves_prefix_reasoning_before_review(self) -> None:
         mixed = (
@@ -453,6 +468,72 @@ class ReviewTrainingDedupeTest(unittest.TestCase):
         self.assertEqual(item["q_value"][-1], 1.0)
         self.assertEqual(item["q_stage"], ["early", "review"])
         self.assertEqual(stats["stage_value_label_adjusted_items"], 1)
+
+    def test_value_sampling_keeps_three_correct_and_three_incorrect_per_policy_record(self) -> None:
+        policy_tag, policy = terminal_node("0.0", review_for_grade(5))
+        react = {"0": {}, policy_tag: policy}
+        for index in range(5):
+            tag, node = terminal_node(f"{index + 1}.0", review_for_grade(5))
+            node["q_value"] = 0.1 + index * 0.01
+            react[tag] = node
+        for index in range(5):
+            tag, node = terminal_node(f"{index + 10}.0", review_for_grade(1))
+            node["q_value"] = -0.1 - index * 0.01
+            react[tag] = node
+        record = {
+            "dataset_index": 11,
+            "source": "unit",
+            "subset": "unit",
+            "problem": "Return x + 1.",
+            "candidate_code": "def f(x):\n    return x + 1",
+            "tests": [],
+            "language": "python",
+            "best_reviews_by_dimension": {"Correctness Verification": {"tag": policy_tag}},
+            "react": react,
+        }
+
+        items, stats = convert_records(
+            [record],
+            policy_min_q=0.5,
+            max_value_paths_per_dimension=0,
+            max_value_paths_per_sample_label=3,
+            value_only_from_policy_records_only=True,
+            stage_value_labels=False,
+        )
+
+        self.assertEqual(stats["policy_paths"], 1)
+        self.assertEqual(stats["value_sampled_correct_paths"], 3)
+        self.assertEqual(stats["value_sampled_incorrect_paths"], 3)
+        self.assertEqual(stats["value_only_paths"], 6)
+        self.assertEqual(len(items), 7)
+
+    def test_value_sampling_drops_value_only_record_without_policy(self) -> None:
+        tag, node = terminal_node("0.0", review_for_grade(1))
+        node["q_value"] = 0.1
+        record = {
+            "dataset_index": 12,
+            "source": "unit",
+            "subset": "unit",
+            "problem": "Return x + 1.",
+            "candidate_code": "def f(x):\n    return 0",
+            "tests": [],
+            "language": "python",
+            "best_reviews_by_dimension": {"Correctness Verification": {"tag": tag}},
+            "react": {"0": {}, tag: node},
+        }
+
+        items, stats = convert_records(
+            [record],
+            policy_min_q=0.5,
+            max_value_paths_per_dimension=0,
+            max_value_paths_per_sample_label=3,
+            value_only_from_policy_records_only=True,
+            stage_value_labels=False,
+        )
+
+        self.assertEqual(items, [])
+        self.assertEqual(stats["records_without_policy"], 1)
+        self.assertEqual(stats["value_only_paths_dropped_no_policy_record"], 1)
 
 
 if __name__ == "__main__":
