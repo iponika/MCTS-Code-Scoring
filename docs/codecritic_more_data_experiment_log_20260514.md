@@ -6,14 +6,13 @@ This document is the running provenance log for the expanded CodeCriticBench exp
 
 ## Current Worktrees
 
-There are currently two relevant worktrees on this server.
+There is now only one active worktree on this server.
 
 | Role | Path | Git state | Purpose |
 |---|---|---|---|
-| New/current worktree | `/data1/xianzhiwei/mcts-code-review` | branch `qwen3-4b-CCB`, commit `20d9bec82787923a2e22039d3ddb19c1aeec755b` | Current code after promptfix and value-sampling changes. |
-| Old-prompt worktree | `/tmp/cc-oldprompt-ba27cf0` | detached `ba27cf0215a997cf48c003ae822fbb8b73e28911` | Reproduce the old-prompt experiment that produced the better CodeCritic retained-set results. |
+| Active old-prompt mainline | `/data1/xianzhiwei/mcts-code-review` | branch `qwen3-4b-CCB-oldprompt-main`, commit `df855d7e8ffabc20dd0a050c7beec834ef9ec095` | Old-prompt experiment code plus the prompt-only step-score guard. |
 
-The old-prompt worktree was created to avoid reverting the current branch while preserving the exact old code path for reruns.
+The temporary old-prompt worktree `/tmp/cc-oldprompt-ba27cf0` was removed after its changes and generated seed file were migrated into the active main directory. The promptfix code path remains in Git history on branch `qwen3-4b-CCB`, but there is no separate promptfix worktree left to run by accident.
 
 ## Baseline Old-Prompt Provenance
 
@@ -67,7 +66,7 @@ Training-data behavior:
 After comparing old and current prompts, the expanded-data mainline keeps the old-prompt system and applies only a narrow prompt-only guard in:
 
 ```text
-/tmp/cc-oldprompt-ba27cf0/shared/prompt_contract.py
+/data1/xianzhiwei/mcts-code-review/shared/prompt_contract.py
 ```
 
 Patch intent:
