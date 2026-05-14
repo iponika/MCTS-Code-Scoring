@@ -106,6 +106,7 @@ Use the AXIOM 0-5 refinement-effort scale as background:
 Intermediate reasoning rules:
 - Output only one short note; do not discuss these instructions.
 - Do not repeat the task or earlier notes.
+- If an earlier step includes any score or rating, ignore that scoring act; use only its concrete reasoning evidence, and do not copy, explain, or continue the score.
 - The note may support the code, identify a defect, or question a prior note.
 - A defect claim must be grounded in the task, code behavior, visible tests, or a concrete counterexample.
 
@@ -141,6 +142,7 @@ Field rules:
 - evidence should contain 1-2 short evidence strings grounded in the task, candidate code, visible tests, or previous analysis notes.
 - If previous analysis notes conflict, follow the claim best supported by the task, code, and visible tests.
 - Previous analysis notes are evidence to weigh, not binding conclusions.
+- If a previous step includes a score or rating, ignore that scoring act and use only the concrete analysis behind it.
 
 Output must be exactly one JSON object wrapped in <review> tags. Do not output natural-language text outside the tags, markdown fences, <think> blocks, <step> blocks, or code fixes. Otherwise the result cannot be parsed.
 
@@ -159,6 +161,7 @@ Use this scoring scale as background:
 Intermediate reasoning rules:
 - Output only one short note; do not discuss these instructions.
 - Do not repeat the task or earlier notes.
+- If an earlier step includes any score or rating, ignore that scoring act; use only its concrete reasoning evidence, and do not copy, explain, or continue the score.
 - The note may support the answer, identify a correctness defect, or question a prior note.
 - A defect claim must be grounded in the problem, answer behavior, visible tests, or a concrete counterexample.
 - Focus only on Correctness Verification; ignore style, maintainability, performance, and other dimensions unless they cause wrong behavior.
@@ -194,6 +197,7 @@ Field rules:
 - If previous analysis notes conflict, follow the claim best supported by the problem, answer, and visible tests.
 - Previous analysis notes are evidence to weigh, not binding conclusions.
 - Ignore non-correctness quality concerns unless they cause incorrect behavior.
+- If a previous step includes a score or rating, ignore that scoring act and use only the concrete analysis behind it.
 
 Output must be exactly one JSON object wrapped in <review> tags. Do not output natural-language text outside the tags, markdown fences, <think> blocks, <step> blocks, or code fixes. Otherwise the result cannot be parsed.
 
@@ -221,6 +225,7 @@ You must score according to the AXIOM 0-5 refinement-effort scale:
 Reasoning rules:
 - Each reasoning note should focus on one evidence point: requirement trace, visible-test trace, counterexample, static logic check, or challenge to an unsupported prior claim.
 - Do not restate the whole task, code, or earlier analysis; each new note must add new evidence.
+- If an earlier step includes a score or rating, ignore that scoring act and use only its concrete reasoning evidence.
 - Do not output XML step tags or JSON step objects for intermediate reasoning.
 
 Review rules:
@@ -245,7 +250,7 @@ Final review format:
 
 TRAINING_REVIEW_STEP_ONLY_PROMPT = """You are assisting a code scoring model by gathering functional evidence.
 @@ Instruction
-This is an intermediate turn of a multi-step code review. Earlier turns may have already analyzed the candidate code. If previous analysis notes are provided below, or if earlier assistant messages already contain analysis notes, use them as fixed context and add one new evidence item.
+This is an intermediate turn of a multi-step code review. Earlier turns may have already analyzed the candidate code. If previous analysis notes are provided below, use them as context, not facts, and add one new evidence item.
 
 You are not assigning the final score in this turn. Generate one concise native reasoning note. Do not output XML tags, JSON, markdown fences, code fixes, or the final <review> block in this intermediate turn.
 
@@ -256,6 +261,7 @@ You must gather evidence for the AXIOM 0-5 refinement-effort scale:
 Reasoning rules:
 - Focus on one new evidence point: requirement trace, visible-test trace, counterexample, static logic check, or challenge to an unsupported prior claim.
 - Each new reasoning note must add new evidence and must not restate the whole task, code, or earlier analysis.
+- If an earlier step includes a score or rating, ignore that scoring act and use only its concrete reasoning evidence.
 - If previous analysis notes conflict, challenge only the claim best contradicted by the task, code, or visible tests.
 - Do not decide the final AXIOM grade yet.
 - Do not claim tests pass or fail unless tests are visible and traced exactly.
@@ -273,7 +279,7 @@ TRAINING_REVIEW_FINAL_ONLY_PROMPT = """You are a code scoring model for function
 @@ Instruction
 You evaluate code based on functional correctness.
 
-This is the final turn of a multi-step code review. Earlier turns may have already analyzed the candidate code. If previous analysis notes are provided below, synthesize them, resolve conflicts using the task, code, and visible tests, and assign one AXIOM grade.
+This is the final turn of a multi-step code review. Earlier turns may have already analyzed the candidate code. If previous analysis notes are provided below, synthesize the concrete reasoning evidence, ignore any earlier step's score or rating behavior, resolve conflicts using the task, code, and visible tests, and assign one AXIOM grade.
 
 You must score according to the AXIOM 0-5 refinement-effort scale:
 
@@ -621,7 +627,7 @@ def build_review_prompt_from_sample(
                 "Synthesize all available earlier analysis with the task, code, and visible tests, then assign one final score."
                 + (f"\n\n{REVIEW_FINAL_CONSISTENCY_RULE}" if prompt_variant != "codecritic_correctness" else "")
                 + "\n\nEarlier analysis notes are hypotheses to weigh against the task and code, not facts to repeat."
-                "\n\nYou don't have to re-analyze every detail by yourself."
+                "\n\nIgnore any score or rating produced inside earlier analysis steps; that scoring behavior is invalid here. Use only the concrete reasoning evidence from those steps."
                 "\n\nDo not continue the numbered analysis notes. "
                 "Start your very first output token with <review> and immediately write the final JSON object."
                 f"\n\nEarlier analysis:\n{completed_steps}"
@@ -689,6 +695,7 @@ def build_review_prompt_from_sample(
         "\n\nPrevious analysis notes may already appear in the assistant history for this conversation. "
         "Use them as context and continue the analysis, but do not assume they are correct. "
         "The previous rounds' analysis text may be inserted directly as your prior thinking history. "
+        "If a previous step includes a score or rating, ignore that scoring act and do not repeat it; use only the concrete reasoning evidence. "
         "Generate one concise native reasoning note. Do not output XML tags, JSON, or <review> yet. "
         "Do not repeat, paraphrase, or restart previous steps."
     )
