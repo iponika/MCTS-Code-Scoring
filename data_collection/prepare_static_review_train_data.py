@@ -28,6 +28,12 @@ def parse_args() -> argparse.Namespace:
         default="default",
         help="default preserves the shared Direct/MCTS training prompt; base_static uses a direct final-only user prompt.",
     )
+    parser.add_argument(
+        "--output_schema",
+        choices=["axiom", "codecritic_correctness"],
+        default="axiom",
+        help="Structured review schema to emit. Use codecritic_correctness for CodeCriticBench 1-10 correctness experiments.",
+    )
     return parser.parse_args()
 
 
@@ -74,38 +80,106 @@ def attach_base_static_messages(item: dict) -> None:
     item["training_format"] = "qwen_messages_base_static_review"
 
 
+def codecritic_value_target(score: float | int) -> float:
+    return round((float(score) - 1.0) / 4.5 - 1.0, 4)
+
+
+def codecritic_review_response_for_score(score: float | int) -> str:
+    value = max(1, min(10, int(round(float(score)))))
+    payload = {
+        "correctness_score": value,
+        "dimension": "Correctness Verification",
+        "evidence_type": "uncertain",
+        "summary": f"Reference static label assigns Correctness Verification score {value}.",
+        "evidence": [
+            f"Use CodeCriticBench Correctness Verification score {value}.",
+            "Static baseline item derived from the reference target label rather than model-generated reasoning.",
+        ],
+    }
+    return "<review>\n" + json.dumps(payload, ensure_ascii=False) + "\n</review>"
+
+
+def attach_codecritic_static_messages(item: dict) -> None:
+    responses = [str(segment or "").strip() for segment in item.get("response", []) if str(segment or "").strip()]
+    assistant_content = qwen_assistant_content_from_responses(responses)
+    item["messages"] = [
+        {
+            "role": "user",
+            "content": (
+                "You are a direct CodeCriticBench correctness scoring model.\n"
+                "Evaluate only Correctness Verification on a 1-10 integer scale using the problem, answer/code, "
+                "visible tests, and provided correctness checklist.\n"
+                "Return exactly one <review> JSON block containing correctness_score. Do not produce intermediate "
+                "reasoning, <think> blocks, <step> blocks, markdown fences, code fixes, q_value, reward, or training metadata.\n\n"
+                + str(item.get("instruction") or "").strip()
+            ),
+        },
+        {"role": "assistant", "content": assistant_content},
+    ]
+    item["assistant_parts"] = build_assistant_parts(item)
+    item["training_format"] = "qwen_messages_codecritic_static_review"
+
+
 def main() -> None:
     args = parse_args()
     samples = load_codecriticbench_dataset(str(args.input), start=0, limit=None)
     items = []
     for sample in samples:
-        grade = clamp_axiom_grade(sample["axiom_target_grade"])
-        item = {
-            "instruction": build_instruction(sample, args.dimension),
-            "response": [review_response_for_grade(grade)],
-            "q_value": [axiom_value_target(grade)],
-            "train_lm": True,
-            "dataset_index": sample.get("dataset_index"),
-            "source": sample.get("source"),
-            "subset": sample.get("subset"),
-            "target_dimension": args.dimension,
-            "terminal_tag": "static_exact",
-            "terminal_q_value": axiom_value_target(grade),
-            "terminal_error": None,
-            "parsed_score": axiom_scalar_score(grade),
-            "parsed_axiom_grade": grade,
-            "target_score": axiom_scalar_score(grade),
-            "target_axiom_grade": grade,
-            "is_best_path": True,
-            "value_loss_weight": args.value_loss_weight,
-            "lm_loss_weight": args.lm_loss_weight,
-            "data_split": "static",
-            "synthetic_type": "static_exact",
-        }
-        if args.prompt_variant == "base_static":
-            attach_base_static_messages(item)
+        instruction = build_instruction(sample, args.dimension)
+        if args.output_schema == "codecritic_correctness":
+            score = float(sample.get("target_correctness_score") or sample.get("reference_scores", {}).get(args.dimension) or 0)
+            target_value = codecritic_value_target(score)
+            item = {
+                "instruction": instruction,
+                "response": [codecritic_review_response_for_score(score)],
+                "q_value": [target_value],
+                "train_lm": True,
+                "dataset_index": sample.get("dataset_index"),
+                "source": sample.get("source"),
+                "subset": sample.get("subset"),
+                "target_dimension": args.dimension,
+                "terminal_tag": "static_exact",
+                "terminal_q_value": target_value,
+                "terminal_error": None,
+                "score_scale": "codecritic_correctness_1_10",
+                "parsed_score": int(round(score)),
+                "target_score": score,
+                "target_correctness_score": score,
+                "is_best_path": True,
+                "value_loss_weight": args.value_loss_weight,
+                "lm_loss_weight": args.lm_loss_weight,
+                "data_split": "static",
+                "synthetic_type": "static_exact_codecritic_correctness",
+            }
+            attach_codecritic_static_messages(item)
         else:
-            attach_qwen_messages(item)
+            grade = clamp_axiom_grade(sample["axiom_target_grade"])
+            item = {
+                "instruction": instruction,
+                "response": [review_response_for_grade(grade)],
+                "q_value": [axiom_value_target(grade)],
+                "train_lm": True,
+                "dataset_index": sample.get("dataset_index"),
+                "source": sample.get("source"),
+                "subset": sample.get("subset"),
+                "target_dimension": args.dimension,
+                "terminal_tag": "static_exact",
+                "terminal_q_value": axiom_value_target(grade),
+                "terminal_error": None,
+                "parsed_score": axiom_scalar_score(grade),
+                "parsed_axiom_grade": grade,
+                "target_score": axiom_scalar_score(grade),
+                "target_axiom_grade": grade,
+                "is_best_path": True,
+                "value_loss_weight": args.value_loss_weight,
+                "lm_loss_weight": args.lm_loss_weight,
+                "data_split": "static",
+                "synthetic_type": "static_exact",
+            }
+            if args.prompt_variant == "base_static":
+                attach_base_static_messages(item)
+            else:
+                attach_qwen_messages(item)
         items.append(item)
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
@@ -118,6 +192,7 @@ def main() -> None:
         "output": str(args.output),
         "items": len(items),
         "prompt_variant": args.prompt_variant,
+        "output_schema": args.output_schema,
     }
     print(json.dumps(summary, ensure_ascii=False, indent=2))
 

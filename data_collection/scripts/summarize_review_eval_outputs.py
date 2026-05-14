@@ -52,6 +52,19 @@ def evidence_stats(parsed: dict[str, Any], sample: dict[str, Any]) -> dict[str, 
     }
 
 
+def parsed_correctness_score(parsed: dict[str, Any], parsed_score: Any) -> float | None:
+    if isinstance(parsed, dict) and parsed.get("correctness_score") is not None:
+        try:
+            return float(parsed["correctness_score"])
+        except (TypeError, ValueError):
+            return None
+    try:
+        value = float(parsed_score)
+    except (TypeError, ValueError):
+        return None
+    return value if 1.0 <= value <= 10.0 else None
+
+
 def summarize(eval_dir: Path) -> dict[str, Any]:
     files = sorted(eval_dir.glob("*.json"))
     rows: list[dict[str, Any]] = []
@@ -66,6 +79,8 @@ def summarize(eval_dir: Path) -> dict[str, Any]:
             reference_interval = dimension.get("reference_axiom_interval")
             parsed_grade = dimension.get("parsed_axiom_grade")
             lenient_grade = dimension.get("lenient_axiom_grade")
+            reference_correctness_score = dimension.get("legacy_dimension_score")
+            predicted_correctness_score = parsed_correctness_score(parsed, dimension.get("parsed_score"))
             if lenient_grade is None:
                 text = str(dimension.get("final_review") or "")
                 for trace_item in dimension.get("trace") or []:
@@ -87,7 +102,20 @@ def summarize(eval_dir: Path) -> dict[str, Any]:
                 "reference_interval": reference_interval,
                 "parsed_grade": parsed_grade,
                 "lenient_grade": lenient_grade,
+                "reference_correctness_score": reference_correctness_score,
+                "predicted_correctness_score": predicted_correctness_score,
             }
+            if (
+                valid
+                and isinstance(reference_correctness_score, (int, float))
+                and isinstance(predicted_correctness_score, (int, float))
+            ):
+                correctness_delta = float(predicted_correctness_score) - float(reference_correctness_score)
+                row["correctness_abs_error"] = abs(correctness_delta)
+                row["correctness_exact"] = abs(correctness_delta) < 0.5
+                row["correctness_within_1"] = abs(correctness_delta) <= 1.0
+                row["correctness_within_2"] = abs(correctness_delta) <= 2.0
+                row["correctness_boundary_correct"] = (float(predicted_correctness_score) >= 7.0) == (float(reference_correctness_score) >= 7.0)
             if valid and isinstance(reference_grade, (int, float)) and isinstance(parsed_grade, (int, float)):
                 row["abs_grade_error"] = abs(float(parsed_grade) - float(reference_grade))
                 row["boundary_correct"] = (float(parsed_grade) >= 3) == (float(reference_grade) >= 3)
@@ -116,6 +144,7 @@ def summarize(eval_dir: Path) -> dict[str, Any]:
     interval_rows = [row for row in valid_rows if "interval_correct" in row]
     lenient_interval_rows = [row for row in rows if "lenient_interval_correct" in row]
     unsupported_rows = [row for row in valid_rows if row.get("unsupported_count", 0) > 0]
+    correctness_rows = [row for row in valid_rows if "correctness_abs_error" in row]
     pairwise = pairwise_stats(rows, grade_key="parsed_grade")
     lenient_pairwise = pairwise_stats(rows, grade_key="lenient_grade")
     summary = {
@@ -133,6 +162,13 @@ def summarize(eval_dir: Path) -> dict[str, Any]:
         "unsupported_evidence_count": sum(int(row.get("unsupported_count", 0)) for row in valid_rows),
         "unsupported_provided_test_failure": sum(int(row.get("unsupported_provided_test_failure", 0)) for row in valid_rows),
         "unsupported_unused_identifier": sum(int(row.get("unsupported_unused_identifier", 0)) for row in valid_rows),
+        "correctness_count": len(correctness_rows),
+        "correctness_mae": mean([row["correctness_abs_error"] for row in correctness_rows]),
+        "correctness_median_abs_error": median([row["correctness_abs_error"] for row in correctness_rows]),
+        "correctness_exact_acc": mean([1.0 if row["correctness_exact"] else 0.0 for row in correctness_rows]),
+        "correctness_within_1_acc": mean([1.0 if row["correctness_within_1"] else 0.0 for row in correctness_rows]),
+        "correctness_within_2_acc": mean([1.0 if row["correctness_within_2"] else 0.0 for row in correctness_rows]),
+        "correctness_boundary_acc_ge7": mean([1.0 if row["correctness_boundary_correct"] else 0.0 for row in correctness_rows]),
         "lenient_count": len(lenient_rows),
         "lenient_rate": round(len(lenient_rows) / max(1, len(rows)), 6),
         "lenient_grade_mae": mean([row["lenient_abs_grade_error"] for row in lenient_rows]),

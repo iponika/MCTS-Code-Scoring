@@ -384,14 +384,15 @@ Generate static exact-label training items:
 PYTHONPATH="${PWD}/model_training/src:data_collection:${PWD}" \
 python data_collection/prepare_static_review_train_data.py \
   --input "${RUN_DIR}/seed_train_policy357.jsonl" \
-  --output "${RUN_DIR}/static_policy357_train.jsonl" \
-  --prompt_variant base_static
+  --output "${RUN_DIR}/static_policy357_codecritic_train.jsonl" \
+  --prompt_variant base_static \
+  --output_schema codecritic_correctness
 ```
 
-Token-audit/filter static data with the same tokenizer. In the current run no static samples exceed 6200 tokens:
+Token-audit/filter static data with the same tokenizer. In the corrected CodeCritic static run no static samples exceed 6200 tokens:
 
 ```bash
-cp "${RUN_DIR}/static_policy357_train.jsonl" "${RUN_DIR}/static_policy357_le6200_train.jsonl"
+cp "${RUN_DIR}/static_policy357_codecritic_train.jsonl" "${RUN_DIR}/static_policy357_codecritic_le6200_train.jsonl"
 ```
 
 Current static stats:
@@ -401,9 +402,9 @@ Current static stats:
 | input items | 357 |
 | kept items | 357 |
 | dropped too long | 0 |
-| max tokens | 2023 |
-| p50 tokens | 845 |
-| p95 tokens | 1439 |
+| max tokens | 1942 |
+| p50 tokens | 778 |
+| p95 tokens | 1358 |
 
 ## Training Configuration
 
@@ -468,9 +469,9 @@ data_collection/review_mcts_runs/qwen35_codecritic_easy_correctness_20260513/tra
 Key settings:
 
 ```text
-train data: static_policy357_le6200_train.jsonl
+train data: static_policy357_codecritic_le6200_train.jsonl
 items: 357
-prompt_variant: base_static
+output schema: codecritic_correctness
 max_training_seq_length: 2048
 gpu: 3
 mixed precision: bf16
@@ -492,9 +493,9 @@ These are the live runs started from the current data:
 | Variant | tmux session | Log |
 |---|---|---|
 | MCTS train | `cc_easy_policy357_3gpu` | `${RUN_DIR}/logs/train_policy357_le6200_3gpu_20260513_231103.log` |
-| Static train | `cc_easy_static357_gpu3` | `${RUN_DIR}/logs/train_static357_gpu3_20260513_232659.log` |
+| Static train | `cc_easy_static357_codecritic_gpu3` | `${RUN_DIR}/logs/train_static357_codecritic_gpu3_20260514_102356.log` |
 
-The MCTS job uses 0/1/2 with bf16 and FSDP offload. The Static job uses physical GPU 3, bf16, and `max_training_seq_length=2048`.
+The MCTS adapterfix job uses 0/1/2 with bf16 and FSDP offload. The corrected Static job uses physical GPU 3, bf16, CodeCritic `correctness_score` labels, and `max_training_seq_length=2048`.
 
 ## Qwen3-4B Replay Checklist
 
@@ -509,5 +510,6 @@ Required changes:
 - Retain `--bf16 True`, `--mixed_precision bf16`, and `--fsdp_offload_params true` for the MCTS policy/value training.
 - Recompute token-filter stats with the Qwen3-4B tokenizer, even if the source JSONL is the same.
 - Generate Static from the policy-producing seed keys of that run, not by copying the 9B static file.
+- Use `--output_schema codecritic_correctness`; the old AXIOM static schema is not comparable to this CodeCritic correctness experiment.
 
 Expected matched outputs if the Qwen3-4B MCTS behavior matches the 9B run are not guaranteed. The number of policy seeds `P` may differ because MCTS generations and score parses are model-dependent. Always set Static to exactly that run's final usable policy count `P`.

@@ -10,7 +10,7 @@ import shutil
 import numpy as np
 from datasets import load_dataset, DatasetDict
 #from magicoder.functions import *
-from peft import PeftModel
+from peft import PeftModel, get_peft_model_state_dict
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from transformers import HfArgumentParser, Trainer, TrainingArguments, TrainerCallback, PreTrainedModel
 from transformers.trainer_utils import PREFIX_CHECKPOINT_DIR, has_length
@@ -584,8 +584,10 @@ class RLTrainer(Trainer):
             os.makedirs(output_dir, exist_ok=True)
             with FSDP.summon_full_params(self.model, recurse=True, writeback=False, rank0_only=True):
                 if self.is_world_process_zero():
+                    peft_state_dict = get_peft_model_state_dict(pretrained_model)
                     pretrained_model.save_pretrained(
                         output_dir,
+                        state_dict=peft_state_dict,
                         safe_serialization=self.args.save_safetensors,
                         max_shard_size="1000GB",
                     )
