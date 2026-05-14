@@ -873,11 +873,12 @@ def prepare_codecriticbench_sample(
     executable_all_assertions = executable_public_assertions + executable_private_assertions
     candidate_code = raw_sample["answer"]
 
-    raw_reference_scores = {
-        dimension: score
-        for dimension, score in zip(raw_sample["checklist_dimensions"], raw_sample["checklist_scores"])
-    }
-    correctness_score = float(raw_reference_scores.get("Correctness Verification", raw_sample.get("score") or 0))
+    correctness_score = raw_sample.get("score") or 0
+    for dimension, score in zip(raw_sample["checklist_dimensions"], raw_sample["checklist_scores"]):
+        if dimension == "Correctness Verification" and score is not None:
+            correctness_score = score
+            break
+    correctness_score = float(correctness_score)
     reference_scores = {"Correctness Verification": correctness_score}
     dimension_rubrics = {}
     for dimension, checklist in zip(raw_sample["checklist_dimensions"], raw_sample["checklists"]):
@@ -885,6 +886,7 @@ def prepare_codecriticbench_sample(
             continue
         default_rubric = DEFAULT_DIMENSION_RUBRIC.get(dimension, "")
         dimension_rubrics[dimension] = f"{default_rubric}\nReference checklist item: {checklist}".strip()
+        break
     if "Correctness Verification" not in dimension_rubrics:
         dimension_rubrics["Correctness Verification"] = DEFAULT_DIMENSION_RUBRIC["Correctness Verification"]
 

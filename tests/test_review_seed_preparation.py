@@ -4,6 +4,7 @@ import tempfile
 from pathlib import Path
 
 from mcts_math.review_utils import compute_pass_rate, load_codecriticbench_dataset, prepare_codecriticbench_sample
+from data_collection.prepare_codecritic_easy_correctness_splits import has_label_score_conflict
 
 
 class ReviewSeedPreparationTest(unittest.TestCase):
@@ -39,6 +40,34 @@ class ReviewSeedPreparationTest(unittest.TestCase):
         self.assertEqual(sample["objective"]["test_execution_kind"], "non_assertion")
         self.assertEqual(sample["objective"]["full_test_pass_rate"], 0.0)
         self.assertGreaterEqual(sample["axiom_target_grade"], 3)
+
+    def test_codecritic_duplicate_correctness_uses_first_score_and_checklist(self) -> None:
+        raw = {
+            "question": "Return one.",
+            "answer": "def f():\n    return 1",
+            "public_test": {"input": ["assert f() == 1"]},
+            "private_test": {"input": []},
+            "checklist_dimensions": ["Correctness Verification", "Style", "Correctness Verification"],
+            "checklist_scores": [4, 10, 9],
+            "checklists": ["First correctness.", "Style.", "Second correctness."],
+            "score": 9,
+            "correctness": "Error",
+            "source": "mbpp",
+            "subset": "mbpp",
+        }
+
+        sample = prepare_codecriticbench_sample(raw, max_objective_assertions_per_split=1, assertion_timeout_seconds=1)
+
+        self.assertEqual(sample["target_correctness_score"], 4.0)
+        self.assertEqual(sample["reference_scores"]["Correctness Verification"], 4.0)
+        self.assertIn("First correctness.", sample["dimension_rubrics"]["Correctness Verification"])
+        self.assertNotIn("Second correctness.", sample["dimension_rubrics"]["Correctness Verification"])
+
+    def test_label_score_conflict_filter_keeps_boundary_five(self) -> None:
+        self.assertTrue(has_label_score_conflict("Error", 6.0))
+        self.assertTrue(has_label_score_conflict("Correct", 4.0))
+        self.assertFalse(has_label_score_conflict("Error", 5.0))
+        self.assertFalse(has_label_score_conflict("Correct", 5.0))
 
     def test_loader_skips_active_excluded_prebuilt_axiom_sample(self) -> None:
         excluded = {

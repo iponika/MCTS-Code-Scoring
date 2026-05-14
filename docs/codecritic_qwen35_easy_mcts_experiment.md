@@ -1,8 +1,8 @@
 # CodeCriticBench Easy Correctness MCTS Experiment
 
-Date: 2026-05-13
+Date: 2026-05-14
 
-This document records the current experiment design and the exact data production steps. It is written so the same experiment can be replayed on another server, including a Qwen3-4B server, without mixing it with older AXIOM or full-dataset runs.
+This document records the current optimistic-seed experiment design and the exact data production steps. It is written so the same experiment can be replayed on another server, including a Qwen3-4B server, without mixing it with older AXIOM runs or the older 508-seed/357-policy CodeCritic run.
 
 ## Goal
 
@@ -10,8 +10,8 @@ Train and compare review models on CodeCriticBench Code Generation Easy samples 
 
 Current active variants:
 
-- `MCTS`: train on selected MCTS policy paths plus sampled value-only paths from the same MCTS trees.
-- `Static`: train on exact reference labels for the same seed items that produced usable MCTS policy samples.
+- `MCTS optimistic`: run MCTS on all eligible non-QA Easy CodeGen seeds, keep only optimistic trees, then train on selected MCTS policy paths plus sampled value-only paths from those trees.
+- `Static optimistic`: train on exact reference labels for the same optimistic seed items.
 - `Direct`: not trained in this round.
 
 The current Qwen3.5-9B run directory is:
@@ -48,51 +48,57 @@ Excluded rows:
 - `source == stackoverflow`
 - non-Easy rows
 - Easy CodeGen rows missing `Correctness Verification` advanced labels
+- label/score conflicts:
+  - `correctness == "Error"` and `Correctness Verification` score is greater than `5`
+  - `correctness == "Correct"` and `Correctness Verification` score is less than `5`
 
-Observed local counts:
+Correctness score extraction uses the first raw `Correctness Verification` entry in `checklist_dimensions`. This avoids silently overwriting repeated dimensions.
+
+Observed local counts after the 2026-05-14 filtering change:
 
 | Split basis | Count |
 |---|---:|
 | CodeGen Easy total | 1164 |
 | Missing Correctness Verification advanced label | 57 |
-| Eligible CodeGen Easy | 1107 |
+| Label/score conflicts | 51 |
+| Eligible CodeGen Easy | 1056 |
 
-Layering uses the original CodeCriticBench overall `score`, not the per-dimension correctness score:
+Layering uses the first `Correctness Verification` score:
 
-| Layer | Overall score range | Original Easy count | Eligible count |
-|---|---:|---:|---:|
-| Low | 0-3 | 809 | 753 |
-| Mid | 4-6 | 17 | 16 |
-| High | 7-10 | 338 | 338 |
+| Layer | Correctness score range | Eligible count |
+|---|---:|---:|
+| Low | 0-3 | 525 |
+| Mid | 4-6 | 204 |
+| High | 7-10 | 327 |
 
-## Fixed Train/Eval Split
+## All Eligible Seed Set
 
-Create the seed split with seed `20260513`:
+Create the all-eligible seed file with seed `20260513`:
 
 ```bash
 mkdir -p "${RUN_DIR}"
 
 PYTHONPATH=data_collection python data_collection/prepare_codecritic_easy_correctness_splits.py \
   --input datasets/CodeCriticBench/data/CodeCriticBench.jsonl \
-  --train_output "${RUN_DIR}/seed_train.jsonl" \
+  --train_output "${RUN_DIR}/seed_all_nonqa_easy.jsonl" \
   --eval_output "${RUN_DIR}/seed_eval.jsonl" \
   --metadata "${RUN_DIR}/split_metadata.json" \
-  --target_train 500 \
+  --all_train \
   --seed 20260513
 ```
 
-Expected split:
+Expected output:
 
-| Split | Low | Mid | High | Total |
+| Output | Low | Mid | High | Total |
 |---|---:|---:|---:|---:|
-| Train seeds | 347 | 16 | 145 | 508 |
-| Eval seeds | 406 | 0 | 193 | 599 |
+| `seed_all_nonqa_easy.jsonl` | 525 | 204 | 327 | 1056 |
+| `seed_eval.jsonl` | 0 | 0 | 0 | 0 |
 
 Selection rule:
 
-- Low/high counts use `floor(500 * original_layer_count / 1164)`.
-- Mid is scarce, so all eligible Mid rows are retained.
-- Eval is all remaining eligible Easy rows.
+- Every eligible seed is used for MCTS generation.
+- The training set is selected after MCTS generation using the optimistic-tree rule below.
+- Use a separate held-out file for evaluation if needed; do not reuse the older 599-row eval split as if it matched this optimistic training design.
 
 ## MCTS Generation
 
@@ -146,7 +152,7 @@ cp data_collection/configs/mcts_codecritic_qwen35_9b_no_think.yaml \
 # Edit model_dir to the local/HF Qwen3-4B model path.
 ```
 
-Run 4 MCTS shards over the 508 train seeds. The current run used contiguous ranges:
+Run 4 MCTS shards over the 1056 all-eligible seeds. A 4-GPU replay can use contiguous ranges of 264 rows:
 
 ```bash
 mkdir -p "${RUN_DIR}/mcts_samples" "${RUN_DIR}/logs"
@@ -154,41 +160,49 @@ mkdir -p "${RUN_DIR}/mcts_samples" "${RUN_DIR}/logs"
 CUDA_VISIBLE_DEVICES=0 PYTHONPATH=data_collection \
 python data_collection/solver_review.py \
   --custom_cfg data_collection/configs/mcts_codecritic_qwen35_9b_no_think.yaml \
-  --dataset "${RUN_DIR}/seed_train.jsonl" \
-  --start 0 --limit 127 \
+  --dataset "${RUN_DIR}/seed_all_nonqa_easy.jsonl" \
+  --start 0 --limit 264 \
   --output "${RUN_DIR}/mcts_shard_0.jsonl" \
   --output_dir "${RUN_DIR}/mcts_samples/shard_0"
 
 CUDA_VISIBLE_DEVICES=1 PYTHONPATH=data_collection \
 python data_collection/solver_review.py \
   --custom_cfg data_collection/configs/mcts_codecritic_qwen35_9b_no_think.yaml \
-  --dataset "${RUN_DIR}/seed_train.jsonl" \
-  --start 127 --limit 127 \
+  --dataset "${RUN_DIR}/seed_all_nonqa_easy.jsonl" \
+  --start 264 --limit 264 \
   --output "${RUN_DIR}/mcts_shard_1.jsonl" \
   --output_dir "${RUN_DIR}/mcts_samples/shard_1"
 
 CUDA_VISIBLE_DEVICES=2 PYTHONPATH=data_collection \
 python data_collection/solver_review.py \
   --custom_cfg data_collection/configs/mcts_codecritic_qwen35_9b_no_think.yaml \
-  --dataset "${RUN_DIR}/seed_train.jsonl" \
-  --start 254 --limit 127 \
+  --dataset "${RUN_DIR}/seed_all_nonqa_easy.jsonl" \
+  --start 528 --limit 264 \
   --output "${RUN_DIR}/mcts_shard_2.jsonl" \
   --output_dir "${RUN_DIR}/mcts_samples/shard_2"
 
 CUDA_VISIBLE_DEVICES=3 PYTHONPATH=data_collection \
 python data_collection/solver_review.py \
   --custom_cfg data_collection/configs/mcts_codecritic_qwen35_9b_no_think.yaml \
-  --dataset "${RUN_DIR}/seed_train.jsonl" \
-  --start 381 --limit 127 \
+  --dataset "${RUN_DIR}/seed_all_nonqa_easy.jsonl" \
+  --start 792 --limit 264 \
   --output "${RUN_DIR}/mcts_shard_3.jsonl" \
   --output_dir "${RUN_DIR}/mcts_samples/shard_3"
 ```
 
-On the Qwen3-4B server, replace the config path with `mcts_codecritic_qwen3_4b_no_think.yaml`. Keep the split seed and shard ranges unchanged if you want a matched experiment.
+On the Qwen3-4B server, replace the config path with `mcts_codecritic_qwen3_4b_no_think.yaml`. Keep the seed-generation command and shard ranges unchanged if you want a matched experiment.
 
-## MCTS Policy And Value Dataset
+## Optimistic MCTS Policy And Value Dataset
 
-After all `mcts_shard_*.jsonl` files finish, convert them into training data.
+After all `mcts_shard_*.jsonl` files finish, first select optimistic trees:
+
+```text
+over_count  = count(predicted_correctness_score > target_correctness_score)
+under_count = count(predicted_correctness_score < target_correctness_score)
+keep tree iff over_count > under_count
+```
+
+Then convert only those optimistic trees into training data.
 
 Policy selection:
 
@@ -205,52 +219,58 @@ abs(predicted_correctness_score - target_correctness_score) <= 2
 Value-only sampling:
 
 - Restrict value-only paths to seed trees that produced a policy sample.
-- Within each such seed tree, sample at most `3` correct value-only paths and at most `3` incorrect value-only paths.
-- If there are fewer than 3 in either label bucket, keep all available paths.
+- High-quality value paths are terminal paths with `abs(predicted_correctness_score - target_correctness_score) <= 2`.
+- Low-quality value paths are terminal paths outside ±2, errored paths, or invalid parsed paths.
+- Within each policy-producing seed tree, sample at most `3` high-quality value-only paths.
+- Low-quality value-only paths are capped to `min(3, sampled_high_quality_count)`.
 - Drop value-only paths from seed trees with no policy sample.
 - Use deterministic `--value_sampling_seed 20260513`.
 
 Command:
 
 ```bash
-PYTHONPATH="${PWD}/model_training/src:${PWD}" \
-python model_training/src/magicoder/preprocess_review_mcts_data.py \
-  --input "${RUN_DIR}"/mcts_shard_*.jsonl \
-  --output_file "${RUN_DIR}/mcts_policy_pm2_train.jsonl" \
-  --policy_min_q -1.0 \
-  --policy_max_grade_delta 2 \
-  --max_value_paths_per_dimension 0 \
-  --max_value_paths_per_sample_label 3 \
-  --value_only_from_policy_records_only \
-  --value_sampling_seed 20260513 \
-  --no-shuffle \
-  > "${RUN_DIR}/mcts_policy_pm2_train_stats.json"
+RUN_NAME=qwen35_codecritic_easy_correctness_20260513 \
+RUN_DIR="${PWD}/${RUN_DIR}" \
+SEED_DATA="${PWD}/${RUN_DIR}/seed_all_nonqa_easy.jsonl" \
+SHARD_GLOB="${PWD}/${RUN_DIR}/mcts_shard_*.jsonl" \
+data_collection/scripts/finalize_codecritic_optimistic_mcts.sh
 ```
 
-Current Qwen3.5-9B result before token filtering:
+Main outputs:
+
+- `mcts_optimistic_over_gt_under_records.jsonl`
+- `seed_optimistic_over_gt_under.jsonl`
+- `optimistic_selection_stats.json`
+- `mcts_optimistic_policy_pm2_value_pm2_aligned_train.jsonl`
+- `mcts_optimistic_policy_pm2_value_pm2_aligned_train_stats.json`
+
+Final 2026-05-14 selection result:
 
 | Item | Count |
 |---|---:|
-| MCTS seed records | 508 |
-| terminal reviews | 6700 |
-| raw seeds with ±2 terminal | 401 |
-| usable policy paths after quality filters | 357 |
-| exact-score policy paths | 74 |
-| weak ±2 policy paths | 283 |
-| sampled value-only paths | 1146 |
-| output train items | 1503 |
+| all eligible normalized MCTS trees | 1056 |
+| optimistic trees / seeds | 278 |
+| pessimistic trees | 697 |
+| tied trees | 81 |
 
-Sampled value-only paths:
+Normalization safeguards:
 
-| Bucket | Count |
-|---|---:|
-| correct | 131 |
-| incorrect | 1015 |
-| dropped because seed tree had no policy path | 2004 |
+- The older 508-seed MCTS run was not reused blindly.
+- 27 old trees were removed because their seeds fail the new label/score conflict filter.
+- 29 otherwise eligible old trees had terminal `reward_details.target_correctness_score` from the previous target extraction logic; these were regenerated.
+- The final merged tree file contains `452` target-consistent old trees, `575` newly generated missing trees, and `29` regenerated target-mismatch trees.
+- Final integrity check: `1056` unique seed keys, no duplicate trees, no terminal target mismatch.
+
+Scripts used for seed selection and MCTS dataset construction:
+
+- `data_collection/prepare_codecritic_easy_correctness_splits.py`
+- `data_collection/scripts/normalize_codecritic_mcts_records.py`
+- `data_collection/scripts/finalize_codecritic_optimistic_mcts.sh`
+- `data_collection/review_mcts_runs/qwen35_codecritic_easy_correctness_20260513/finalize_optimistic_after_missing_mcts.sh`
 
 ## Token Filtering
 
-Filter the MCTS training set with the training tokenizer and `max_tokens=6200`. This preserves all 357 policy samples and drops only too-long value-only items.
+Filter the optimistic MCTS training set with the training tokenizer and `max_tokens=6200`.
 
 Use the local tokenizer path for the model being trained:
 
@@ -275,9 +295,9 @@ from transformers import AutoTokenizer
 
 run_dir = Path(os.environ["RUN_DIR"])
 model_path = os.environ["MODEL_PATH"]
-src = run_dir / "mcts_policy_pm2_train.jsonl"
-dst = run_dir / "mcts_policy_pm2_train_policy357_value3x3_le6200.jsonl"
-stats_path = run_dir / "mcts_policy_pm2_train_policy357_value3x3_le6200_stats.json"
+src = run_dir / "mcts_optimistic_policy_pm2_value_pm2_aligned_train.jsonl"
+dst = run_dir / "mcts_optimistic_policy_pm2_value_pm2_aligned_le6200_train.jsonl"
+stats_path = run_dir / "mcts_optimistic_policy_pm2_value_pm2_aligned_le6200_stats.json"
 max_tokens = 6200
 
 tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
@@ -327,84 +347,72 @@ print(json.dumps(stats, ensure_ascii=False, indent=2))
 PY
 ```
 
-Current Qwen3.5-9B result after filtering:
+Final token-filtered MCTS training set:
 
 | Item | Count |
 |---|---:|
-| input items | 1503 |
-| kept items | 1500 |
-| kept policy items | 357 |
-| kept value-only items | 1143 |
-| dropped too long | 3 |
-| max kept tokens | 6087 |
+| raw MCTS train items | 1141 |
+| raw policy items | 224 |
+| raw value-only items | 917 |
+| kept items after `<=6200` filter | 1132 |
+| kept policy items | 223 |
+| kept value-only items | 909 |
+| dropped too long | 9 |
+| max raw tokens | 7589 |
+| p50 raw tokens | 1117 |
+| p95 raw tokens | 3748 |
+
+One policy item exceeded 6200 tokens and was dropped. The final MCTS training file is:
+
+```text
+data_collection/review_mcts_runs/qwen35_codecritic_easy_correctness_20260513/mcts_optimistic_policy_pm2_value_pm2_aligned_le6200_train.jsonl
+```
 
 ## Static Matched Dataset
 
-The Static baseline must use exactly the seed items that produced policy samples in the MCTS dataset. For the current run this is 357 seed items.
+The Static baseline should use the optimistic seed items selected from MCTS, not the old 357-policy subset.
 
-Create `seed_train_policy357.jsonl` by selecting the `(source, subset, dataset_index)` keys with `train_lm=true` in the filtered MCTS dataset:
+The finalize script already writes:
 
-```bash
-PYTHONPATH="${PWD}/model_training/src:${PWD}" python - <<'PY'
-import json
-import os
-from pathlib import Path
-
-run_dir = Path(os.environ["RUN_DIR"])
-mcts_train = run_dir / "mcts_policy_pm2_train_policy357_value3x3_le6200.jsonl"
-seed_train = run_dir / "seed_train.jsonl"
-seed_policy = run_dir / "seed_train_policy357.jsonl"
-
-keys = set()
-with mcts_train.open(encoding="utf-8") as handle:
-    for line in handle:
-        item = json.loads(line)
-        if item.get("train_lm"):
-            keys.add((item.get("source"), item.get("subset"), item.get("dataset_index")))
-
-rows = []
-with seed_train.open(encoding="utf-8") as handle:
-    for line in handle:
-        item = json.loads(line)
-        key = (item.get("source"), item.get("subset"), item.get("dataset_index"))
-        if key in keys:
-            rows.append(item)
-
-with seed_policy.open("w", encoding="utf-8") as writer:
-    for row in rows:
-        writer.write(json.dumps(row, ensure_ascii=False) + "\n")
-
-print(json.dumps({"policy_keys": len(keys), "seed_rows": len(rows), "output": str(seed_policy)}, indent=2))
-PY
+```text
+seed_optimistic_over_gt_under.jsonl
 ```
 
-Generate static exact-label training items:
+Use that file for static exact-label training:
 
 ```bash
 PYTHONPATH="${PWD}/model_training/src:data_collection:${PWD}" \
 python data_collection/prepare_static_review_train_data.py \
-  --input "${RUN_DIR}/seed_train_policy357.jsonl" \
-  --output "${RUN_DIR}/static_policy357_codecritic_train.jsonl" \
+  --input "${RUN_DIR}/seed_optimistic_over_gt_under.jsonl" \
+  --output "${RUN_DIR}/static_optimistic_codecritic_train.jsonl" \
   --prompt_variant base_static \
   --output_schema codecritic_correctness
 ```
 
-Token-audit/filter static data with the same tokenizer. In the corrected CodeCritic static run no static samples exceed 6200 tokens:
+Token-audit/filter static data with the same tokenizer:
 
 ```bash
-cp "${RUN_DIR}/static_policy357_codecritic_train.jsonl" "${RUN_DIR}/static_policy357_codecritic_le6200_train.jsonl"
+cp "${RUN_DIR}/static_optimistic_codecritic_train.jsonl" "${RUN_DIR}/static_optimistic_codecritic_le6200_train.jsonl"
 ```
 
-Current static stats:
+If any static sample exceeds 6200 tokens on the target tokenizer, write a filtered file and record the dropped examples.
+
+Final static optimistic training set:
 
 | Item | Count |
 |---|---:|
-| input items | 357 |
-| kept items | 357 |
+| optimistic static items | 278 |
+| kept after `<=6200` filter | 278 |
 | dropped too long | 0 |
-| max tokens | 1942 |
-| p50 tokens | 778 |
-| p95 tokens | 1358 |
+| max tokens | 1526 |
+| p50 tokens | 759 |
+| p95 tokens | 1153 |
+
+The final static training file is:
+
+```text
+data_collection/review_mcts_runs/qwen35_codecritic_easy_correctness_20260513/static_optimistic_codecritic_le6200_train.jsonl
+```
 
 ## Training Configuration
 
@@ -413,14 +421,14 @@ Current static stats:
 Current Qwen3.5-9B training script:
 
 ```bash
-data_collection/review_mcts_runs/qwen35_codecritic_easy_correctness_20260513/train_policy357_le6200_3gpu.sh
+data_collection/review_mcts_runs/qwen35_codecritic_easy_correctness_20260513/train_optimistic_le6200_3gpu.sh
 ```
 
 Key settings:
 
 ```text
-train data: mcts_policy_pm2_train_policy357_value3x3_le6200.jsonl
-items: 1500 = 357 policy + 1143 value-only
+train data: mcts_optimistic_policy_pm2_value_pm2_aligned_le6200_train.jsonl
+items: 1132 = 223 policy + 909 value-only
 max_training_seq_length: 6200
 gpus: 0,1,2
 mixed precision: bf16
@@ -463,14 +471,14 @@ Keep `--bf16 True`, `--mixed_precision bf16`, and `--fsdp_offload_params true`. 
 Current Qwen3.5-9B static script:
 
 ```bash
-data_collection/review_mcts_runs/qwen35_codecritic_easy_correctness_20260513/train_static357_gpu3.sh
+data_collection/review_mcts_runs/qwen35_codecritic_easy_correctness_20260513/train_static_optimistic_gpu3.sh
 ```
 
 Key settings:
 
 ```text
-train data: static_policy357_codecritic_le6200_train.jsonl
-items: 357
+train data: static_optimistic_codecritic_le6200_train.jsonl
+items: 278
 output schema: codecritic_correctness
 max_training_seq_length: 2048
 gpu: 3
@@ -486,20 +494,20 @@ seed: 20260513
 
 When pinning static training to one physical GPU, use only `CUDA_VISIBLE_DEVICES=<gpu>` and do not pass `accelerate --gpu_ids`. Passing `--gpu_ids 0` while another multi-GPU job is running can be interpreted as physical GPU 0 and cause an OOM collision.
 
-## Current Running Qwen3.5-9B Jobs
+## Current Qwen3.5-9B Jobs
 
-These are the live runs started from the current data:
+The older 357-policy training jobs were stopped before this optimistic dataset rebuild. New tmux sessions should use names and logs that include `optimistic` to avoid mixing runs:
 
 | Variant | tmux session | Log |
 |---|---|---|
-| MCTS train | `cc_easy_policy357_3gpu` | `${RUN_DIR}/logs/train_policy357_le6200_3gpu_20260513_231103.log` |
-| Static train | `cc_easy_static357_codecritic_gpu3` | `${RUN_DIR}/logs/train_static357_codecritic_gpu3_20260514_102356.log` |
+| MCTS train | `cc_easy_optimistic_mcts_3gpu` | `${RUN_DIR}/logs/train_optimistic_mcts_le6200_3gpu_<timestamp>.log` |
+| Static train | `cc_easy_optimistic_static_gpu3` | `${RUN_DIR}/logs/train_optimistic_static_gpu3_<timestamp>.log` |
 
-The MCTS adapterfix job uses 0/1/2 with bf16 and FSDP offload. The corrected Static job uses physical GPU 3, bf16, CodeCritic `correctness_score` labels, and `max_training_seq_length=2048`.
+The MCTS job should use GPUs 0/1/2 with bf16 and FSDP offload. The Static job can use physical GPU 3, bf16, CodeCritic `correctness_score` labels, and `max_training_seq_length=2048`.
 
 ## Qwen3-4B Replay Checklist
 
-Use the same dataset split and data production logic, but write to a new run directory.
+Use the same all-eligible seed generation, optimistic selection, and data production logic, but write to a new run directory.
 
 Required changes:
 
@@ -509,7 +517,7 @@ Required changes:
 - For MCTS training with FSDP, use `--fsdp_transformer_layer_cls_to_wrap Qwen3DecoderLayer`.
 - Retain `--bf16 True`, `--mixed_precision bf16`, and `--fsdp_offload_params true` for the MCTS policy/value training.
 - Recompute token-filter stats with the Qwen3-4B tokenizer, even if the source JSONL is the same.
-- Generate Static from the policy-producing seed keys of that run, not by copying the 9B static file.
+- Generate Static from `seed_optimistic_over_gt_under.jsonl`, not by copying the 9B static file.
 - Use `--output_schema codecritic_correctness`; the old AXIOM static schema is not comparable to this CodeCritic correctness experiment.
 
-Expected matched outputs if the Qwen3-4B MCTS behavior matches the 9B run are not guaranteed. The number of policy seeds `P` may differ because MCTS generations and score parses are model-dependent. Always set Static to exactly that run's final usable policy count `P`.
+Expected matched outputs are not guaranteed. The number of optimistic seeds and usable policy paths may differ because MCTS generations and score parses are model-dependent. Always set Static to exactly that run's `seed_optimistic_over_gt_under.jsonl`.
