@@ -873,20 +873,24 @@ def prepare_codecriticbench_sample(
     executable_all_assertions = executable_public_assertions + executable_private_assertions
     candidate_code = raw_sample["answer"]
 
-    raw_reference_scores = {
-        dimension: score
-        for dimension, score in zip(raw_sample["checklist_dimensions"], raw_sample["checklist_scores"])
-    }
-    correctness_score = float(raw_reference_scores.get("Correctness Verification", raw_sample.get("score") or 0))
-    reference_scores = {"Correctness Verification": correctness_score}
-    dimension_rubrics = {}
-    for dimension, checklist in zip(raw_sample["checklist_dimensions"], raw_sample["checklists"]):
-        if dimension != "Correctness Verification":
+    correctness_score = float(raw_sample.get("score") or 0)
+    correctness_rubric = DEFAULT_DIMENSION_RUBRIC["Correctness Verification"]
+    all_correctness_scores: List[float] = []
+    for dimension, score, checklist in zip(
+        raw_sample["checklist_dimensions"],
+        raw_sample["checklist_scores"],
+        raw_sample["checklists"],
+    ):
+        if dimension != "Correctness Verification" or score is None:
             continue
-        default_rubric = DEFAULT_DIMENSION_RUBRIC.get(dimension, "")
-        dimension_rubrics[dimension] = f"{default_rubric}\nReference checklist item: {checklist}".strip()
-    if "Correctness Verification" not in dimension_rubrics:
-        dimension_rubrics["Correctness Verification"] = DEFAULT_DIMENSION_RUBRIC["Correctness Verification"]
+        parsed_score = float(score)
+        all_correctness_scores.append(parsed_score)
+        if len(all_correctness_scores) == 1:
+            correctness_score = parsed_score
+            default_rubric = DEFAULT_DIMENSION_RUBRIC.get(dimension, "")
+            correctness_rubric = f"{default_rubric}\nReference checklist item: {checklist}".strip()
+    reference_scores = {"Correctness Verification": correctness_score}
+    dimension_rubrics = {"Correctness Verification": correctness_rubric}
 
     sample = {
         "dataset_index": dataset_index,
@@ -903,6 +907,7 @@ def prepare_codecriticbench_sample(
         "subset": raw_sample.get("subset"),
         "reference_scores": reference_scores,
         "dimension_rubrics": dimension_rubrics,
+        "all_correctness_verification_scores": all_correctness_scores,
         "overall_score": raw_sample.get("score"),
         "correctness_label": raw_sample.get("correctness"),
     }

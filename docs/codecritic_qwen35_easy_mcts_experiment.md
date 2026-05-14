@@ -48,6 +48,11 @@ Excluded rows:
 - `source == stackoverflow`
 - non-Easy rows
 - Easy CodeGen rows missing `Correctness Verification` advanced labels
+- rows where the advanced `Correctness Verification` score conflicts with the basic correctness label:
+  - `correctness == "Error"` and first `Correctness Verification` score `> 5`
+  - `correctness == "Correct"` and first `Correctness Verification` score `< 5`
+
+`target_correctness_score` uses the first `Correctness Verification` checklist score in the raw row. Some raw rows contain duplicate `Correctness Verification` dimensions; later duplicates are treated as auxiliary checklist questions and must not overwrite the first score.
 
 Observed local counts:
 
@@ -55,15 +60,16 @@ Observed local counts:
 |---|---:|
 | CodeGen Easy total | 1164 |
 | Missing Correctness Verification advanced label | 57 |
-| Eligible CodeGen Easy | 1107 |
+| Label/score conflicts filtered | 51 |
+| Eligible CodeGen Easy after filtering | 1056 |
 
 Layering uses the original CodeCriticBench overall `score`, not the per-dimension correctness score:
 
-| Layer | Overall score range | Original Easy count | Eligible count |
+| Layer | Overall score range | Original Easy count | Eligible count after filtering |
 |---|---:|---:|---:|
-| Low | 0-3 | 809 | 753 |
-| Mid | 4-6 | 17 | 16 |
-| High | 7-10 | 338 | 338 |
+| Low | 0-3 | 809 | 708 |
+| Mid | 4-6 | 17 | 14 |
+| High | 7-10 | 338 | 334 |
 
 ## Fixed Train/Eval Split
 
@@ -85,8 +91,8 @@ Expected split:
 
 | Split | Low | Mid | High | Total |
 |---|---:|---:|---:|---:|
-| Train seeds | 347 | 16 | 145 | 508 |
-| Eval seeds | 406 | 0 | 193 | 599 |
+| Train seeds | 347 | 14 | 145 | 506 |
+| Eval seeds | 361 | 0 | 189 | 550 |
 
 Selection rule:
 

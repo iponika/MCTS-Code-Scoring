@@ -39,6 +39,31 @@ def review_for_grade(grade: int) -> str:
     )
 
 
+def codecritic_terminal_node(tag: str, predicted_score: int, target_score: int = 5) -> tuple[str, dict]:
+    final_answer = json.dumps(
+        {
+            "correctness_score": predicted_score,
+            "dimension": "Correctness Verification",
+            "evidence_type": "deduced_counterexample",
+            "summary": f"Predicted score {predicted_score}.",
+            "evidence": [f"Evidence for score {predicted_score}."],
+        }
+    )
+    details = {
+        "score_scale": "codecritic_correctness_1_10",
+        "parsed": json.loads(final_answer),
+        "predicted_correctness_score": predicted_score,
+        "target_correctness_score": target_score,
+    }
+    return tag, {
+        "text": f"<review>\n{final_answer}\n</review>",
+        "final_answer": final_answer,
+        "target_dimension": "Correctness Verification",
+        "reward_details": json.dumps(details),
+        "q_value": 1.0,
+    }
+
+
 class ReviewTrainingDedupeTest(unittest.TestCase):
     def test_extract_response_segments_preserves_prefix_reasoning_before_review(self) -> None:
         mixed = (
@@ -506,6 +531,49 @@ class ReviewTrainingDedupeTest(unittest.TestCase):
         self.assertEqual(stats["value_sampled_incorrect_paths"], 3)
         self.assertEqual(stats["value_only_paths"], 6)
         self.assertEqual(len(items), 7)
+
+    def test_codecritic_value_sampling_treats_within_policy_delta_as_high_quality_and_aligns_low_count(self) -> None:
+        policy_tag, policy = codecritic_terminal_node("0.0", predicted_score=5, target_score=5)
+        react = {"0": {}, policy_tag: policy}
+        for index, score in enumerate([3, 6]):
+            tag, node = codecritic_terminal_node(f"{index + 1}.0", predicted_score=score, target_score=5)
+            node["q_value"] = 0.2 + index * 0.01
+            react[tag] = node
+        for index, score in enumerate([1, 2, 8, 9, 10]):
+            tag, node = codecritic_terminal_node(f"{index + 10}.0", predicted_score=score, target_score=5)
+            node["q_value"] = -0.2 - index * 0.01
+            react[tag] = node
+        record = {
+            "dataset_index": 13,
+            "source": "unit",
+            "subset": "unit",
+            "problem": "Return x + 1.",
+            "candidate_code": "def f(x):\n    return x + 1",
+            "tests": [],
+            "language": "python",
+            "react": react,
+        }
+
+        items, stats = convert_records(
+            [record],
+            policy_min_q=0.5,
+            policy_max_grade_delta=2,
+            max_value_paths_per_dimension=0,
+            max_value_paths_per_sample_label=3,
+            value_only_from_policy_records_only=True,
+            stage_value_labels=False,
+        )
+
+        value_items = [item for item in items if not item.get("train_lm")]
+        self.assertEqual(stats["policy_paths"], 1)
+        self.assertEqual(stats["value_sampled_correct_paths"], 2)
+        self.assertEqual(stats["value_sampled_incorrect_paths"], 2)
+        self.assertEqual(stats["value_sample_dropped_incorrect_paths"], 3)
+        self.assertEqual(stats["value_only_paths"], 4)
+        self.assertEqual(len(value_items), 4)
+        deltas = [int(item["parsed_score"] - item["target_correctness_score"]) for item in value_items]
+        self.assertEqual(sum(1 for delta in deltas if abs(delta) <= 2), 2)
+        self.assertEqual(sum(1 for delta in deltas if abs(delta) > 2), 2)
 
     def test_value_sampling_drops_value_only_record_without_policy(self) -> None:
         tag, node = terminal_node("0.0", review_for_grade(1))

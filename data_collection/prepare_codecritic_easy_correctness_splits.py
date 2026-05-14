@@ -54,6 +54,20 @@ def layer_for_score(score: int) -> str:
     return "high"
 
 
+def should_keep_codecritic_correctness_sample(sample: dict[str, Any]) -> bool:
+    """Drop label/score contradictions that are unsafe as correctness supervision."""
+    label = str(sample.get("correctness_label") or "").strip().lower()
+    try:
+        target_score = float(sample.get("target_correctness_score"))
+    except (TypeError, ValueError):
+        return False
+    if label == "error" and target_score > 5:
+        return False
+    if label == "correct" and target_score < 5:
+        return False
+    return True
+
+
 def write_jsonl(path: Path, rows: list[dict[str, Any]]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8") as writer:
@@ -79,6 +93,9 @@ def main() -> None:
             skipped["missing_correctness_verification"] += 1
             continue
         sample = prepare_codecriticbench_sample(raw, dataset_index=None)
+        if not should_keep_codecritic_correctness_sample(sample):
+            skipped["label_score_conflict"] += 1
+            continue
         sample["prepared_review_sample"] = True
         sample["dataset_family"] = "codecritic_codegen_easy"
         sample["source_dataset"] = str(args.input)

@@ -834,7 +834,7 @@ def codecritic_score_delta_item(item: dict[str, Any]) -> int | None:
         return None
 
 
-def value_path_label_bucket(details: dict[str, Any]) -> str | None:
+def value_path_label_bucket(details: dict[str, Any], *, codecritic_max_score_delta: int = 0) -> str | None:
     """Bucket a terminal review path for per-seed value sampling."""
     if details.get("error"):
         return "incorrect"
@@ -848,6 +848,8 @@ def value_path_label_bucket(details: dict[str, Any]) -> str | None:
         delta = policy_grade_delta(parsed_grade, details.get("target_axiom_grade"))
     if delta is None:
         return None
+    if details.get("score_scale") == "codecritic_correctness_1_10":
+        return "correct" if abs(delta) <= max(0, codecritic_max_score_delta) else "incorrect"
     return "correct" if delta == 0 else "incorrect"
 
 
@@ -1097,7 +1099,7 @@ def convert_records(
             if train_lm:
                 record_policy_items.append(item)
             else:
-                bucket = value_path_label_bucket(details)
+                bucket = value_path_label_bucket(details, codecritic_max_score_delta=policy_max_grade_delta)
                 if bucket in record_value_items_by_bucket:
                     item["value_sample_bucket"] = bucket
                     record_value_items_by_bucket[bucket].append(item)
@@ -1152,13 +1154,25 @@ def convert_records(
             if max_value_paths_per_sample_label > 0:
                 record_key = (record.get("source"), record.get("subset"), record.get("dataset_index"))
                 rng = random.Random(f"{value_sampling_seed}:{record_key!r}")
-                for bucket, bucket_items in record_value_items_by_bucket.items():
-                    limit = max_value_paths_per_sample_label
-                    if len(bucket_items) > limit:
-                        sampled_items = rng.sample(bucket_items, limit)
-                        stats[f"value_sample_dropped_{bucket}_paths"] += len(bucket_items) - limit
-                    else:
-                        sampled_items = list(bucket_items)
+                correct_items = record_value_items_by_bucket["correct"]
+                incorrect_items = record_value_items_by_bucket["incorrect"]
+                correct_limit = max_value_paths_per_sample_label
+                if len(correct_items) > correct_limit:
+                    sampled_correct = rng.sample(correct_items, correct_limit)
+                    stats["value_sample_dropped_correct_paths"] += len(correct_items) - correct_limit
+                else:
+                    sampled_correct = list(correct_items)
+                incorrect_limit = len(sampled_correct)
+                if len(incorrect_items) > incorrect_limit:
+                    sampled_incorrect = rng.sample(incorrect_items, incorrect_limit)
+                    stats["value_sample_dropped_incorrect_paths"] += len(incorrect_items) - incorrect_limit
+                else:
+                    sampled_incorrect = list(incorrect_items)
+                sampled_by_bucket = {
+                    "correct": sampled_correct,
+                    "incorrect": sampled_incorrect,
+                }
+                for bucket, sampled_items in sampled_by_bucket.items():
                     items.extend(sampled_items)
                     stats["value_only_paths"] += len(sampled_items)
                     stats[f"value_sampled_{bucket}_paths"] += len(sampled_items)

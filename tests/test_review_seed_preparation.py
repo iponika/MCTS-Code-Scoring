@@ -1,8 +1,9 @@
-import unittest
 import json
 import tempfile
+import unittest
 from pathlib import Path
 
+from data_collection.prepare_codecritic_easy_correctness_splits import should_keep_codecritic_correctness_sample
 from mcts_math.review_utils import compute_pass_rate, load_codecriticbench_dataset, prepare_codecriticbench_sample
 
 
@@ -39,6 +40,59 @@ class ReviewSeedPreparationTest(unittest.TestCase):
         self.assertEqual(sample["objective"]["test_execution_kind"], "non_assertion")
         self.assertEqual(sample["objective"]["full_test_pass_rate"], 0.0)
         self.assertGreaterEqual(sample["axiom_target_grade"], 3)
+
+    def test_prepare_codecriticbench_sample_uses_first_correctness_verification_score(self) -> None:
+        raw = {
+            "question": "Return the maximum element.",
+            "answer": "def find_max(xs):\n    return min(xs)\n",
+            "public_test": {"input": ["assert find_max([1, 3, 2]) == 3"]},
+            "private_test": {"input": []},
+            "checklist_dimensions": [
+                "Correctness Verification",
+                "Code Readability Enhancement",
+                "Correctness Verification",
+            ],
+            "checklist_scores": [2, 8, 10],
+            "checklists": [
+                "Does the implementation satisfy the core maximum-element requirement?",
+                "Are names readable?",
+                "Does it handle all-negative inputs?",
+            ],
+            "score": 2,
+            "correctness": "Error",
+            "source": "mbpp",
+            "subset": "mbpp",
+            "difficulty": "Easy",
+        }
+
+        sample = prepare_codecriticbench_sample(raw)
+
+        self.assertEqual(sample["target_correctness_score"], 2.0)
+        self.assertEqual(sample["reference_scores"], {"Correctness Verification": 2.0})
+        self.assertIn("core maximum-element", sample["dimension_rubrics"]["Correctness Verification"])
+        self.assertNotIn("all-negative", sample["dimension_rubrics"]["Correctness Verification"])
+
+    def test_codecritic_correctness_filter_removes_label_score_conflicts(self) -> None:
+        self.assertFalse(
+            should_keep_codecritic_correctness_sample(
+                {"target_correctness_score": 6.0, "correctness_label": "Error"}
+            )
+        )
+        self.assertFalse(
+            should_keep_codecritic_correctness_sample(
+                {"target_correctness_score": 4.0, "correctness_label": "Correct"}
+            )
+        )
+        self.assertTrue(
+            should_keep_codecritic_correctness_sample(
+                {"target_correctness_score": 5.0, "correctness_label": "Error"}
+            )
+        )
+        self.assertTrue(
+            should_keep_codecritic_correctness_sample(
+                {"target_correctness_score": 5.0, "correctness_label": "Correct"}
+            )
+        )
 
     def test_loader_skips_active_excluded_prebuilt_axiom_sample(self) -> None:
         excluded = {

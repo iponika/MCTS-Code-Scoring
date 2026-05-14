@@ -20,6 +20,7 @@ from magicoder.review_policy_value_inference import (
 from magicoder.review_value_guided_evaluator import VALUE_SCORE_KEYS
 try:
     from shared.prompt_contract import (
+        CODECRITIC_FINAL_REVIEW_PREFILL,
         FINAL_REVIEW_PREFILL,
         build_base_static_prompt_from_sample,
         build_review_prompt_from_sample,
@@ -32,6 +33,7 @@ except ImportError:
     from pathlib import Path as _Path
     _sys.path.insert(0, str(_Path(__file__).resolve().parents[3]))
     from shared.prompt_contract import (
+        CODECRITIC_FINAL_REVIEW_PREFILL,
         FINAL_REVIEW_PREFILL,
         build_base_static_prompt_from_sample,
         build_review_prompt_from_sample,
@@ -380,24 +382,31 @@ def parse_final_review(text: str) -> dict[str, Any]:
     return _parse_review_json(review_text)
 
 
-def merge_final_review_continuation(continuation: str, *, anchored: bool) -> str:
+def final_review_prefill_for_variant(prompt_variant: str = "default") -> str:
+    return CODECRITIC_FINAL_REVIEW_PREFILL if prompt_variant == "codecritic_correctness" else FINAL_REVIEW_PREFILL
+
+
+def merge_final_review_continuation(continuation: str, *, anchored: bool, prompt_variant: str = "default") -> str:
     text = str(continuation or "").strip()
+    final_review_prefill = final_review_prefill_for_variant(prompt_variant)
     if not anchored or not text or "<review>" in text:
         return text
     if text.startswith("{"):
         return "<review>\n" + text
+    if prompt_variant == "codecritic_correctness" and re.match(r'^(?:10|[1-9])\s*,', text):
+        return final_review_prefill + text
     if re.match(r'^[0-5]\s*,', text):
-        return FINAL_REVIEW_PREFILL + text
+        return final_review_prefill + text
     if (
         "</review>" in text
         and (
-            re.match(r'^[0-5]\s*,', text)
+            re.match(r'^(?:10|[0-9])\s*,', text)
             or '"functional_correctness"' in text
             or '"repair_effort"' in text
             or '"evidence"' in text
         )
     ):
-        return FINAL_REVIEW_PREFILL + text
+        return final_review_prefill + text
     return text
 
 
@@ -698,7 +707,11 @@ def evaluate_dimension(
             partial_response += rethink_feedback(best, args.rethink_threshold, args.score_key)
         else:
             if force_final:
-                final_continuation = merge_final_review_continuation(best["continuation"], anchored=True)
+                final_continuation = merge_final_review_continuation(
+                    best["continuation"],
+                    anchored=True,
+                    prompt_variant=args.prompt_variant,
+                )
                 partial_response += final_continuation.strip() + "\n"
             else:
                 reasoning_note = (best.get("reasoning") or best.get("content") or best["continuation"]).strip()
@@ -775,7 +788,11 @@ def evaluate_dimension(
             )
             retry_value_score = score_response(value_model, tokenizer, retry_prompt, continuation) if value_model is not None else neutral_value_score()
         retry_artifacts = extract_reasoning_artifacts(continuation)
-        merged_retry = merge_final_review_continuation(continuation, anchored=True)
+        merged_retry = merge_final_review_continuation(
+            continuation,
+            anchored=True,
+            prompt_variant=args.prompt_variant,
+        )
         partial_response += merged_retry.strip() + "\n"
         final_review_parse = parse_final_review(partial_response)
         final_retries.append(

@@ -1,7 +1,7 @@
 import unittest
 
 from magicoder.review_evaluator import extract_reasoning_artifacts, merge_final_review_continuation, parse_final_review
-from shared.prompt_contract import FINAL_REVIEW_PREFILL
+from shared.prompt_contract import CODECRITIC_FINAL_REVIEW_PREFILL, FINAL_REVIEW_PREFILL
 
 
 class ReviewEvaluatorParsingTest(unittest.TestCase):
@@ -64,6 +64,20 @@ class ReviewEvaluatorParsingTest(unittest.TestCase):
         parsed = parse_final_review(merged)
         self.assertTrue(parsed["ok"])
         self.assertEqual(parsed["parsed"]["axiom_grade"], 2)
+
+    def test_merge_final_review_continuation_uses_codecritic_prefill(self) -> None:
+        continuation = '8, "dimension": "Correctness Verification", "evidence": ["x"]}\n</review>'
+
+        merged = merge_final_review_continuation(
+            continuation,
+            anchored=True,
+            prompt_variant="codecritic_correctness",
+        )
+
+        self.assertTrue(merged.startswith(CODECRITIC_FINAL_REVIEW_PREFILL))
+        parsed = parse_final_review(merged)
+        self.assertTrue(parsed["ok"])
+        self.assertEqual(parsed["parsed"]["correctness_score"], 8)
 
     def test_parse_final_review_recovers_missing_open_tag_when_json_and_close_tag_exist(self) -> None:
         text = '2, "functional_correctness": false, "repair_effort": "minor_functional", "evidence": ["x"]}\n</review>'
