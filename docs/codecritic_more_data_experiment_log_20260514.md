@@ -348,3 +348,64 @@ Training-data export counts:
 | records without policy | 286 |
 | exact-grade policy paths | 538 |
 | weak +/-2 policy paths | 492 |
+
+## Relaxed MCTS 4B Training
+
+Training command was launched through:
+
+```text
+data_collection/scripts/run_codecritic_easy_qwen3_4b_train_worker.sh
+```
+
+Training input:
+
+```text
+model_training/review_mcts_train_data/qwen3_4b_codecritic_codegen_all2631_oldprompt_step_score_guard_20260514_mcts_relaxed_top1316_policy_pm2_value_pm2_aligned_train.jsonl
+```
+
+Training configuration:
+
+| Field | Value |
+|---|---|
+| base model | `Qwen/Qwen3-4B` |
+| tag | `mcts_relaxed_top1316` |
+| max steps | 240 |
+| max training sequence length | 2048 |
+| batch / grad accumulation | `1 / 8` |
+| learning rate | `3e-5` |
+| value weight | `0.05` |
+| boundary value weight | `0.02` |
+| train sampling | deterministic sequential |
+
+Observed training data load:
+
+| Item | Count |
+|---|---:|
+| raw train items | 3400 |
+| after length filtering | 3392 |
+| truncated by length filter | 8 |
+
+Training output:
+
+```text
+model_training/src/output/review-lora-qwen3_4b_codecritic_codegen_all2631_oldprompt_step_score_guard_20260514-mcts_relaxed_top1316-240step
+```
+
+The final output directory contains both:
+
+```text
+adapter_model.safetensors
+value_head.pth
+```
+
+Training summary:
+
+| Metric | Value |
+|---|---:|
+| train_runtime | 662.5 |
+| train_samples_per_second | 2.898 |
+| train_steps_per_second | 0.362 |
+| train_loss | 0.786 |
+| epoch | 0.566 |
+
+Checkpoints were saved at steps 160 and 240 after `save_total_limit=2`; the earlier step-80 checkpoint was pruned.
