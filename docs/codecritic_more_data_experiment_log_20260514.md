@@ -183,6 +183,7 @@ Use old-prompt `ba27cf0` for the first expanded-data run if the immediate goal i
 - 2026-05-14: Confirmed Easy+Medium is insufficient for 2000+ eligible samples; Easy+Medium+Hard gives 2631.
 - 2026-05-14: Migrated the active directory `/data1/xianzhiwei/mcts-code-review` to old-prompt branch `qwen3-4b-CCB-oldprompt-main`; removed temporary worktree `/tmp/cc-oldprompt-ba27cf0` to avoid accidental promptfix/oldprompt mixups.
 - 2026-05-15: Completed Qwen3-4B MCTS generation for all 2631 eligible CodeGen Easy/Meidum/Hard seeds.
+- 2026-05-15: Relaxed optimistic seed boundary to produce a 1316/1315 train/eval split.
 
 ## Expanded MCTS Generation Results
 
@@ -270,3 +271,80 @@ Notes:
 - 2612 records have at least one parsed terminal correctness score; 19 records have zero parsed terminal scores.
 - Average parsed terminal scores per record: 4.392.
 - The generated trees are strongly pessimistic overall. Most terminal predictions are score `3`, and only 413 of 2631 records satisfy the optimistic seed rule.
+
+## Relaxed Optimistic Split
+
+The strict old optimistic rule `over_count > under_count` gave only 413 training seeds. To make the training split slightly larger than the evaluation split without rerunning MCTS, records were ranked by:
+
+```text
+net_over_under desc,
+mean_delta desc,
+max_delta desc,
+over_count desc,
+exact_count desc,
+valid_terminal_review_count desc,
+smaller dataset_index
+```
+
+where `net_over_under = over_count - under_count` and `delta = predicted_correctness_score - target_correctness_score`.
+
+Split rule:
+
+- Select the top 1316 records as relaxed training seeds.
+- Leave the remaining 1315 records as evaluation seeds.
+- This is equivalent to taking all `net_over_under >= -2` records, then taking the 294 most optimistic records from the `net_over_under = -3` boundary bucket.
+
+Relaxed split artifacts:
+
+```text
+data_collection/review_mcts_runs/qwen3_4b_codecritic_codegen_all2631_oldprompt_step_score_guard_20260514/mcts_relaxed_top1316_records.jsonl
+data_collection/review_mcts_runs/qwen3_4b_codecritic_codegen_all2631_oldprompt_step_score_guard_20260514/seed_relaxed_top1316_train.jsonl
+data_collection/review_mcts_runs/qwen3_4b_codecritic_codegen_all2631_oldprompt_step_score_guard_20260514/seed_relaxed_remaining1315_eval.jsonl
+data_collection/review_mcts_runs/qwen3_4b_codecritic_codegen_all2631_oldprompt_step_score_guard_20260514/relaxed_top1316_indices.json
+data_collection/review_mcts_runs/qwen3_4b_codecritic_codegen_all2631_oldprompt_step_score_guard_20260514/relaxed_top1316_selection_stats.json
+```
+
+Relaxed split counts:
+
+| Split | Count |
+|---|---:|
+| relaxed train | 1316 |
+| relaxed eval | 1315 |
+
+Train distribution:
+
+| Field | Distribution |
+|---|---|
+| difficulty | `Easy=661`, `Meidum=297`, `Hard=358` |
+| source | `codeforce=364`, `debug=233`, `live-code-bench=264`, `mbpp=455` |
+| score layer | `high=487`, `low=753`, `mid=76` |
+| correctness label | `Correct=555`, `Error=761` |
+
+Eval distribution:
+
+| Field | Distribution |
+|---|---|
+| difficulty | `Easy=395`, `Meidum=339`, `Hard=581` |
+| source | `codeforce=350`, `debug=433`, `live-code-bench=370`, `mbpp=162` |
+| score layer | `high=818`, `low=389`, `mid=108` |
+| correctness label | `Correct=921`, `Error=394` |
+
+MCTS training data exported from the relaxed train records:
+
+```text
+data_collection/review_mcts_runs/qwen3_4b_codecritic_codegen_all2631_oldprompt_step_score_guard_20260514/mcts_relaxed_top1316_policy_pm2_value_pm2_aligned_train.jsonl
+data_collection/review_mcts_runs/qwen3_4b_codecritic_codegen_all2631_oldprompt_step_score_guard_20260514/mcts_relaxed_top1316_policy_pm2_value_pm2_aligned_train_stats.json
+model_training/review_mcts_train_data/qwen3_4b_codecritic_codegen_all2631_oldprompt_step_score_guard_20260514_mcts_relaxed_top1316_policy_pm2_value_pm2_aligned_train.jsonl
+```
+
+Training-data export counts:
+
+| Item | Count |
+|---|---:|
+| input records | 1316 |
+| output train items | 3400 |
+| policy paths | 1030 |
+| value-only paths | 2370 |
+| records without policy | 286 |
+| exact-grade policy paths | 538 |
+| weak +/-2 policy paths | 492 |
