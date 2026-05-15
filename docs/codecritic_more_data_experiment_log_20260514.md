@@ -409,3 +409,55 @@ Training summary:
 | epoch | 0.566 |
 
 Checkpoints were saved at steps 160 and 240 after `save_total_limit=2`; the earlier step-80 checkpoint was pruned.
+
+## Relaxed Eval: Base vs MCTS
+
+Evaluation set:
+
+```text
+data_collection/review_mcts_runs/qwen3_4b_codecritic_codegen_all2631_oldprompt_step_score_guard_20260514/seed_relaxed_remaining1315_eval.jsonl
+```
+
+Compared models:
+
+| Method | Model |
+|---|---|
+| Base | `Qwen/Qwen3-4B` local snapshot |
+| MCTS | `model_training/src/output/review-lora-qwen3_4b_codecritic_codegen_all2631_oldprompt_step_score_guard_20260514-mcts_relaxed_top1316-240step` |
+
+Raw evaluation outputs:
+
+```text
+model_training/src/output/review-eval-qwen3_4b_codecritic_codegen_all2631_oldprompt_step_score_guard_20260514-base
+model_training/src/output/review-eval-qwen3_4b_codecritic_codegen_all2631_oldprompt_step_score_guard_20260514-mcts_relaxed_top1316
+```
+
+Metric artifacts:
+
+```text
+data_collection/review_mcts_runs/qwen3_4b_codecritic_codegen_all2631_oldprompt_step_score_guard_20260514/relaxed_eval_base_vs_mcts_metrics.json
+data_collection/review_mcts_runs/qwen3_4b_codecritic_codegen_all2631_oldprompt_step_score_guard_20260514/relaxed_eval_base_vs_mcts_per_sample.csv
+```
+
+Valid counts:
+
+| Item | Count |
+|---|---:|
+| eval rows | 1315 |
+| Base valid | 1314 |
+| MCTS valid | 1311 |
+| common valid | 1310 |
+
+Metrics on the 1310 common-valid examples:
+
+| Method | Spearman | Kendall | Pearson | Alpha | QWK | ICC2 | RMSE | EMD | MAE |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| Base | 0.5429 | 0.4429 | 0.5055 | 0.0745 | 0.2807 | 0.2809 | 3.7087 | 2.9160 | 3.1023 |
+| MCTS | 0.5172 | 0.4221 | 0.5059 | 0.1356 | 0.3078 | 0.3080 | 3.3842 | 2.5427 | 2.7794 |
+
+Interpretation:
+
+- MCTS improves ordinal agreement and calibration/error metrics: Alpha, QWK, ICC2, RMSE, EMD, and MAE.
+- Base keeps slightly higher rank correlations: Spearman and Kendall.
+- Pearson is essentially tied, with MCTS slightly higher.
+- Both methods remain pessimistic on average; mean signed error is `Base=-2.9160`, `MCTS=-2.5427`.
