@@ -181,3 +181,92 @@ Use old-prompt `ba27cf0` for the first expanded-data run if the immediate goal i
 - 2026-05-14: Created this log.
 - 2026-05-14: Confirmed two worktrees: current `qwen3-4b-CCB` at `20d9bec`, old detached worktree at `ba27cf0`.
 - 2026-05-14: Confirmed Easy+Medium is insufficient for 2000+ eligible samples; Easy+Medium+Hard gives 2631.
+- 2026-05-14: Migrated the active directory `/data1/xianzhiwei/mcts-code-review` to old-prompt branch `qwen3-4b-CCB-oldprompt-main`; removed temporary worktree `/tmp/cc-oldprompt-ba27cf0` to avoid accidental promptfix/oldprompt mixups.
+- 2026-05-15: Completed Qwen3-4B MCTS generation for all 2631 eligible CodeGen Easy/Meidum/Hard seeds.
+
+## Expanded MCTS Generation Results
+
+Run directory:
+
+```text
+data_collection/review_mcts_runs/qwen3_4b_codecritic_codegen_all2631_oldprompt_step_score_guard_20260514
+```
+
+MCTS shards:
+
+| Shard | Start | Limit | Completed records |
+|---|---:|---:|---:|
+| `mcts_gpu0_000_1316.jsonl` | 0 | 1316 | 1316 |
+| `mcts_gpu1_1316_1315.jsonl` | 1316 | 1315 | 1315 |
+| total |  |  | 2631 |
+
+Seed distribution:
+
+| Field | Distribution |
+|---|---|
+| difficulty | `Easy=1056`, `Meidum=636`, `Hard=939` |
+| source | `codeforce=714`, `debug=666`, `live-code-bench=634`, `mbpp=617` |
+| score layer | `high=1305`, `low=1142`, `mid=184` |
+| correctness label | `Correct=1476`, `Error=1155` |
+| target score | `1=26`, `2=330`, `3=360`, `4=339`, `5=129`, `6=202`, `7=286`, `8=364`, `9=479`, `10=116` |
+
+Terminal leaf score distribution:
+
+| Predicted score | Count |
+|---:|---:|
+| 1 | 1469 |
+| 2 | 1519 |
+| 3 | 5823 |
+| 4 | 14 |
+| 5 | 736 |
+| 6 | 30 |
+| 7 | 866 |
+| 8 | 284 |
+| 9 | 303 |
+| 10 | 512 |
+
+Leaf delta distribution, where `delta = predicted_correctness_score - target_correctness_score`:
+
+| Delta | Count |
+|---:|---:|
+| -9 | 18 |
+| -8 | 116 |
+| -7 | 319 |
+| -6 | 1319 |
+| -5 | 1065 |
+| -4 | 1136 |
+| -3 | 1072 |
+| -2 | 1422 |
+| -1 | 1938 |
+| 0 | 1539 |
+| 1 | 918 |
+| 2 | 238 |
+| 3 | 188 |
+| 4 | 119 |
+| 5 | 84 |
+| 6 | 36 |
+| 7 | 24 |
+| 8 | 5 |
+
+Record-level optimistic selection using the old rule `over_count > under_count`:
+
+| Class | Count |
+|---|---:|
+| optimistic | 413 |
+| pessimistic | 1989 |
+| tied | 229 |
+
+Selection by difficulty:
+
+| Difficulty | Optimistic | Pessimistic | Tied |
+|---|---:|---:|---:|
+| Easy | 221 | 681 | 154 |
+| Meidum | 91 | 496 | 49 |
+| Hard | 101 | 812 | 26 |
+
+Notes:
+
+- The generation produced 11608 terminal nodes, 11556 parsed terminal correctness scores, and 52 missing/unparsed terminal score details.
+- 2612 records have at least one parsed terminal correctness score; 19 records have zero parsed terminal scores.
+- Average parsed terminal scores per record: 4.392.
+- The generated trees are strongly pessimistic overall. Most terminal predictions are score `3`, and only 413 of 2631 records satisfy the optimistic seed rule.
