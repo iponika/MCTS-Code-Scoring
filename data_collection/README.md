@@ -53,12 +53,12 @@ uv run python data_collection/solver_review.py \
 
 ## Maintained Wrappers
 
-DeepSeek-R1-Distill-Qwen-7B is the default model for current experiments. The
-Qwen-specific wrappers remain for reproducing old runs, but new runs should use
-the DeepSeek wrappers unless a comparison explicitly requires another model.
+The maintained scripts below cover the current SPARC data-generation and
+evaluation workflow. Historical diagnostic wrappers have been archived outside
+this directory so that the active entrypoints stay aligned with the paper
+artifact.
 
 - `scripts/run_bootstrap_comparison_deepseek7b.sh`: default static/direct/MCTS comparison.
-- `scripts/run_direct_stepcount_vs_review_deepseek7b.sh`: default direct-review vs 1-step/2-step comparison.
 - `scripts/run_direct_stepwise_vs_review_deepseek7b.sh`: default diagnostic comparing final-review SFT and stepwise SFT.
 - `scripts/run_bootstrap_comparison_qwen3_4b.sh`: legacy Qwen3-4B static/direct/MCTS comparison.
 - `scripts/run_qwen35_9b_direct_stepwise_vs_review_smoke.sh`: 9B direct-review vs direct-stepwise comparison, intended for larger-memory servers.

@@ -107,6 +107,9 @@ def build_prompt(
         "candidate_code": sample["candidate_code"],
         "code_language": sample.get("code_language", "python"),
         "tests_for_prompt": prompt_tests_text(sample, config),
+        "scoring_target": sample.get("scoring_target"),
+        "score_scale": sample.get("score_scale"),
+        "target_correctness_score": sample.get("target_correctness_score"),
     }
     prompt = build_review_prompt_from_sample(
         shared_sample,
@@ -166,7 +169,7 @@ def repair_review_body(body: str) -> str | None:
             parsed = json.loads(candidate)
         except (json.JSONDecodeError, ValueError):
             continue
-        if isinstance(parsed, dict) and "axiom_grade" in parsed:
+        if isinstance(parsed, dict) and ("axiom_grade" in parsed or "correctness_score" in parsed):
             return f"<review>\n{json.dumps(parsed, ensure_ascii=False)}\n</review>"
     return None
 

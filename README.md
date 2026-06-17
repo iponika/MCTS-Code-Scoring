@@ -1,73 +1,87 @@
-# MCTS Code Scoring
+# SPARC: MCTS-Guided Self-Training for Code Scoring
 
 [中文 README](README.zh-CN.md)
 
-This repository is a code-evaluation adaptation of the SEER MCTS pipeline. It trains and evaluates models that assign stable AXIOM-style scores to candidate code. Text comments are auxiliary evidence for the score.
+This repository contains the implementation artifacts for **SPARC**, a
+policy-value self-training framework for criterion-based code scoring. SPARC
+uses Monte-Carlo Tree Search (MCTS) to construct reward-filtered reasoning
+trajectories, trains a LoRA-adapted policy head and value head, and performs
+value-guided inference for stable code-correctness scoring.
 
-## Active Scope
-
-- Generate CodeCriticBench-based review trajectories with direct bootstrap or review-MCTS.
-- Convert trajectories into policy/value training data.
-- Train a policy/value model with LoRA and a value head.
-- Evaluate on AXIOM-style held-out code-scoring tasks.
-
-Large datasets, model checkpoints, and run outputs are intentionally ignored.
+The repository is organized as a research artifact for paper review. Large
+datasets, generated search trees, training JSONL files, and model checkpoints
+are intentionally excluded from Git and should be restored separately when
+reproducing experiments.
 
 ## Repository Layout
 
 ```text
 data_collection/
-  solver_review.py                         # review-MCTS data generation
-  direct_bootstrap_review.py               # non-MCTS direct bootstrap data
-  prepare_codecritic_axiom_seedset.py      # CodeCriticBench -> AXIOM-aligned seeds
-  prepare_static_review_train_data.py      # static seed -> exact value labels
-  rebalance_review_train_data.py           # balance policy/value samples
-  configs/                                 # review-MCTS configs
-  scripts/                                 # maintained experiment wrappers
+  solver_review.py                         # MCTS trajectory generation
+  direct_bootstrap_review.py               # direct reasoning baseline data
+  prepare_codecritic_axiom_seedset.py      # CodeCriticBench seed preparation
+  prepare_static_review_train_data.py      # exact-label baseline preparation
+  rebalance_review_train_data.py           # policy/value sample balancing
+  configs/                                 # model and MCTS configuration files
+  scripts/                                 # experiment wrappers
 
 model_training/src/magicoder/
-  preprocess_review_mcts_data.py           # MCTS/direct trajectories -> train JSONL
-  preprocess_score_datasets.py             # AXIOM/CodeCritic static score data
-  train_multi.py                           # policy/value LoRA training
-  review_evaluator.py                      # final-only and stepwise eval
-  review_policy_value_inference.py         # value-head inspection
-  review_value_guided_evaluator.py         # value-guided single-sample loop
+  preprocess_review_mcts_data.py           # tree/trajectory export to train JSONL
+  preprocess_score_datasets.py             # static score-data preprocessing
+  train_multi.py                           # LoRA policy/value training
+  review_evaluator.py                      # code-scoring evaluator
+  review_policy_value_inference.py         # value-head inspection utilities
+  review_value_guided_evaluator.py         # single-sample value-guided inference
 
-tests/                                     # regression tests for review path
-tools/mcts_tree_viewer.html                # local MCTS sample viewer
-docs/                                      # current design notes and reports
+paper/
+  69fdb1f6e7574fa1c601d7fa/JASE/          # manuscript source and figures
+
+tests/                                     # regression tests for the review path
+tools/mcts_tree_viewer.html                # local MCTS-tree inspection UI
+docs/                                      # reviewer-facing notes and case evidence
 ```
 
-## Data Expected After Clone
+## Data
 
-Datasets are not tracked. Put them under these paths, or override the paths in commands:
+Datasets are not tracked in this repository. By default, scripts expect the
+following local paths:
 
 ```text
 datasets/CodeCriticBench/data/CodeCriticBench.jsonl
 datasets/axiom-llm-judge/axiombench/*.jsonl
 ```
 
-Optional future datasets should also stay outside Git under `datasets/` or `benchmarks/`.
+The main paper experiments use the CodeGen subset of CodeCriticBench after
+preprocessing into a 2,631-record seed set, partitioned into 1,316 training
+records and 1,315 held-out evaluation records. The split IDs used by the current
+artifact are recorded in:
+
+```text
+docs/codecriticbench_1316_1315_split_id_record_20260617.md
+```
 
 ## Environment
 
-Use `uv` in the Python environment provided by the target server. On a cluster, install the CUDA/PyTorch/vLLM stack according to the local driver first, then install project dependencies:
+Use the Python/CUDA environment provided by the target server. After installing
+a compatible PyTorch and CUDA stack, install project dependencies with `uv`:
 
 ```bash
 uv pip install -r requirements.txt
 ```
 
-For Qwen3.5, the environment must include a Transformers build that recognizes `model_type=qwen3_5`. The default `requirements.txt` uses the Hugging Face main branch for this reason. If the server already has a compatible Transformers version, replacing that line with a pinned release is fine.
+Qwen3.5-family checkpoints require a Transformers build that recognizes
+`model_type=qwen3_5`. If the target server already provides a compatible
+Transformers installation, using that pinned environment is acceptable.
 
-## Smoke Checks
+## Quick Checks
 
-Run these from the repository root:
+Run regression tests from the repository root:
 
 ```bash
 PYTHONPATH=data_collection:model_training/src uv run pytest tests
 ```
 
-Prepare a tiny CodeCritic seed set:
+Prepare a small CodeCriticBench seed sample:
 
 ```bash
 PYTHONPATH=data_collection uv run python data_collection/prepare_codecritic_axiom_seedset.py \
@@ -78,71 +92,40 @@ PYTHONPATH=data_collection uv run python data_collection/prepare_codecritic_axio
   --max_grade 5
 ```
 
-## Maintained Workflows
-
-DeepSeek-R1-Distill-Qwen-7B is the default model for current experiments. The
-Qwen wrappers are retained for explicit legacy comparisons, but routine runs
-should use the DeepSeek wrappers.
-
-DeepSeek direct-review vs 1-step/2-step wrapper:
+Run a one-record MCTS trajectory smoke test after restoring the required model
+checkpoint:
 
 ```bash
-tmux new -s deepseek_stepcount
-RUN_NAME=direct_stepcount_vs_review_deepseek7b_server \
-SEED_PER_GRADE=8 \
-DIRECT_REPEATS=2 \
-MAX_STEPS=120 \
-bash data_collection/scripts/run_direct_stepcount_vs_review_deepseek7b.sh
-```
-
-DeepSeek static/direct/MCTS comparison wrapper:
-
-```bash
-tmux new -s deepseek_cmp
-RUN_NAME=bootstrap_cmp_deepseek7b_server \
-SEED_PER_GRADE=8 \
-MAX_STEPS=120 \
-bash data_collection/scripts/run_bootstrap_comparison_deepseek7b.sh
-```
-
-DeepSeek-R1-Distill-Qwen-7B review-MCTS smoke after downloading the model:
-
-```bash
-CUDA_VISIBLE_DEVICES=0,1 \
-HF_HOME=/data1/xianzhiwei/model/huggingface \
-HF_HUB_OFFLINE=1 \
+CUDA_VISIBLE_DEVICES=0 \
 PYTHONPATH=data_collection \
 uv run python data_collection/solver_review.py \
-  --custom_cfg data_collection/configs/mcts_code_review_deepseek_r1_distill_qwen_7b.yaml \
+  --custom_cfg data_collection/configs/mcts_code_review.yaml \
   --dataset datasets/CodeCriticBench/data/CodeCriticBench.jsonl \
   --start 0 \
   --limit 1 \
-  --output data_collection/review_mcts_runs/deepseek_r1_distill_qwen_7b_smoke/aggregate.jsonl \
-  --output_dir data_collection/review_mcts_runs/deepseek_r1_distill_qwen_7b_smoke/samples
+  --output data_collection/review_mcts_runs/smoke/aggregate.jsonl \
+  --output_dir data_collection/review_mcts_runs/smoke/samples
 ```
 
-AXIOM held-out evaluation for an existing checkpoint:
+## Reproduction Workflow
+
+The paper workflow consists of four stages:
+
+1. Prepare CodeCriticBench scoring seeds.
+2. Generate reward-filtered MCTS reasoning trajectories.
+3. Export policy/value training data and train the LoRA policy-value model.
+4. Evaluate Base, Direct, ablation variants, and SPARC on the held-out split.
+
+Long-running jobs should be launched in `tmux`:
 
 ```bash
-RUN_NAME=axiom_eval_server \
-TRAINED_MODEL_PATH=/path/to/review-lora-checkpoint \
-bash data_collection/scripts/run_axiom_clean_eval.sh
+tmux new -s sparc_job
+# run the experiment command
+# detach with Ctrl-b d
+tmux attach -t sparc_job
 ```
 
-All maintained wrappers derive `ROOT` from their own location by default, so they should work after `git clone` without editing absolute paths. Set `ROOT=...` only if you intentionally run scripts from a different checkout.
-
-## Long Jobs
-
-Use `tmux` for long-running data generation and training:
-
-```bash
-tmux new -s mcts_job
-# run the command
-# detach: Ctrl-b d
-tmux attach -t mcts_job
-```
-
-Experiment outputs are written under ignored directories:
+Generated artifacts are written under ignored directories:
 
 ```text
 data_collection/review_mcts_runs/
