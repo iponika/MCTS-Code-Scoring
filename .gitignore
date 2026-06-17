@@ -2,12 +2,14 @@ datasets/
 data/
 benchmarks/
 reference/
+.cache/
 paper/
 .worktrees/
 data_collection/review_mcts_runs/
 data_collection/review_api_runs/
 model_training/review_mcts_train_data/
 .zenmux.env
+model_training/src/model_training/
 model_training/src/output/
 __pycache__/
 *.py[cod]
